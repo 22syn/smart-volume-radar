@@ -3,9 +3,10 @@
  * Sends formatted reports via Telegram Bot API
  */
 
-import { RVOLResult, StockData } from '../types/index.js';
+import { RVOLResult, StockData, TelegramApiError } from '../types/index.js';
 import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 import { getReportSummary, getPerStockAnalyses } from './llmSummary.js';
 
 const TELEGRAM_MAX_LENGTH = 4096;
@@ -103,7 +104,7 @@ export async function sendTelegramMessage(message: string): Promise<void> {
         });
 
         if (!response.ok) {
-            const error = (await response.json()) as any;
+            const error = (await response.json()) as TelegramApiError;
             let errorMessage = `Telegram API error: ${JSON.stringify(error)}`;
 
             if (error.description === 'Bad Request: chat not found') {
@@ -114,10 +115,115 @@ export async function sendTelegramMessage(message: string): Promise<void> {
         }
 
         logger.info('Telegram message sent successfully');
-    } catch (error: any) {
+    } catch (error: unknown) {
         logger.error('Failed to send Telegram message', error);
         throw error;
     }
+}
+
+function formatFailedSection(failedTickers: string[]): string {
+    if (failedTickers.length === 0) return '';
+    return `\n\n━━━━━━━━━━━━━━━━━━━━━━\n⚠️ <b>Could not check (fetch error)</b>\n<code>${failedTickers.map((t) => escapeHtml(t)).join(', ')}</code>`;
+}
+
+function formatReportHeader(date: string, bullish: number, bearish: number): string {
+    return `🛰 <b>SMART VOLUME RADAR</b>\n📅 <code>${date}</code>\n🎭 Sentiment: ${bullish} 🟢 | ${bearish} 🔴\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+}
+
+function buildStockUrls(stock: RVOLResult): { tvUrl: string; yahooUrl: string; newsUrl: string; newsLabel: string } {
+    const isIsraeli = stock.ticker.endsWith('.TA');
+    const tvTicker = stock.ticker.replace('.TA', '');
+    const encTicker = encodeURIComponent(stock.ticker);
+    const encTvTicker = encodeURIComponent(isIsraeli ? 'TASE-' + tvTicker : tvTicker);
+    return {
+        tvUrl: `https://www.tradingview.com/symbols/${encTvTicker}`,
+        yahooUrl: `https://finance.yahoo.com/quote/${encTicker}`,
+        newsUrl: isIsraeli
+            ? `https://www.bizportal.co.il/searchresult?q=${encodeURIComponent(tvTicker)}`
+            : `https://x.com/search?q=%24${encodeURIComponent(tvTicker)}`,
+        newsLabel: isIsraeli ? 'BIZ' : 'X',
+    };
+}
+
+function formatSingleStockBlock(stock: RVOLResult): string {
+    const isIsraeli = stock.ticker.endsWith('.TA');
+    let statusEmoji = stock.priceChange >= 0 ? '↗️' : '↘️';
+    if (stock.rvol > 4) statusEmoji = '⚡️';
+    else if (stock.rvol > 2) statusEmoji = '🔥';
+
+    const trendColor = stock.priceChange >= 0 ? '🟢' : '🔴';
+    const sign = stock.priceChange >= 0 ? '+' : '';
+    const { tvUrl, yahooUrl, newsUrl, newsLabel } = buildStockUrls(stock);
+
+    let block = `${statusEmoji} <b><a href="${tvUrl}">${escapeHtml(stock.ticker)}</a></b>\n`;
+    block += `├ 📊 <b>RVOL</b> ${stock.rvol.toFixed(2)}x\n`;
+    block += `├ <b>Price</b> ${trendColor} ${sign}${stock.priceChange.toFixed(2)}%\n`;
+
+    if (stock.rsi != null) {
+        const rsiContext = stock.rsi > 70 ? ' ⚠️' : stock.rsi < 30 ? ' ✅' : '';
+        block += `├ 📈 <b>RSI</b> ${stock.rsi.toFixed(0)}${rsiContext}\n`;
+    }
+    if (stock.sma50 != null) {
+        const trend = stock.lastPrice > stock.sma50 ? 'Above SMA50' : 'Below SMA50';
+        block += `├ ${trend}\n`;
+    }
+
+    const setupLines = formatSetupIndicator(
+        stock,
+        config.athThresholdPct,
+        config.athCloseThresholdPct,
+        config.sma21TouchThresholdPct,
+        config.sma21CloseThresholdPct,
+        config.consolidationMinMonths,
+        config.consolidationMaxMonths,
+        config.consolidationCloseMinMonths
+    );
+    if (setupLines.length > 0) {
+        const fullSetup = stock.nearSMA21 && stock.nearAth && stock.inConsolidationWindow;
+        const closeSetup =
+            (stock.nearSMA21 || stock.nearSMA21Close) &&
+            (stock.nearAth || stock.nearAthClose) &&
+            (stock.inConsolidationWindow || stock.inConsolidationClose);
+        const setupEmoji = fullSetup ? ' 🎯' : closeSetup ? ' 👀' : '';
+        block += `├ 🎯 Setup${setupEmoji}\n`;
+        for (const line of setupLines) block += `│   ${line}\n`;
+    }
+
+    block += `├ ⛓ <a href="${tvUrl}">TV</a>  <a href="${yahooUrl}">YF</a>  <a href="${newsUrl}">${newsLabel}</a>\n`;
+
+    if (stock.news && stock.news.length > 0) {
+        block += `└ 📑\n`;
+        for (const news of stock.news.slice(0, 2)) {
+            const source = news.source ? escapeHtml(news.source) + ' ' : '';
+            const headline = escapeHtml(truncate(news.headline, 55));
+            const safeUrl = news.url.startsWith('https://') ? news.url.replace(/"/g, '&quot;') : '#';
+            block += `   • <a href="${safeUrl}">${source}${headline}</a>\n`;
+        }
+    } else {
+        block += isIsraeli ? `└ 📑 <a href="${newsUrl}">BizPortal news</a>\n` : `└ <i>No recent news</i>\n`;
+    }
+    block += `\n`;
+    return block;
+}
+
+function formatVolumeWithoutPriceSection(volumeWithoutPrice: StockData[]): string {
+    if (volumeWithoutPrice.length === 0) return '';
+    const isFullSetup = (s: StockData) => Boolean(s.nearSMA21 && s.nearAth && s.inConsolidationWindow);
+    const isCloseSetup = (s: StockData) =>
+        Boolean(
+            (s.nearSMA21 || s.nearSMA21Close) &&
+                (s.nearAth || s.nearAthClose) &&
+                (s.inConsolidationWindow || s.inConsolidationClose)
+        );
+    const items = volumeWithoutPrice
+        .sort((a, b) => b.rvol - a.rvol)
+        .slice(0, 5)
+        .map(
+            (s) =>
+                `• <b>${escapeHtml(s.ticker)}</b> (${s.rvol.toFixed(1)}x)${isFullSetup(s) ? ' 🎯' : isCloseSetup(s) ? ' 👀' : ''}`
+        )
+        .join('\n');
+    return `━━━━━━━━━━━━━━━━━━━━━━\n👀 <b>SILENT ACTIVITY WATCHLIST</b>\n<i>(High RVOL, low price change - potential breakouts)</i>\n${items}`;
 }
 
 /**
@@ -159,28 +265,18 @@ export function formatDailyReport(
     volumeWithoutPrice: StockData[],
     failedTickers: string[] = []
 ): string {
-    const failedSection =
-        failedTickers.length > 0
-            ? `\n\n━━━━━━━━━━━━━━━━━━━━━━\n⚠️ <b>Could not check (fetch error)</b>\n<code>${failedTickers.join(', ')}</code>`
-            : '';
+    const failedSection = formatFailedSection(failedTickers);
 
     if (topSignals.length === 0) {
         return `📊 <b>Smart Volume Radar</b>\n📅 ${date}\n\n📭 No high-volume signals detected today.\n\nEverything within normal range.${failedSection}`;
     }
 
-    // Sort signals by RVOL descending
     const sortedSignals = [...topSignals].sort((a, b) => b.rvol - a.rvol);
+    const bullish = topSignals.filter((s) => s.priceChange > 0).length;
+    const bearish = topSignals.filter((s) => s.priceChange < 0).length;
 
-    // Stats
-    const bullish = topSignals.filter(s => s.priceChange > 0).length;
-    const bearish = topSignals.filter(s => s.priceChange < 0).length;
+    let message = formatReportHeader(date, bullish, bearish);
 
-    let message = `🛰 <b>SMART VOLUME RADAR</b>\n`;
-    message += `📅 <code>${date}</code>\n`;
-    message += `🎭 Sentiment: ${bullish} 🟢 | ${bearish} 🔴\n`;
-    message += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-
-    // Group by sector
     const sectors: Record<string, RVOLResult[]> = {};
     for (const stock of sortedSignals) {
         const sector = stock.sector || 'Other';
@@ -189,101 +285,13 @@ export function formatDailyReport(
     }
 
     for (const [sectorName, stocks] of Object.entries(sectors)) {
-        message += `📍 <b>${sectorName.toUpperCase()}</b>\n`;
-        message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-
+        message += `📍 <b>${escapeHtml(sectorName.toUpperCase())}</b>\n━━━━━━━━━━━━━━━━━━━━━━\n`;
         for (const stock of stocks) {
-            // Determine tier and emoji
-            let statusEmoji = stock.priceChange >= 0 ? '↗️' : '↘️';
-            if (stock.rvol > 4) statusEmoji = '⚡️';
-            else if (stock.rvol > 2) statusEmoji = '🔥';
-
-            const trendColor = stock.priceChange >= 0 ? '🟢' : '🔴';
-            const sign = stock.priceChange >= 0 ? '+' : '';
-
-            // Chart links
-            const isIsraeli = stock.ticker.endsWith('.TA');
-            const tvTicker = stock.ticker.replace('.TA', '');
-            const yahooUrl = `https://finance.yahoo.com/quote/${stock.ticker}`;
-            const tvUrl = `https://www.tradingview.com/symbols/${isIsraeli ? 'TASE-' + tvTicker : tvTicker}`;
-            const xUrl = `https://x.com/search?q=%24${tvTicker}`;
-            const newsUrl = isIsraeli
-                ? `https://www.bizportal.co.il/searchresult?q=${tvTicker}`
-                : xUrl;
-
-            // Header: ticker + main signal
-            message += `${statusEmoji} <b><a href="${tvUrl}">${stock.ticker}</a></b>\n`;
-
-            // Section 1: Core metrics – each param on its own row
-            message += `├ 📊 <b>RVOL</b> ${stock.rvol.toFixed(2)}x\n`;
-            message += `├ <b>Price</b> ${trendColor} ${sign}${stock.priceChange.toFixed(2)}%\n`;
-
-            // Section 2: Technicals – each param on its own row
-            if (stock.rsi != null) {
-                const rsiContext = stock.rsi > 70 ? ' ⚠️' : stock.rsi < 30 ? ' ✅' : '';
-                message += `├ 📈 <b>RSI</b> ${stock.rsi.toFixed(0)}${rsiContext}\n`;
-            }
-            if (stock.sma50 != null) {
-                const trend = stock.lastPrice > stock.sma50 ? 'Above SMA50' : 'Below SMA50';
-                message += `├ ${trend}\n`;
-            }
-
-            // Section 3: Setup (consolidation) – detailed per-indicator status
-            const setupLines = formatSetupIndicator(
-                stock,
-                config.athThresholdPct,
-                config.athCloseThresholdPct,
-                config.sma21TouchThresholdPct,
-                config.sma21CloseThresholdPct,
-                config.consolidationMinMonths,
-                config.consolidationMaxMonths,
-                config.consolidationCloseMinMonths
-            );
-            if (setupLines.length > 0) {
-                const fullSetup = stock.nearSMA21 && stock.nearAth && stock.inConsolidationWindow;
-                const closeSetup = (stock.nearSMA21 || stock.nearSMA21Close) && (stock.nearAth || stock.nearAthClose) && (stock.inConsolidationWindow || stock.inConsolidationClose);
-                const setupEmoji = fullSetup ? ' 🎯' : closeSetup ? ' 👀' : '';
-                message += `├ 🎯 Setup${setupEmoji}\n`;
-                for (const line of setupLines) {
-                    message += `│   ${line}\n`;
-                }
-            }
-
-            // Section 4: Links
-            const newsLabel = isIsraeli ? 'BIZ' : 'X';
-            message += `├ ⛓ <a href="${tvUrl}">TV</a>  <a href="${yahooUrl}">YF</a>  <a href="${newsUrl}">${newsLabel}</a>\n`;
-
-            // Section 5: News
-            if (stock.news && stock.news.length > 0) {
-                message += `└ 📑\n`;
-                for (const news of stock.news.slice(0, 2)) {
-                    const source = news.source ? `[${news.source}] ` : '';
-                    message += `   • <a href="${news.url}">${source}${truncate(news.headline, 55)}</a>\n`;
-                }
-            } else {
-                message += isIsraeli ? `└ 📑 <a href="${newsUrl}">BizPortal news</a>\n` : `└ <i>No recent news</i>\n`;
-            }
-            message += `\n`;
+            message += formatSingleStockBlock(stock);
         }
     }
 
-    // Volume without Price section (Actionable Watchlist)
-    if (volumeWithoutPrice.length > 0) {
-        message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-        message += `👀 <b>SILENT ACTIVITY WATCHLIST</b>\n`;
-        message += `<i>(High RVOL, low price change - potential breakouts)</i>\n`;
-
-        const isFullSetup = (s: StockData) => !!(s.nearSMA21 && s.nearAth && s.inConsolidationWindow);
-        const isCloseSetup = (s: StockData) => (s.nearSMA21 || s.nearSMA21Close) && (s.nearAth || s.nearAthClose) && (s.inConsolidationWindow || s.inConsolidationClose);
-        const items = volumeWithoutPrice
-            .sort((a, b) => b.rvol - a.rvol)
-            .slice(0, 5)
-            .map((s) => `• <b>${s.ticker}</b> (${s.rvol.toFixed(1)}x)${isFullSetup(s) ? ' 🎯' : isCloseSetup(s) ? ' 👀' : ''}`)
-            .join('\n');
-
-        message += items;
-    }
-
+    message += formatVolumeWithoutPriceSection(volumeWithoutPrice);
     message += failedSection;
     return message;
 }
@@ -329,12 +337,10 @@ function formatStockRow(stock: StockData, setupEmoji: '🎯' | '👀' | '—'): 
  * Used so LLM receives the exact params the code calculated.
  */
 export function getStocksForLlm(topSignals: RVOLResult[], volumeWithoutPrice: StockData[]): StockData[] {
-    const isFullSetup = (s: StockData) => !!(s.nearSMA21 && s.nearAth && s.inConsolidationWindow);
-    const isCloseSetup = (s: StockData) =>
-        (s.nearSMA21 || s.nearSMA21Close) &&
-        (s.nearAth || s.nearAthClose) &&
-        (s.inConsolidationWindow || s.inConsolidationClose);
-    const hasSetup = (s: StockData) => isFullSetup(s) || isCloseSetup(s);
+    const isFullSetup = (s: StockData): boolean => Boolean(s.nearSMA21 && s.nearAth && s.inConsolidationWindow);
+    const isCloseSetup = (s: StockData): boolean =>
+        Boolean((s.nearSMA21 || s.nearSMA21Close) && (s.nearAth || s.nearAthClose) && (s.inConsolidationWindow || s.inConsolidationClose));
+    const hasSetup = (s: StockData): boolean => isFullSetup(s) || isCloseSetup(s);
     const setupFromSilent = volumeWithoutPrice.filter(hasSetup);
     const topSilent = [...volumeWithoutPrice].sort((a, b) => b.rvol - a.rvol).slice(0, 10);
     return [...topSignals, ...setupFromSilent, ...topSilent]
@@ -348,11 +354,9 @@ export function getStocksForLlm(topSignals: RVOLResult[], volumeWithoutPrice: St
  * Ensures ALL setup stocks (🎯/👀) are included + topSignals + top 10 silent.
  */
 export function getAllSignalRows(topSignals: RVOLResult[], volumeWithoutPrice: StockData[]): string[] {
-    const isFullSetup = (s: StockData) => !!(s.nearSMA21 && s.nearAth && s.inConsolidationWindow);
-    const isCloseSetup = (s: StockData) =>
-        (s.nearSMA21 || s.nearSMA21Close) &&
-        (s.nearAth || s.nearAthClose) &&
-        (s.inConsolidationWindow || s.inConsolidationClose);
+    const isFullSetup = (s: StockData): boolean => Boolean(s.nearSMA21 && s.nearAth && s.inConsolidationWindow);
+    const isCloseSetup = (s: StockData): boolean =>
+        Boolean((s.nearSMA21 || s.nearSMA21Close) && (s.nearAth || s.nearAthClose) && (s.inConsolidationWindow || s.inConsolidationClose));
     const stocks = getStocksForLlm(topSignals, volumeWithoutPrice);
     return stocks.map((s) => {
         const emoji: '🎯' | '👀' | '—' = isFullSetup(s) ? '🎯' : isCloseSetup(s) ? '👀' : '—';
@@ -364,11 +368,9 @@ export function getAllSignalRows(topSignals: RVOLResult[], volumeWithoutPrice: S
  * Get setup stock rows from code (setup stocks only – for compact Data display).
  */
 export function getSetupRowsFromData(topSignals: RVOLResult[], volumeWithoutPrice: StockData[]): string[] {
-    const isFullSetup = (s: StockData) => !!(s.nearSMA21 && s.nearAth && s.inConsolidationWindow);
-    const isCloseSetup = (s: StockData) =>
-        (s.nearSMA21 || s.nearSMA21Close) &&
-        (s.nearAth || s.nearAthClose) &&
-        (s.inConsolidationWindow || s.inConsolidationClose);
+    const isFullSetup = (s: StockData): boolean => Boolean(s.nearSMA21 && s.nearAth && s.inConsolidationWindow);
+    const isCloseSetup = (s: StockData): boolean =>
+        Boolean((s.nearSMA21 || s.nearSMA21Close) && (s.nearAth || s.nearAthClose) && (s.inConsolidationWindow || s.inConsolidationClose));
 
     const seen = new Set<string>();
     const rows: string[] = [];
@@ -445,15 +447,16 @@ export async function sendDailyReport(
         const setupRows = getSetupRowsFromData(topSignals, volumeWithoutPrice);
         let summary: string | null = null;
         if (allSignalRows.length > 0) {
+            const stocksForLlm = config.llmSignalsOnly
+                ? forLlm.topSignals
+                : getStocksForLlm(forLlm.topSignals, forLlm.volumeWithoutPrice);
             if (config.llmPerStock) {
-                const stocksForLlm = getStocksForLlm(forLlm.topSignals, forLlm.volumeWithoutPrice);
                 const analyses = await getPerStockAnalyses(stocksForLlm, date);
                 const lines = analyses
                     .filter((a) => a.analysis)
-                    .map((a) => `• <b>${a.ticker}</b> <code>קוד ${a.codeSetup}</code> | ${a.analysis}`);
+                    .map((a) => `• <b>${escapeHtml(a.ticker)}</b> <code>קוד ${a.codeSetup}</code> | ${escapeHtml(a.analysis ?? '')}`);
                 summary = lines.length > 0 ? lines.join('\n') : null;
             } else {
-                const stocksForLlm = getStocksForLlm(forLlm.topSignals, forLlm.volumeWithoutPrice);
                 summary = await getReportSummary(stocksForLlm, date, {
                     watchlistCount: scope?.watchlistCount,
                     setupCount: setupRows.length,
@@ -461,6 +464,7 @@ export async function sendDailyReport(
             }
         }
         if (summary) {
+            const safeSummary = escapeHtml(summary);
             const llmDataHeader = formatMessageDataHeader(date, topSignals.length, volumeWithoutPrice.length, 'LLM Summary');
             const setupRef = formatSetupReference(topSignals, volumeWithoutPrice);
             const tickersSent = allSignalRows.map((r) => r.split('|')[0].trim()).join(', ');
@@ -473,10 +477,10 @@ export async function sendDailyReport(
             const modeLabel = config.llmPerStock ? ' (כל מניה: LLM מחשב בעצמו, אותו תנאים)' : '';
             const explanation =
                 '<i>📋 קוד = חישוב הקוד | 🤖 LLM = מחשב פרמטרים בעצמו (SMA21, High, Base) | Match = התאמה לאימות</i>\n\n';
-            const llmMessage = `${llmDataHeader}${explanation}${scopeLine}${setupRef}🤖 <b>ניתוח LLM${modeLabel}:</b>\n\n${summary}\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+            const llmMessage = `${llmDataHeader}${explanation}${scopeLine}${setupRef}🤖 <b>ניתוח LLM${modeLabel}:</b>\n\n${safeSummary}\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
             await sendTelegramMessage(llmMessage);
             logger.info('LLM summary sent as first Telegram message');
-            if (process.env.DEBUG === 'true') {
+            if (config.debug) {
                 logger.info('--- LLM MESSAGE PREVIEW ---\n' + llmMessage.replace(/<[^>]*>/g, '') + '\n--- END LLM PREVIEW ---');
             }
         } else if (allSignalRows.length === 0) {
