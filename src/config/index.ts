@@ -4,33 +4,45 @@
  */
 
 import * as dotenv from 'dotenv';
+import logger from '../utils/logger.js';
 
 // Load environment variables
 dotenv.config();
+
+function parseFloatEnv(key: string, defaultVal: number): number {
+    const v = parseFloat(process.env[key] ?? String(defaultVal));
+    return Number.isFinite(v) ? v : defaultVal;
+}
+
+function parseIntEnv(key: string, defaultVal: number): number {
+    const v = parseInt(process.env[key] ?? String(defaultVal), 10);
+    return Number.isFinite(v) ? v : defaultVal;
+}
 
 /**
  * Application configuration with sensible defaults
  */
 export const config = {
     // RVOL thresholds
-    minRVOL: parseFloat(process.env.MIN_RVOL || '2.0'),
-    topN: parseInt(process.env.TOP_N || '15', 10),
-    priceChangeThreshold: parseFloat(process.env.PRICE_CHANGE_THRESHOLD || '2'),
+    minRVOL: parseFloatEnv('MIN_RVOL', 2.0),
+    topN: parseIntEnv('TOP_N', 15),
+    priceChangeThreshold: parseFloatEnv('PRICE_CHANGE_THRESHOLD', 2),
 
     // Consolidation / pre-breakout indicators (flexible: show full ✓ and close ~)
-    consolidationMinMonths: parseInt(process.env.CONSOLIDATION_MIN_MONTHS || '6', 10),
-    consolidationMaxMonths: parseInt(process.env.CONSOLIDATION_MAX_MONTHS || '36', 10),
-    consolidationCloseMinMonths: parseInt(process.env.CONSOLIDATION_CLOSE_MIN_MONTHS || '4', 10), // 4–6mo = close
-    athThresholdPct: parseFloat(process.env.ATH_THRESHOLD_PCT || '20'), // within 20% of ATH
-    athCloseThresholdPct: parseFloat(process.env.ATH_CLOSE_THRESHOLD_PCT || '25'), // 20–25% = close
-    sma21TouchThresholdPct: parseFloat(process.env.SMA21_TOUCH_THRESHOLD_PCT || '3'), // within 3% = touching
-    sma21CloseThresholdPct: parseFloat(process.env.SMA21_CLOSE_THRESHOLD_PCT || '5'), // 3–5% = close
+    consolidationMinMonths: parseIntEnv('CONSOLIDATION_MIN_MONTHS', 6),
+    consolidationMaxMonths: parseIntEnv('CONSOLIDATION_MAX_MONTHS', 36),
+    consolidationCloseMinMonths: parseIntEnv('CONSOLIDATION_CLOSE_MIN_MONTHS', 4), // 4–6mo = close
+    athThresholdPct: parseFloatEnv('ATH_THRESHOLD_PCT', 20), // within 20% of ATH
+    athCloseThresholdPct: parseFloatEnv('ATH_CLOSE_THRESHOLD_PCT', 25), // 20–25% = close
+    sma21TouchThresholdPct: parseFloatEnv('SMA21_TOUCH_THRESHOLD_PCT', 3), // within 3% = touching
+    sma21CloseThresholdPct: parseFloatEnv('SMA21_CLOSE_THRESHOLD_PCT', 5), // 3–5% = close
 
     // Prefer fetching RSI/SMA from Twelve Data instead of calculating (when key is set)
     useFetchedIndicators: process.env.USE_FETCHED_INDICATORS !== 'false',
 
     // API Keys
     finnhubApiKey: process.env.FINNHUB_API_KEY || '',
+    twelveDataApiKey: process.env.TWELVE_DATA_API_KEY || '',
     openaiApiKey: process.env.OPENAI_API_KEY || '',
     perplexityApiKey: process.env.PERPLEXITY_API_KEY || '',
     geminiApiKey: process.env.GEMINI_API_KEY || '',
@@ -39,12 +51,13 @@ export const config = {
     llmProvider: (process.env.LLM_PROVIDER || 'openai').toLowerCase() as 'openai' | 'perplexity' | 'gemini',
     enableLlmSummary: process.env.ENABLE_LLM_SUMMARY !== 'false',
     /** Min RVOL for LLM analysis – only stocks with RVOL > this get sent (default 2). Set 0 to include all signals. */
-    llmMinRvol: (() => {
-        const v = parseFloat(process.env.LLM_MIN_RVOL || '2');
-        return Number.isFinite(v) ? v : 2;
-    })(),
+    llmMinRvol: parseFloatEnv('LLM_MIN_RVOL', 2),
     /** Per-stock LLM: send each signal to LLM separately (parallel). If false, use single batch summary. */
     llmPerStock: process.env.LLM_PER_STOCK !== 'false',
+    /** LLM model override. Empty = provider default (gpt-4o-mini, sonar, gemini-2.0-flash). */
+    llmModel: process.env.LLM_MODEL?.trim() || '',
+    /** If true, LLM analyzes only topSignals (main signals). Else include silent-activity setups. */
+    llmSignalsOnly: process.env.LLM_SIGNALS_ONLY === 'true',
 
     // Telegram
     telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
@@ -53,15 +66,34 @@ export const config = {
     // Watchlist: Google Sheet (public CSV export)
     googleSheetId: process.env.GOOGLE_SHEET_ID || '',
 
-    // Rate limiting
-    batchSize: 10,
-    batchDelayMs: 500, // 500ms between tickers - Chart API is less restrictive
+    // Rate limiting (news only; market uses p-limit in marketData)
     newsDelayMs: 500,
 
-    // Retry settings
-    maxRetries: 3,
-    retryDelayMs: 2000,
+    // CI / dev
+    forceScan: process.env.FORCE_SCAN === 'true',
+    debug: process.env.DEBUG === 'true',
 } as const;
+
+/** Valid ticker: 1-5 alphanumeric chars, optional .XX exchange suffix */
+const TICKER_REGEX = /^[A-Za-z0-9]{1,5}(\.[A-Za-z]{2})?$/;
+
+/**
+ * Validate ticker symbol format (prevents URL injection)
+ */
+export function validateTicker(ticker: string): boolean {
+    const t = ticker.trim();
+    return t.length > 0 && t.length <= 12 && TICKER_REGEX.test(t);
+}
+
+/** Google Sheet ID format: alphanumeric, dashes, underscores, 40-50 chars */
+const GOOGLE_SHEET_ID_REGEX = /^[a-zA-Z0-9_-]{20,60}$/;
+
+/**
+ * Validate Google Sheet ID format (prevents URL injection)
+ */
+export function validateGoogleSheetId(sheetId: string): boolean {
+    return GOOGLE_SHEET_ID_REGEX.test(sheetId.trim());
+}
 
 /**
  * Ticker entry: symbol (required) and optional sector for grouping in reports
@@ -74,6 +106,15 @@ export interface TickerConfig {
 
 // Internal cache set by fetchAndCacheWatchlist(); must be called before loadWatchlist()
 let tickerCache: TickerConfig[] | null = null;
+let sectorMap: Map<string, string> | null = null;
+
+function buildSectorMap(tickers: TickerConfig[]): Map<string, string> {
+    const map = new Map<string, string>();
+    for (const t of tickers) {
+        map.set(t.symbol.toUpperCase(), t.sector);
+    }
+    return map;
+}
 
 const GOOGLE_SHEETS_CSV_URL = 'https://docs.google.com/spreadsheets/d/{id}/export?format=csv';
 
@@ -83,7 +124,10 @@ const GOOGLE_SHEETS_CSV_URL = 'https://docs.google.com/spreadsheets/d/{id}/expor
  * @throws Error if request fails or non-2xx response
  */
 export async function fetchWatchlistCsv(sheetId: string): Promise<string> {
-    const url = GOOGLE_SHEETS_CSV_URL.replace('{id}', sheetId);
+    if (!validateGoogleSheetId(sheetId)) {
+        throw new Error('Invalid GOOGLE_SHEET_ID format. Expected alphanumeric ID from sheet URL.');
+    }
+    const url = GOOGLE_SHEETS_CSV_URL.replace('{id}', encodeURIComponent(sheetId.trim()));
     const res = await fetch(url, { redirect: 'follow' });
     if (!res.ok) {
         throw new Error(
@@ -124,6 +168,10 @@ export function parseWatchlistCsv(csv: string): TickerConfig[] {
         const cells = rows[i];
         const symbol = (cells[0] || '').trim();
         if (!symbol) continue;
+        if (!validateTicker(symbol)) {
+            logger.warn(`Invalid ticker format skipped: "${symbol}"`);
+            continue;
+        }
         const sector = (cells[1] || '').trim() || 'Other';
         tickers.push({ symbol, sector });
     }
@@ -146,6 +194,7 @@ export async function fetchAndCacheWatchlist(): Promise<void> {
     }
     const csv = await fetchWatchlistCsv(sheetId);
     tickerCache = parseWatchlistCsv(csv);
+    sectorMap = null; // invalidate so next getTickers rebuilds
 }
 
 function getTickers(): TickerConfig[] {
@@ -153,6 +202,9 @@ function getTickers(): TickerConfig[] {
         throw new Error(
             'Watchlist not loaded. Call fetchAndCacheWatchlist() once before loadWatchlist() or getSectorForTicker().'
         );
+    }
+    if (sectorMap === null) {
+        sectorMap = buildSectorMap(tickerCache);
     }
     return tickerCache;
 }
@@ -167,12 +219,11 @@ export function loadWatchlist(): string[] {
 }
 
 /**
- * Get sector for a ticker
+ * Get sector for a ticker (O(1) via Map)
  */
 export function getSectorForTicker(symbol: string): string {
-    const tickers = getTickers();
-    const ticker = tickers.find(t => t.symbol.toUpperCase() === symbol.toUpperCase());
-    return ticker?.sector || 'Other';
+    getTickers(); // builds sectorMap if needed
+    return sectorMap!.get(symbol.toUpperCase()) ?? 'Other';
 }
 
 /**
