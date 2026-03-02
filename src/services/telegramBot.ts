@@ -418,6 +418,63 @@ export interface ReportScope {
     watchlistCount?: number;
 }
 
+async function buildLlmSummaryMessage(
+    date: string,
+    topSignals: RVOLResult[],
+    volumeWithoutPrice: StockData[],
+    scope?: ReportScope
+): Promise<string | null> {
+    if (topSignals.length === 0) return null;
+
+    const llmMinRvol = config.llmMinRvol;
+    const forLlm =
+        llmMinRvol > 0
+            ? {
+                  topSignals: topSignals.filter((s) => s.rvol > llmMinRvol),
+                  volumeWithoutPrice: volumeWithoutPrice.filter((s) => s.rvol > llmMinRvol),
+              }
+            : { topSignals, volumeWithoutPrice };
+    const allSignalRows = getAllSignalRows(forLlm.topSignals, forLlm.volumeWithoutPrice);
+    const setupRows = getSetupRowsFromData(topSignals, volumeWithoutPrice);
+
+    if (allSignalRows.length === 0) return null;
+
+    const stocksForLlm = config.llmSignalsOnly
+        ? forLlm.topSignals
+        : getStocksForLlm(forLlm.topSignals, forLlm.volumeWithoutPrice);
+
+    let summary: string | null = null;
+    if (config.llmPerStock) {
+        const analyses = await getPerStockAnalyses(stocksForLlm, date);
+        const lines = analyses
+            .filter((a) => a.analysis)
+            .map((a) => `• <b>${escapeHtml(a.ticker)}</b> <code>קוד ${a.codeSetup}</code> | ${escapeHtml(a.analysis ?? '')}`);
+        summary = lines.length > 0 ? lines.join('\n') : null;
+    } else {
+        summary = await getReportSummary(stocksForLlm, date, {
+            watchlistCount: scope?.watchlistCount,
+            setupCount: setupRows.length,
+        });
+    }
+
+    if (!summary) return null;
+
+    const safeSummary = escapeHtml(summary);
+    const llmDataHeader = formatMessageDataHeader(date, topSignals.length, volumeWithoutPrice.length, 'LLM Summary');
+    const setupRef = formatSetupReference(topSignals, volumeWithoutPrice);
+    const tickersSent = allSignalRows.map((r) => r.split('|')[0].trim()).join(', ');
+    const rvolNote = llmMinRvol > 0 ? ` (RVOL>${llmMinRvol})` : '';
+    const scopeLine =
+        scope?.watchlistCount != null
+            ? `\n<i>✅ נסרקו ${scope.watchlistCount} מניות מ-Sheets | ל-LLM נשלחו ${allSignalRows.length}${rvolNote}: ${tickersSent}</i>\n\n`
+            : `\n<i>✅ ל-LLM נשלחו ${allSignalRows.length}${rvolNote} מניות: ${tickersSent}</i>\n\n`;
+    const modeLabel = config.llmPerStock ? ' (כל מניה: LLM מחשב בעצמו, אותו תנאים)' : '';
+    const explanation =
+        '<i>📋 קוד = חישוב הקוד | 🤖 LLM = מחשב פרמטרים בעצמו (SMA21, High, Base) | Match = התאמה לאימות</i>\n\n';
+
+    return `${llmDataHeader}${explanation}${scopeLine}${setupRef}🤖 <b>ניתוח LLM${modeLabel}:</b>\n\n${safeSummary}\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+}
+
 /**
  * Send the daily report, splitting if necessary.
  * If LLM summary is enabled and succeeds, it is prepended to the first message.
@@ -433,62 +490,30 @@ export async function sendDailyReport(
     const report = formatDailyReport(date, topSignals, volumeWithoutPrice, failedTickers);
     const chunks = chunkMessage(report);
 
-    // Optional: send LLM summary as first message (keeps report chunks under length limit)
-    if (topSignals.length > 0) {
-        const llmMinRvol = config.llmMinRvol;
+    const llmMessage = await buildLlmSummaryMessage(date, topSignals, volumeWithoutPrice, scope);
+    if (llmMessage) {
+        await sendTelegramMessage(llmMessage);
+        logger.info('LLM summary sent as first Telegram message');
+        if (config.debug) {
+            logger.info('--- LLM MESSAGE PREVIEW ---\n' + llmMessage.replace(/<[^>]*>/g, '') + '\n--- END LLM PREVIEW ---');
+        }
+    } else if (topSignals.length > 0) {
         const forLlm =
-            llmMinRvol > 0
+            config.llmMinRvol > 0
                 ? {
-                      topSignals: topSignals.filter((s) => s.rvol > llmMinRvol),
-                      volumeWithoutPrice: volumeWithoutPrice.filter((s) => s.rvol > llmMinRvol),
+                      topSignals: topSignals.filter((s) => s.rvol > config.llmMinRvol),
+                      volumeWithoutPrice: volumeWithoutPrice.filter((s) => s.rvol > config.llmMinRvol),
                   }
                 : { topSignals, volumeWithoutPrice };
         const allSignalRows = getAllSignalRows(forLlm.topSignals, forLlm.volumeWithoutPrice);
-        const setupRows = getSetupRowsFromData(topSignals, volumeWithoutPrice);
-        let summary: string | null = null;
-        if (allSignalRows.length > 0) {
-            const stocksForLlm = config.llmSignalsOnly
-                ? forLlm.topSignals
-                : getStocksForLlm(forLlm.topSignals, forLlm.volumeWithoutPrice);
-            if (config.llmPerStock) {
-                const analyses = await getPerStockAnalyses(stocksForLlm, date);
-                const lines = analyses
-                    .filter((a) => a.analysis)
-                    .map((a) => `• <b>${escapeHtml(a.ticker)}</b> <code>קוד ${a.codeSetup}</code> | ${escapeHtml(a.analysis ?? '')}`);
-                summary = lines.length > 0 ? lines.join('\n') : null;
-            } else {
-                summary = await getReportSummary(stocksForLlm, date, {
-                    watchlistCount: scope?.watchlistCount,
-                    setupCount: setupRows.length,
-                });
-            }
-        }
-        if (summary) {
-            const safeSummary = escapeHtml(summary);
-            const llmDataHeader = formatMessageDataHeader(date, topSignals.length, volumeWithoutPrice.length, 'LLM Summary');
-            const setupRef = formatSetupReference(topSignals, volumeWithoutPrice);
-            const tickersSent = allSignalRows.map((r) => r.split('|')[0].trim()).join(', ');
-            const rvolNote =
-                llmMinRvol > 0 ? ` (RVOL>${llmMinRvol})` : '';
-            const scopeLine =
-                scope?.watchlistCount != null
-                    ? `\n<i>✅ נסרקו ${scope.watchlistCount} מניות מ-Sheets | ל-LLM נשלחו ${allSignalRows.length}${rvolNote}: ${tickersSent}</i>\n\n`
-                    : `\n<i>✅ ל-LLM נשלחו ${allSignalRows.length}${rvolNote} מניות: ${tickersSent}</i>\n\n`;
-            const modeLabel = config.llmPerStock ? ' (כל מניה: LLM מחשב בעצמו, אותו תנאים)' : '';
-            const explanation =
-                '<i>📋 קוד = חישוב הקוד | 🤖 LLM = מחשב פרמטרים בעצמו (SMA21, High, Base) | Match = התאמה לאימות</i>\n\n';
-            const llmMessage = `${llmDataHeader}${explanation}${scopeLine}${setupRef}🤖 <b>ניתוח LLM${modeLabel}:</b>\n\n${safeSummary}\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-            await sendTelegramMessage(llmMessage);
-            logger.info('LLM summary sent as first Telegram message');
-            if (config.debug) {
-                logger.info('--- LLM MESSAGE PREVIEW ---\n' + llmMessage.replace(/<[^>]*>/g, '') + '\n--- END LLM PREVIEW ---');
-            }
-        } else if (allSignalRows.length === 0) {
+        if (allSignalRows.length === 0) {
             logger.info(
-                `LLM summary skipped: no stocks with RVOL > ${llmMinRvol}. Set LLM_MIN_RVOL=0 to include all signals.`
+                `LLM summary skipped: no stocks with RVOL > ${config.llmMinRvol}. Set LLM_MIN_RVOL=0 to include all signals.`
             );
         } else {
-            logger.warn('LLM summary not sent. Check: ENABLE_LLM_SUMMARY=true, correct LLM_PROVIDER, and API key set for that provider.');
+            logger.warn(
+                'LLM summary not sent. Check: ENABLE_LLM_SUMMARY=true, correct LLM_PROVIDER, and API key set for that provider.'
+            );
         }
     } else {
         logger.info('LLM summary skipped (no high-RVOL signals to summarize)');
