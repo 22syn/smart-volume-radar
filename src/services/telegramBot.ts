@@ -7,6 +7,8 @@ import { RVOLResult, StockData, TelegramApiError } from '../types/index.js';
 import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
+import { isFullSetup, isCloseSetup } from '../utils/setup.js';
+import { formatRVOL, formatPriceChange } from '../utils/formatters.js';
 import { getReportSummary, getPerStockAnalyses } from './llmSummary.js';
 
 const TELEGRAM_MAX_LENGTH = 4096;
@@ -152,12 +154,11 @@ function formatSingleStockBlock(stock: RVOLResult): string {
     else if (stock.rvol > 2) statusEmoji = '🔥';
 
     const trendColor = stock.priceChange >= 0 ? '🟢' : '🔴';
-    const sign = stock.priceChange >= 0 ? '+' : '';
     const { tvUrl, yahooUrl, newsUrl, newsLabel } = buildStockUrls(stock);
 
     let block = `${statusEmoji} <b><a href="${tvUrl}">${escapeHtml(stock.ticker)}</a></b>\n`;
-    block += `├ 📊 <b>RVOL</b> ${stock.rvol.toFixed(2)}x\n`;
-    block += `├ <b>Price</b> ${trendColor} ${sign}${stock.priceChange.toFixed(2)}%\n`;
+    block += `├ 📊 <b>RVOL</b> ${formatRVOL(stock.rvol)}\n`;
+    block += `├ <b>Price</b> ${trendColor} ${formatPriceChange(stock.priceChange)}\n`;
 
     if (stock.rsi != null) {
         const rsiContext = stock.rsi > 70 ? ' ⚠️' : stock.rsi < 30 ? ' ✅' : '';
@@ -179,12 +180,7 @@ function formatSingleStockBlock(stock: RVOLResult): string {
         config.consolidationCloseMinMonths
     );
     if (setupLines.length > 0) {
-        const fullSetup = stock.nearSMA21 && stock.nearAth && stock.inConsolidationWindow;
-        const closeSetup =
-            (stock.nearSMA21 || stock.nearSMA21Close) &&
-            (stock.nearAth || stock.nearAthClose) &&
-            (stock.inConsolidationWindow || stock.inConsolidationClose);
-        const setupEmoji = fullSetup ? ' 🎯' : closeSetup ? ' 👀' : '';
+        const setupEmoji = isFullSetup(stock) ? ' 🎯' : isCloseSetup(stock) ? ' 👀' : '';
         block += `├ 🎯 Setup${setupEmoji}\n`;
         for (const line of setupLines) block += `│   ${line}\n`;
     }
@@ -208,19 +204,12 @@ function formatSingleStockBlock(stock: RVOLResult): string {
 
 function formatVolumeWithoutPriceSection(volumeWithoutPrice: StockData[]): string {
     if (volumeWithoutPrice.length === 0) return '';
-    const isFullSetup = (s: StockData) => Boolean(s.nearSMA21 && s.nearAth && s.inConsolidationWindow);
-    const isCloseSetup = (s: StockData) =>
-        Boolean(
-            (s.nearSMA21 || s.nearSMA21Close) &&
-                (s.nearAth || s.nearAthClose) &&
-                (s.inConsolidationWindow || s.inConsolidationClose)
-        );
     const items = volumeWithoutPrice
         .sort((a, b) => b.rvol - a.rvol)
         .slice(0, 5)
         .map(
             (s) =>
-                `• <b>${escapeHtml(s.ticker)}</b> (${s.rvol.toFixed(1)}x)${isFullSetup(s) ? ' 🎯' : isCloseSetup(s) ? ' 👀' : ''}`
+                `• <b>${escapeHtml(s.ticker)}</b> (${formatRVOL(s.rvol)})${isFullSetup(s) ? ' 🎯' : isCloseSetup(s) ? ' 👀' : ''}`
         )
         .join('\n');
     return `━━━━━━━━━━━━━━━━━━━━━━\n👀 <b>SILENT ACTIVITY WATCHLIST</b>\n<i>(High RVOL, low price change - potential breakouts)</i>\n${items}`;
@@ -327,9 +316,8 @@ const STOCK_ROW_FORMAT = 'TICKER | RVOL X.XXx | Price ±X.XX% | RSI XX | Setup';
  * Format one stock row in the shared structure (used by both code and LLM).
  */
 function formatStockRow(stock: StockData, setupEmoji: '🎯' | '👀' | '—'): string {
-    const sign = stock.priceChange >= 0 ? '+' : '';
     const rsi = stock.rsi != null ? stock.rsi.toFixed(0) : '—';
-    return `${stock.ticker} | RVOL ${stock.rvol.toFixed(2)}x | Price ${sign}${stock.priceChange.toFixed(2)}% | RSI ${rsi} | ${setupEmoji}`;
+    return `${stock.ticker} | RVOL ${formatRVOL(stock.rvol)} | Price ${formatPriceChange(stock.priceChange)} | RSI ${rsi} | ${setupEmoji}`;
 }
 
 /**
@@ -337,9 +325,6 @@ function formatStockRow(stock: StockData, setupEmoji: '🎯' | '👀' | '—'): 
  * Used so LLM receives the exact params the code calculated.
  */
 export function getStocksForLlm(topSignals: RVOLResult[], volumeWithoutPrice: StockData[]): StockData[] {
-    const isFullSetup = (s: StockData): boolean => Boolean(s.nearSMA21 && s.nearAth && s.inConsolidationWindow);
-    const isCloseSetup = (s: StockData): boolean =>
-        Boolean((s.nearSMA21 || s.nearSMA21Close) && (s.nearAth || s.nearAthClose) && (s.inConsolidationWindow || s.inConsolidationClose));
     const hasSetup = (s: StockData): boolean => isFullSetup(s) || isCloseSetup(s);
     const setupFromSilent = volumeWithoutPrice.filter(hasSetup);
     const topSilent = [...volumeWithoutPrice].sort((a, b) => b.rvol - a.rvol).slice(0, 10);
@@ -354,9 +339,6 @@ export function getStocksForLlm(topSignals: RVOLResult[], volumeWithoutPrice: St
  * Ensures ALL setup stocks (🎯/👀) are included + topSignals + top 10 silent.
  */
 export function getAllSignalRows(topSignals: RVOLResult[], volumeWithoutPrice: StockData[]): string[] {
-    const isFullSetup = (s: StockData): boolean => Boolean(s.nearSMA21 && s.nearAth && s.inConsolidationWindow);
-    const isCloseSetup = (s: StockData): boolean =>
-        Boolean((s.nearSMA21 || s.nearSMA21Close) && (s.nearAth || s.nearAthClose) && (s.inConsolidationWindow || s.inConsolidationClose));
     const stocks = getStocksForLlm(topSignals, volumeWithoutPrice);
     return stocks.map((s) => {
         const emoji: '🎯' | '👀' | '—' = isFullSetup(s) ? '🎯' : isCloseSetup(s) ? '👀' : '—';
@@ -368,10 +350,6 @@ export function getAllSignalRows(topSignals: RVOLResult[], volumeWithoutPrice: S
  * Get setup stock rows from code (setup stocks only – for compact Data display).
  */
 export function getSetupRowsFromData(topSignals: RVOLResult[], volumeWithoutPrice: StockData[]): string[] {
-    const isFullSetup = (s: StockData): boolean => Boolean(s.nearSMA21 && s.nearAth && s.inConsolidationWindow);
-    const isCloseSetup = (s: StockData): boolean =>
-        Boolean((s.nearSMA21 || s.nearSMA21Close) && (s.nearAth || s.nearAthClose) && (s.inConsolidationWindow || s.inConsolidationClose));
-
     const seen = new Set<string>();
     const rows: string[] = [];
     for (const s of [...topSignals, ...volumeWithoutPrice]) {

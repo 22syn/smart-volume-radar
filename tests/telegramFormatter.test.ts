@@ -9,6 +9,14 @@ jest.mock('../src/config/index.js', () => ({
         telegramChatId: 'mock-chat-id',
         llmPerStock: false,
         llmMinRvol: 0,
+        formatPrecision: { price: 2, pct: 2, base: 2, rvol: 2, rsi: 0 },
+        athThresholdPct: 20,
+        athCloseThresholdPct: 25,
+        sma21TouchThresholdPct: 3,
+        sma21CloseThresholdPct: 5,
+        consolidationMinMonths: 6,
+        consolidationMaxMonths: 36,
+        consolidationCloseMinMonths: 4,
     },
 }));
 jest.mock('../src/services/llmSummary.js', () => ({
