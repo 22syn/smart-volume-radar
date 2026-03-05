@@ -123,4 +123,25 @@ describe('fetchAllStocks', () => {
         expect(stocks[0].rvol).toBe(0);
         expect(failedTickers).toHaveLength(0);
     });
+
+    it('supports stocks with only one day of price data (priceChange=0)', async () => {
+        const stockResponse = {
+            chart: {
+                result: [{
+                    meta: { regularMarketPrice: 100 },
+                    indicators: { quote: [{ volume: [1000], close: [100] }] },
+                }],
+            },
+        };
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: () => Promise.resolve(stockResponse),
+        });
+
+        const { stocks, failedTickers } = await fetchAllStocks(['NEW']);
+        expect(stocks).toHaveLength(1);
+        expect(stocks[0].ticker).toBe('NEW');
+        expect(stocks[0].priceChange).toBe(0);
+        expect(failedTickers).toHaveLength(0);
+    });
 });
