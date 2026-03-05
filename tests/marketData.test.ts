@@ -102,4 +102,25 @@ describe('fetchAllStocks', () => {
         expect(stocks[0].rvol).toBe(0);
         expect(failedTickers).toHaveLength(0);
     });
+
+    it('supports stocks with no volume data (rvol=0) instead of failing', async () => {
+        const stockResponse = {
+            chart: {
+                result: [{
+                    meta: { regularMarketPrice: 100 },
+                    indicators: { quote: [{ volume: [], close: [98, 100] }] },
+                }],
+            },
+        };
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: () => Promise.resolve(stockResponse),
+        });
+
+        const { stocks, failedTickers } = await fetchAllStocks(['COBE']);
+        expect(stocks).toHaveLength(1);
+        expect(stocks[0].ticker).toBe('COBE');
+        expect(stocks[0].rvol).toBe(0);
+        expect(failedTickers).toHaveLength(0);
+    });
 });

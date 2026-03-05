@@ -51,9 +51,8 @@ async function fetchFromYahooChart(ticker: string): Promise<StockData | null> {
 
         const isIndex = ticker.startsWith('^');
 
-        // Allow indices to have zero volume data, but must have price data
+        // Must have price data to be useful; returning null here marks ticker as "Failed to fetch"
         if (closes.length < 2) return null;
-        if (!isIndex && volumes.length < 5) return null;
 
         // Current volume is the last entry
         const currentVolume = volumes.length > 0 ? volumes[volumes.length - 1] : 0;
@@ -66,7 +65,9 @@ async function fetchFromYahooChart(ticker: string): Promise<StockData | null> {
             ? lookbackVolumes.reduce((a: number, b: number) => a + b, 0) / lookbackVolumes.length
             : 0;
 
-        const rvol = avgVolume > 0 ? currentVolume / avgVolume : 0;
+        // Require 5+ volume days for a valid RVOL calculation (unless it's an index).
+        // For stocks with insufficient volume history, we return them with rvol=0 to avoid "Failed to fetch" noise.
+        const rvol = (isIndex || volumes.length >= 5) && avgVolume > 0 ? currentVolume / avgVolume : 0;
 
         // Calculate price change from close prices
         const currentClose = closes[closes.length - 1];
