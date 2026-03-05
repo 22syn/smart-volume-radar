@@ -17,6 +17,16 @@ jobs:
       actions: read
 
     steps:
+      - name: Get failed run logs
+        id: logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run view ${{ github.event.workflow_run.id }} --repo ${{ github.repository }} --log-failed 2>&1 | tail -80 > logs.txt
+          echo "log<<LOGS_DELIM" >> $GITHUB_OUTPUT
+          cat logs.txt >> $GITHUB_OUTPUT
+          echo "LOGS_DELIM" >> $GITHUB_OUTPUT
+
       - name: Notify Telegram (Jules invoked)
         continue-on-error: true
         env:
@@ -41,8 +51,13 @@ jobs:
             **Commit:** ${{ github.event.workflow_run.head_sha }}
             **Repository:** ${{ github.repository }}
 
+            **Failure logs (paste below):**
+            ```
+            ${{ steps.logs.outputs.log }}
+            ```
+
             Please:
-            1. Analyze the failure from the workflow run logs (you have access to the run)
+            1. Analyze the failure from the logs above (they contain the actual error output)
             2. Identify the root cause
             3. Implement a minimal fix
             4. Run `npm run lint`, `npm run build`, and `npm run test` to verify
