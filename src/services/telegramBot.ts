@@ -123,11 +123,6 @@ export async function sendTelegramMessage(message: string): Promise<void> {
     }
 }
 
-function formatFailedSection(failedTickers: string[]): string {
-    if (failedTickers.length === 0) return '';
-    return `\n\n━━━━━━━━━━━━━━━━━━━━━━\n⚠️ <b>Could not check (fetch error)</b>\n<code>${failedTickers.map((t) => escapeHtml(t)).join(', ')}</code>\n<i>(Check for typos or if the symbol is delisted)</i>`;
-}
-
 function formatReportHeader(date: string, bullish: number, bearish: number): string {
     return `🛰 <b>SMART VOLUME RADAR</b>\n📅 <code>${date}</code>\n🎭 Sentiment: ${bullish} 🟢 | ${bearish} 🔴\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 }
@@ -252,12 +247,10 @@ export function formatDailyReport(
     date: string,
     topSignals: RVOLResult[],
     volumeWithoutPrice: StockData[],
-    failedTickers: string[] = []
+    _failedTickers: string[] = []
 ): string {
-    const failedSection = formatFailedSection(failedTickers);
-
     if (topSignals.length === 0) {
-        return `📊 <b>Smart Volume Radar</b>\n📅 ${date}\n\n📭 No high-volume signals detected today.\n\nEverything within normal range.${failedSection}`;
+        return `📊 <b>Smart Volume Radar</b>\n📅 ${date}\n\n📭 No high-volume signals detected today.\n\nEverything within normal range.`;
     }
 
     const sortedSignals = [...topSignals].sort((a, b) => b.rvol - a.rvol);
@@ -281,7 +274,6 @@ export function formatDailyReport(
     }
 
     message += formatVolumeWithoutPriceSection(volumeWithoutPrice);
-    message += failedSection;
     return message;
 }
 
@@ -395,21 +387,53 @@ function formatMessageDataHeader(
 export interface ReportScope {
     watchlistCount?: number;
     invalidTickers?: string[];
+    /** Indices skipped – not supported, not sent to Jules */
+    indexTickers?: string[];
+    /** Summary stats for watchlist coverage */
+    watchlistStats?: {
+        totalInSheet: number;
+        analyzed: number;
+        notAnalyzed: number;
+        reasonInvalid: number;
+        reasonIndex: number;
+        reasonFetchFailed: number;
+    };
 }
 
-/** Format run issues (invalid format + failed fetch) for visibility in first message */
-function formatRunIssuesSection(invalidTickers: string[], failedTickers: string[]): string {
+/** Format watchlist summary: total in sheet, analyzed, not analyzed with reasons */
+function formatWatchlistSummary(stats: ReportScope['watchlistStats']): string {
+    if (!stats || stats.totalInSheet === 0) return '';
+    const reasons: string[] = [];
+    if (stats.reasonInvalid > 0) reasons.push(`פורמט לא נתמך: ${stats.reasonInvalid}`);
+    if (stats.reasonIndex > 0) reasons.push(`אינדקסים: ${stats.reasonIndex}`);
+    if (stats.reasonFetchFailed > 0) reasons.push(`שליפה נכשלה: ${stats.reasonFetchFailed}`);
+    const reasonsStr = reasons.length > 0 ? ` (${reasons.join(' | ')})` : '';
+    return `📋 <b>רשימה:</b> ${stats.totalInSheet} מניות | ✅ נותחו: ${stats.analyzed} | ⏭️ לא נותחו: ${stats.notAnalyzed}${reasonsStr}\n\n`;
+}
+
+/** Format run issues (invalid format, indices, failed fetch) for visibility in first message */
+function formatRunIssuesSection(
+    invalidTickers: string[],
+    failedTickers: string[],
+    indexTickers: string[] = [],
+    watchlistStats?: ReportScope['watchlistStats']
+): string {
+    const summary = formatWatchlistSummary(watchlistStats);
     const parts: string[] = [];
     if (invalidTickers.length > 0) {
         parts.push(`⚠️ <b>פורמט לא נתמך (דולגו):</b> <code>${invalidTickers.map((t) => escapeHtml(t)).join(', ')}</code>`);
+    }
+    if (indexTickers.length > 0) {
+        parts.push(`📊 <b>אינדקסים (לא נתמכים — אין volume):</b> <code>${indexTickers.map((t) => escapeHtml(t)).join(', ')}</code>`);
     }
     if (failedTickers.length > 0) {
         parts.push(
             `⚠️ <b>לא הצלחנו לשלוף נתונים:</b> <code>${failedTickers.map((t) => escapeHtml(t)).join(', ')}</code>\n<i>(בדקו שגיאות כתיב או אם הסימול נמחק מהבורסה)</i>`
         );
     }
-    if (parts.length === 0) return '';
-    return `━━━━━━━━━━━━━━━━━━━━━━\n${parts.join('\n')}\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    if (summary === '' && parts.length === 0) return '';
+    const body = parts.length > 0 ? '\n' + parts.join('\n') : '';
+    return `━━━━━━━━━━━━━━━━━━━━━━\n${summary}${body}\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 }
 
 async function buildLlmSummaryMessage(
@@ -484,7 +508,12 @@ export async function sendDailyReport(
     const report = formatDailyReport(date, topSignals, volumeWithoutPrice, failedTickers);
     const chunks = chunkMessage(report);
 
-    const issuesSection = formatRunIssuesSection(scope?.invalidTickers ?? [], failedTickers);
+    const issuesSection = formatRunIssuesSection(
+        scope?.invalidTickers ?? [],
+        failedTickers,
+        scope?.indexTickers ?? [],
+        scope?.watchlistStats
+    );
     const llmMessage = await buildLlmSummaryMessage(date, topSignals, volumeWithoutPrice, scope);
     if (llmMessage) {
         await sendTelegramMessage((issuesSection ? issuesSection : '') + llmMessage);
