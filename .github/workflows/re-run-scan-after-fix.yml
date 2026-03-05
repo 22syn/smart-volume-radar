@@ -1,0 +1,29 @@
+# When a fix/* PR is merged to main, re-run the daily scan to verify the fix.
+
+name: Re-run Scan After Fix Merge
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  trigger-scan:
+    if: ${{ github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'fix/') }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+
+    steps:
+      - name: Re-run daily scan
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'daily-scan.yml',
+              ref: 'main'
+            });
+            core.info('✅ Triggered Smart Volume Radar - Daily Scan');

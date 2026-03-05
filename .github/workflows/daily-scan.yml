@@ -1,5 +1,9 @@
 name: Smart Volume Radar - Daily Scan
 
+concurrency:
+  group: daily-scan
+  cancel-in-progress: false
+
 on:
   schedule:
     # Run at 4:30 PM EST / 5:30 PM EDT (ensures market is closed in both timezones)
@@ -15,13 +19,14 @@ on:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 30
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: 'npm'
@@ -35,6 +40,10 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ENABLE_LLM_SUMMARY: 'true'
+          LLM_PROVIDER: 'gemini'
           MIN_RVOL: '2.0'
           FORCE_SCAN: 'true'
         run: npm run start
@@ -43,6 +52,15 @@ jobs:
         if: success()
         run: echo "✅ Smart Volume Radar completed successfully"
       
-      - name: Report failure
+      - name: Notify Telegram on failure
         if: failure()
-        run: echo "❌ Smart Volume Radar failed. Check logs for details."
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              -d "chat_id=${TELEGRAM_CHAT_ID}&text=❌ Smart Volume Radar failed. Jules will attempt an auto-fix. Check GitHub Actions."
+          else
+            echo "⚠️ Telegram secrets not set, skipping notification"
+          fi
