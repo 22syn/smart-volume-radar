@@ -8,6 +8,8 @@
 import pLimit from 'p-limit';
 import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
+import { isFullSetup, isCloseSetup } from '../utils/setup.js';
+import { formatRVOL, formatPriceChange } from '../utils/formatters.js';
 import type { StockData } from '../types/index.js';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
@@ -210,11 +212,10 @@ function formatRawStockForLlm(stock: StockData): string {
               ? (stock.lastPrice / (1 + stock.pctFromAth / 100)).toFixed(2)
               : '—';
     const base = stock.monthsInConsolidation != null ? stock.monthsInConsolidation.toFixed(1) : '—';
-    const sign = stock.priceChange >= 0 ? '+' : '';
     const rsi = stock.rsi != null ? stock.rsi.toFixed(0) : '—';
     return `Ticker: ${stock.ticker}
 Price: ${price} | SMA21: ${sma21} | 52w High: ${athVal} | Base: ${base}mo
-RVOL: ${stock.rvol.toFixed(2)}x | Price chg: ${sign}${stock.priceChange.toFixed(2)}% | RSI: ${rsi}`;
+RVOL: ${formatRVOL(stock.rvol)} | Price chg: ${formatPriceChange(stock.priceChange)} | RSI: ${rsi}`;
 }
 
 /**
@@ -229,7 +230,6 @@ function formatStockForLlm(stock: StockData): string {
         consolidationCloseMinMonths,
     } = config;
 
-    const sign = stock.priceChange >= 0 ? '+' : '';
     const rsi = stock.rsi != null ? stock.rsi.toFixed(0) : '—';
 
     let sma21Line = 'SMA21: —';
@@ -258,23 +258,13 @@ function formatStockForLlm(stock: StockData): string {
         baseLine = `Base: ${mo}mo ${met ? '✓' : close ? '~' : '✗'} (req ${consolidationMinMonths}–${consolidationMaxMonths}mo)`;
     }
 
-    const isFull = !!(stock.nearSMA21 && stock.nearAth && stock.inConsolidationWindow);
-    const isClose =
-        (stock.nearSMA21 || stock.nearSMA21Close) &&
-        (stock.nearAth || stock.nearAthClose) &&
-        (stock.inConsolidationWindow || stock.inConsolidationClose);
-    const setup = isFull ? '🎯' : isClose ? '👀' : '—';
+    const setup = isFullSetup(stock) ? '🎯' : isCloseSetup(stock) ? '👀' : '—';
 
-    return `${stock.ticker} | RVOL ${stock.rvol.toFixed(2)}x | Price ${sign}${stock.priceChange.toFixed(2)}% | RSI ${rsi} | ${sma21Line} | ${highLine} | ${baseLine} | Setup ${setup}`;
+    return `${stock.ticker} | RVOL ${formatRVOL(stock.rvol)} | Price ${formatPriceChange(stock.priceChange)} | RSI ${rsi} | ${sma21Line} | ${highLine} | ${baseLine} | Setup ${setup}`;
 }
 
 function getCodeSetup(stock: StockData): '🎯' | '👀' | '—' {
-    const isFull = !!(stock.nearSMA21 && stock.nearAth && stock.inConsolidationWindow);
-    const isClose =
-        (stock.nearSMA21 || stock.nearSMA21Close) &&
-        (stock.nearAth || stock.nearAthClose) &&
-        (stock.inConsolidationWindow || stock.inConsolidationClose);
-    return isFull ? '🎯' : isClose ? '👀' : '—';
+    return isFullSetup(stock) ? '🎯' : isCloseSetup(stock) ? '👀' : '—';
 }
 
 function buildSingleStockPrompt(rawData: string, codeSetup: string, date: string): string {
