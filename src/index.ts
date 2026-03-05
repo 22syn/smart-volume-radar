@@ -157,7 +157,7 @@ async function main(): Promise<void> {
                 failedTickers,
                 summary: `Invalid format: ${invalidTickers.length} | Fetch failed: ${failedTickers.length}`,
             };
-            fs.writeFileSync(issuesFile, JSON.stringify(payload, null, 2), 'utf-8');
+            fs.writeFileSync(issuesFile, JSON.stringify(payload, null, 2) + '\n', 'utf-8');
             logger.info(`📝 Wrote ${issuesFile} for Jules auto-fix`);
         }
 

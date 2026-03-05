@@ -72,6 +72,17 @@ describe('parseWatchlistCsv', () => {
         expect(result.tickers[1].symbol).toBe('META');
         expect(result.invalidSkipped).toEqual(['../../etc']);
     });
+
+    it('supports international and longer tickers (extended regex)', () => {
+        const csv = 'Symbol,Sector\n000660.KS,Tech\n8035.T,Tech\nBA.L,Ind\nBRK-B,Fin';
+        const result = parseWatchlistCsv(csv);
+        expect(result.tickers).toHaveLength(4);
+        expect(result.tickers[0].symbol).toBe('000660.KS');
+        expect(result.tickers[1].symbol).toBe('8035.T');
+        expect(result.tickers[2].symbol).toBe('BA.L');
+        expect(result.tickers[3].symbol).toBe('BRK-B');
+        expect(result.invalidSkipped).toHaveLength(0);
+    });
 });
 
 // Valid-length fake Sheet ID (real IDs are ~44 chars; regex requires 20-60)

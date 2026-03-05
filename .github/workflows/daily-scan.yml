@@ -57,9 +57,11 @@ jobs:
         if: success() && hashFiles('.scan-issues.json') != ''
         id: issues
         run: |
-          echo "content<<EOF" >> $GITHUB_OUTPUT
+          DELIMITER=$(dd if=/dev/urandom bs=15 count=1 2>/dev/null | base64 | tr -dc 'a-zA-Z0-9')
+          echo "content<<${DELIMITER}" >> $GITHUB_OUTPUT
           cat .scan-issues.json >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "${DELIMITER}" >> $GITHUB_OUTPUT
 
       - name: Notify Telegram (Jules invoked for run issues)
         if: success() && hashFiles('.scan-issues.json') != ''
