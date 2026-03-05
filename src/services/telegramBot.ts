@@ -9,7 +9,7 @@ import logger from '../utils/logger.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { isFullSetup, isCloseSetup } from '../utils/setup.js';
 import { formatRVOL, formatPriceChange } from '../utils/formatters.js';
-import { getReportSummary, getPerStockAnalyses } from './llmSummary.js';
+import { getReportSummary, getPerStockAnalyses, parseLlmReply, formatCodeVsLlmLine } from './llmSummary.js';
 
 const TELEGRAM_MAX_LENGTH = 4096;
 
@@ -391,9 +391,23 @@ function formatMessageDataHeader(
     return `📊 <code>${parts.join(' • ')}</code>\n\n`;
 }
 
-/** Scope info for LLM verification (watchlist size, etc.) */
+/** Scope info for LLM verification and run issues */
 export interface ReportScope {
     watchlistCount?: number;
+    invalidTickers?: string[];
+}
+
+/** Format run issues (invalid format + failed fetch) for visibility in first message */
+function formatRunIssuesSection(invalidTickers: string[], failedTickers: string[]): string {
+    const parts: string[] = [];
+    if (invalidTickers.length > 0) {
+        parts.push(`⚠️ <b>פורמט לא נתמך (דולגו):</b> <code>${invalidTickers.map((t) => escapeHtml(t)).join(', ')}</code>`);
+    }
+    if (failedTickers.length > 0) {
+        parts.push(`⚠️ <b>לא הצלחנו לשלוף נתונים:</b> <code>${failedTickers.map((t) => escapeHtml(t)).join(', ')}</code>`);
+    }
+    if (parts.length === 0) return '';
+    return `━━━━━━━━━━━━━━━━━━━━━━\n${parts.join('\n')}\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 }
 
 async function buildLlmSummaryMessage(
@@ -426,7 +440,7 @@ async function buildLlmSummaryMessage(
         const analyses = await getPerStockAnalyses(stocksForLlm, date);
         const lines = analyses
             .filter((a) => a.analysis)
-            .map((a) => `• <b>${escapeHtml(a.ticker)}</b> <code>קוד ${a.codeSetup}</code> | ${escapeHtml(a.analysis ?? '')}`);
+            .map((a) => formatCodeVsLlmLine(a.ticker, a.codeSetup, parseLlmReply(a.analysis ?? ''), a.analysis));
         summary = lines.length > 0 ? lines.join('\n') : null;
     } else {
         summary = await getReportSummary(stocksForLlm, date, {
@@ -437,7 +451,8 @@ async function buildLlmSummaryMessage(
 
     if (!summary) return null;
 
-    const safeSummary = escapeHtml(summary);
+    // Per-stock: summary is HTML from formatCodeVsLlmLine (already escaped). Batch: plain text from LLM.
+    const safeSummary = config.llmPerStock ? summary : escapeHtml(summary);
     const llmDataHeader = formatMessageDataHeader(date, topSignals.length, volumeWithoutPrice.length, 'LLM Summary');
     const setupRef = formatSetupReference(topSignals, volumeWithoutPrice);
     const tickersSent = allSignalRows.map((r) => r.split('|')[0].trim()).join(', ');
@@ -447,8 +462,7 @@ async function buildLlmSummaryMessage(
             ? `\n<i>✅ נסרקו ${scope.watchlistCount} מניות מ-Sheets | ל-LLM נשלחו ${allSignalRows.length}${rvolNote}: ${tickersSent}</i>\n\n`
             : `\n<i>✅ ל-LLM נשלחו ${allSignalRows.length}${rvolNote} מניות: ${tickersSent}</i>\n\n`;
     const modeLabel = config.llmPerStock ? ' (כל מניה: LLM מחשב בעצמו, אותו תנאים)' : '';
-    const explanation =
-        '<i>📋 קוד = חישוב הקוד | 🤖 LLM = מחשב פרמטרים בעצמו (SMA21, High, Base) | Match = התאמה לאימות</i>\n\n';
+    const explanation = '<i>קוד = חישוב המערכת | LLM = חישוב עצמאי (אותם תנאים) | תואמים/חוסר התאמה = השוואה</i>\n\n';
 
     return `${llmDataHeader}${explanation}${scopeLine}${setupRef}🤖 <b>ניתוח LLM${modeLabel}:</b>\n\n${safeSummary}\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 }
@@ -468,9 +482,10 @@ export async function sendDailyReport(
     const report = formatDailyReport(date, topSignals, volumeWithoutPrice, failedTickers);
     const chunks = chunkMessage(report);
 
+    const issuesSection = formatRunIssuesSection(scope?.invalidTickers ?? [], failedTickers);
     const llmMessage = await buildLlmSummaryMessage(date, topSignals, volumeWithoutPrice, scope);
     if (llmMessage) {
-        await sendTelegramMessage(llmMessage);
+        await sendTelegramMessage((issuesSection ? issuesSection : '') + llmMessage);
         logger.info('LLM summary sent as first Telegram message');
         if (config.debug) {
             logger.info('--- LLM MESSAGE PREVIEW ---\n' + llmMessage.replace(/<[^>]*>/g, '') + '\n--- END LLM PREVIEW ---');
@@ -499,9 +514,13 @@ export async function sendDailyReport(
 
     logger.info(`Sending ${chunks.length} message(s) to Telegram`);
 
+    // Issues section goes in first message only (LLM or first report chunk)
+    const issuesInFirstReport = !llmMessage && issuesSection;
     for (let i = 0; i < chunks.length; i++) {
         const partLabel = chunks.length > 1 ? `Part ${i + 1}/${chunks.length}` : undefined;
         const msgDataHeader = formatMessageDataHeader(date, topSignals.length, volumeWithoutPrice.length, partLabel);
-        await sendTelegramMessage(msgDataHeader + chunks[i]);
+        const content =
+            i === 0 && issuesInFirstReport ? issuesSection + msgDataHeader + chunks[i] : msgDataHeader + chunks[i];
+        await sendTelegramMessage(content);
     }
 }

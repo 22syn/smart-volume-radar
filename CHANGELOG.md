@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Added
+- **Jules run-issues auto-fix:** When daily scan has invalid tickers or fetch failures, writes `.scan-issues.json` and invokes Jules to fix (extend TICKER_REGEX, improve fetch). Jules opens `fix/daily-scan-run-issues-*` PR; merge triggers re-run via existing verify-and-merge flow
+- **Run issues in Telegram:** Invalid tickers and failed-fetch list appear at top of first message for visibility
+- **Jules improvements:** `docs/standards-for-ci.md` — SSoT export for CI (derived from Maestro vault)
+- **Jules improvements:** `agents.md` extended with Jules context (scopes, guardrails, forbidden patterns)
+- **Jules improvements:** `jules-fix-on-failure.yml` prompt now references `docs/standards-for-ci.md`, asks for PR summary
+- **Jules improvements:** `jules-pr-labels.yml` — auto-label PRs from `fix/daily-scan-*` and `chore/standards-*` with `jules`, `jules/fix-daily`, `jules/standards`
+- **Maestro:** Jules agent routing (`03-agents/specialists/jules.md`, trigger matrix row 39)
+- `docs/jules-scheduled-task-setup.md` — instructions for creating weekly standards sweep (manual)
+
 ### Changed
 - **refactor:** Extracted setup criteria (`isFullSetup`, `isCloseSetup`) to `src/utils/setup.ts`
 - **refactor:** Extracted RVOL/price formatters to `src/utils/formatters.ts` (config-aware)
@@ -18,6 +28,8 @@
 - **refactor:** Extract `buildLlmSummaryMessage` from `sendDailyReport`
 
 ### Fixed
+- **Standards:** `scripts/send-legend.ts` — replaced `console.log`/`console.error` with `logger` (was documented but not applied)
+
 - **LLM:** Configurable model (`LLM_MODEL`); Gemini default to `gemini-2.0-flash` (was invalid `gemini-3-flash-preview`)
 - **LLM:** Escape output in Telegram HTML (security)
 - **Config:** NaN guards for numeric env vars (`parseFloatEnv`/`parseIntEnv`)

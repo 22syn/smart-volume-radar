@@ -1,18 +1,20 @@
 /**
  * Smart Volume Radar - LLM Summary Service
  * Optional: asks an LLM to summarize the daily scan report for analyst-style commentary.
- * Supports OpenAI, Perplexity, and Google Gemini via LLM_PROVIDER and corresponding API keys.
+ * Supports OpenAI, Perplexity, Google Gemini, and Groq via LLM_PROVIDER and corresponding API keys.
  * Per-stock mode: each signal sent to LLM separately (parallel).
  */
 
 import pLimit from 'p-limit';
 import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
+import { escapeHtml } from '../utils/escapeHtml.js';
 import { isFullSetup, isCloseSetup } from '../utils/setup.js';
 import { formatRVOL, formatPriceChange } from '../utils/formatters.js';
 import type { StockData } from '../types/index.js';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
+const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const PERPLEXITY_API_URL = 'https://api.perplexity.ai/chat/completions';
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const SYSTEM_PROMPT =
@@ -191,10 +193,50 @@ async function callGemini(prompt: string, systemPrompt: string = SYSTEM_PROMPT):
     }
 }
 
+/** Groq: OpenAI-compatible API (free tier; llama-3.3-70b-versatile). */
+async function callGroq(prompt: string, systemPrompt: string = SYSTEM_PROMPT): Promise<string | null> {
+    const apiKey = config.groqApiKey;
+    if (!apiKey) {
+        logger.warn('LLM summary skipped: GROQ_API_KEY not set');
+        return null;
+    }
+    const model = config.llmModel || 'llama-3.3-70b-versatile';
+    try {
+        const response = await fetch(GROQ_API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+            body: JSON.stringify({
+                model,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: prompt },
+                ],
+                max_tokens: MAX_LLM_TOKENS,
+                temperature: 0.3,
+            }),
+        });
+        if (!response.ok) {
+            logger.warn(`LLM summary (Groq) failed: ${response.status} ${(await response.text()).slice(0, 200)}`);
+            return null;
+        }
+        const data = (await response.json()) as { choices?: ChatChoice[] };
+        const choice = data?.choices?.[0];
+        const text = choice?.message?.content?.trim() ?? null;
+        if (choice?.finish_reason === 'length' && text) {
+            logger.warn('LLM summary (Groq) was truncated (finish_reason=length). Consider increasing max_tokens.');
+        }
+        return text;
+    } catch (error) {
+        logger.warn('LLM summary (Groq) error', (error as Error).message);
+        return null;
+    }
+}
+
 function callLlm(prompt: string, systemPrompt: string = SYSTEM_PROMPT): Promise<string | null> {
     const provider = config.llmProvider;
     if (provider === 'perplexity') return callPerplexity(prompt, systemPrompt);
     if (provider === 'gemini') return callGemini(prompt, systemPrompt);
+    if (provider === 'groq') return callGroq(prompt, systemPrompt);
     return callOpenAI(prompt, systemPrompt);
 }
 
@@ -303,6 +345,47 @@ export interface PerStockAnalysis {
     analysis: string | null;
 }
 
+/** Parsed LLM reply: verdict (🎯/👀/—), match (code vs LLM), and optional reason */
+export interface ParsedLlmReply {
+    llmVerdict: '🎯' | '👀' | '—';
+    match: boolean;
+    reason?: string;
+}
+
+const LLM_REPLY_REGEX = /My:\s*([🎯👀—])\s*\|?\s*Match:\s*(yes|no)\s*\|?\s*Analysis:\s*(.+)/i;
+
+/**
+ * Parse LLM reply to extract verdict, match, and reason. Falls back gracefully if format varies.
+ */
+export function parseLlmReply(raw: string): ParsedLlmReply | null {
+    const m = raw.match(LLM_REPLY_REGEX);
+    if (!m) return null;
+    const llmVerdict = (m[1] === '🎯' ? '🎯' : m[1] === '👀' ? '👀' : '—') as '🎯' | '👀' | '—';
+    const match = m[2].toLowerCase() === 'yes';
+    const reason = m[3]?.trim().slice(0, 80); // truncate long analysis
+    return { llmVerdict, match, reason };
+}
+
+/**
+ * Format per-stock analysis for display: clear comparison of Code vs LLM.
+ */
+export function formatCodeVsLlmLine(
+    ticker: string,
+    codeSetup: '🎯' | '👀' | '—',
+    parsed: ParsedLlmReply | null,
+    _rawAnalysis: string | null
+): string {
+    if (!parsed) {
+        return `• <b>${escapeHtml(ticker)}</b> | קוד ${codeSetup} | <i>(לא ניתן לפרסר תשובת LLM)</i>`;
+    }
+    const matchStr = parsed.match ? '✓ תואמים' : '✗ חוסר התאמה';
+    const base = `• <b>${escapeHtml(ticker)}</b> | קוד ${codeSetup} | LLM ${parsed.llmVerdict} | ${matchStr}`;
+    if (!parsed.match && parsed.reason) {
+        return `${base}\n  <i>${escapeHtml(parsed.reason)}</i>`;
+    }
+    return base;
+}
+
 /**
  * Send each signal to LLM with RAW data. LLM calculates params itself (same conditions as code).
  * Enables verification: compare Code vs LLM.
@@ -312,7 +395,13 @@ export async function getPerStockAnalyses(stocks: StockData[], date: string): Pr
 
     const provider = config.llmProvider;
     const hasKey =
-        provider === 'gemini' ? !!config.geminiApiKey : provider === 'perplexity' ? !!config.perplexityApiKey : !!config.openaiApiKey;
+        provider === 'gemini'
+            ? !!config.geminiApiKey
+            : provider === 'perplexity'
+              ? !!config.perplexityApiKey
+              : provider === 'groq'
+                ? !!config.groqApiKey
+                : !!config.openaiApiKey;
     if (!hasKey) return [];
 
     const limit = pLimit(3);
@@ -352,9 +441,23 @@ export async function getReportSummary(
     }
 
     const provider = config.llmProvider;
-    const hasKey = provider === 'gemini' ? !!config.geminiApiKey : provider === 'perplexity' ? !!config.perplexityApiKey : !!config.openaiApiKey;
+    const hasKey =
+        provider === 'gemini'
+            ? !!config.geminiApiKey
+            : provider === 'perplexity'
+              ? !!config.perplexityApiKey
+              : provider === 'groq'
+                ? !!config.groqApiKey
+                : !!config.openaiApiKey;
     if (!hasKey) {
-        const keyName = provider === 'gemini' ? 'GEMINI_API_KEY' : provider === 'perplexity' ? 'PERPLEXITY_API_KEY' : 'OPENAI_API_KEY';
+        const keyName =
+            provider === 'gemini'
+                ? 'GEMINI_API_KEY'
+                : provider === 'perplexity'
+                  ? 'PERPLEXITY_API_KEY'
+                  : provider === 'groq'
+                    ? 'GROQ_API_KEY'
+                    : 'OPENAI_API_KEY';
         logger.warn(`LLM summary skipped: ${keyName} not set (LLM_PROVIDER=${provider})`);
         return null;
     }

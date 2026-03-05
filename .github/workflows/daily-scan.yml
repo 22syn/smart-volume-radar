@@ -35,6 +35,7 @@ jobs:
         run: npm ci
       
       - name: Run Smart Volume Radar
+        id: scan
         env:
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -47,10 +48,64 @@ jobs:
           MIN_RVOL: '2.0'
           FORCE_SCAN: 'true'
         run: npm run start
-      
+
       - name: Report success
-        if: success()
+        if: success() && !hashFiles('.scan-issues.json')
         run: echo "✅ Smart Volume Radar completed successfully"
+
+      - name: Get run issues for Jules
+        if: success() && hashFiles('.scan-issues.json') != ''
+        id: issues
+        run: |
+          echo "content<<EOF" >> $GITHUB_OUTPUT
+          cat .scan-issues.json >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Notify Telegram (Jules invoked for run issues)
+        if: success() && hashFiles('.scan-issues.json') != ''
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+            MSG="🔧 Run issues detected (invalid tickers / fetch failures). Jules invoked to fix. Check GitHub Actions."
+            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+              --data-urlencode "text=${MSG}"
+          fi
+
+      - name: Invoke Jules to fix run issues
+        if: success() && hashFiles('.scan-issues.json') != ''
+        uses: google-labs-code/jules-action@v1.0.0
+        with:
+          prompt: |
+            The Smart Volume Radar daily scan completed successfully but reported RUN ISSUES.
+
+            **Run issues (.scan-issues.json):**
+            ```
+            ${{ steps.issues.outputs.content }}
+            ```
+
+            Issues include:
+            - **Invalid ticker format (skipped):** Symbols that don't match TICKER_REGEX in src/config/index.ts (e.g. 000660.KS, 8035.T, BA.L). Either extend the regex to support them or recommend removing from the Google Sheet.
+            - **Failed to fetch:** Tickers that returned no data from Yahoo/Twelve Data. May need fallback logic or documentation.
+
+            Please:
+            1. Analyze the issues from the JSON above
+            2. Implement a minimal fix (extend ticker validation if appropriate, or improve fetch handling)
+            3. Run npm run lint, npm run build, npm run test
+            4. Run npm version patch -m "fix: resolve run issues (invalid tickers / fetch failures)"
+            5. Push to branch fix/daily-scan-run-issues-${{ github.run_number }} and open a PR to main
+
+            Project context:
+            - Entry: src/index.ts | Config: src/config/ | Ticker validation: validateTicker, TICKER_REGEX
+            - Standards: docs/standards-for-ci.md
+            - PR body: Include summary — what changed, why, how to verify.
+          jules_api_key: ${{ secrets.JULES_API_KEY }}
+          starting_branch: main
+          include_last_commit: true
+          include_commit_log: true
       
       - name: Notify Telegram on failure
         if: failure()

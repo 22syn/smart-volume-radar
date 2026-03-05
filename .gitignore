@@ -30,6 +30,7 @@ coverage/
 # Temporary files
 tmp/
 temp/
+.scan-issues.json
 
 # Maestro AI
 .agent/

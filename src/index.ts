@@ -3,7 +3,7 @@
  * Orchestrates the daily stock volume scan and reporting
  */
 
-import { loadWatchlist, validateConfig, config, getSectorForTicker, fetchAndCacheWatchlist } from './config/index.js';
+import { loadWatchlist, validateConfig, config, getSectorForTicker, fetchAndCacheWatchlist, getInvalidTickersFromWatchlist } from './config/index.js';
 import { fetchAllStocks } from './services/marketData.js';
 import { calculateRVOL } from './services/rvolCalculator.js';
 import { enrichWithNews } from './services/newsService.js';
@@ -93,7 +93,14 @@ async function main(): Promise<void> {
 
         // 3. Log LLM summary config (helps debug when summary doesn't appear)
         const llmProvider = config.llmProvider;
-        const llmKey = llmProvider === 'gemini' ? config.geminiApiKey : llmProvider === 'perplexity' ? config.perplexityApiKey : config.openaiApiKey;
+        const llmKey =
+            llmProvider === 'gemini'
+                ? config.geminiApiKey
+                : llmProvider === 'perplexity'
+                  ? config.perplexityApiKey
+                  : llmProvider === 'groq'
+                    ? config.groqApiKey
+                    : config.openaiApiKey;
         logger.info(`LLM Summary: ${config.enableLlmSummary ? 'enabled' : 'DISABLED'} | provider=${llmProvider} | key=${llmKey ? '✓ set' : '✗ missing'}`);
 
         // 4. Fetch watchlist from Google Sheet and load symbols
@@ -135,11 +142,26 @@ async function main(): Promise<void> {
 
         // 8. Send report
         const today = new Date().toISOString().split('T')[0];
+        const invalidTickers = getInvalidTickersFromWatchlist();
         await sendDailyReport(today, finalSignals, volumeWithoutPrice, failedTickers, {
             watchlistCount: tickers.length,
+            invalidTickers,
         });
 
-        // 9. Log completion
+        // 9. Write run-issues file for Jules (CI auto-fix when invalid tickers or fetch failures)
+        if (invalidTickers.length > 0 || failedTickers.length > 0) {
+            const issuesFile = process.env.SCAN_ISSUES_FILE || '.scan-issues.json';
+            const payload = {
+                date: today,
+                invalidTickers,
+                failedTickers,
+                summary: `Invalid format: ${invalidTickers.length} | Fetch failed: ${failedTickers.length}`,
+            };
+            fs.writeFileSync(issuesFile, JSON.stringify(payload, null, 2), 'utf-8');
+            logger.info(`📝 Wrote ${issuesFile} for Jules auto-fix`);
+        }
+
+        // 10. Log completion
         const duration = ((Date.now() - startTime) / 1000).toFixed(1);
         logger.info(`\n✅ Report sent successfully in ${duration}s`);
         logger.info(`   Scanned: ${stocks.length} | Signals: ${topSignals.length} | Silent: ${volumeWithoutPrice.length}`);

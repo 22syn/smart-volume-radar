@@ -46,9 +46,10 @@ export const config = {
     openaiApiKey: process.env.OPENAI_API_KEY || '',
     perplexityApiKey: process.env.PERPLEXITY_API_KEY || '',
     geminiApiKey: process.env.GEMINI_API_KEY || '',
+    groqApiKey: process.env.GROQ_API_KEY || '',
 
     // LLM summary: on when API key exists for chosen provider (set ENABLE_LLM_SUMMARY=false to disable)
-    llmProvider: (process.env.LLM_PROVIDER || 'openai').toLowerCase() as 'openai' | 'perplexity' | 'gemini',
+    llmProvider: (process.env.LLM_PROVIDER || 'openai').toLowerCase() as 'openai' | 'perplexity' | 'gemini' | 'groq',
     enableLlmSummary: process.env.ENABLE_LLM_SUMMARY !== 'false',
     /** Min RVOL for LLM analysis – only stocks with RVOL > this get sent (default 2). Set 0 to include all signals. */
     llmMinRvol: parseFloatEnv('LLM_MIN_RVOL', 2),
@@ -115,6 +116,7 @@ export interface TickerConfig {
 
 // Internal cache set by fetchAndCacheWatchlist(); must be called before loadWatchlist()
 let tickerCache: TickerConfig[] | null = null;
+let invalidTickersCache: string[] = [];
 let sectorMap: Map<string, string> | null = null;
 
 function buildSectorMap(tickers: TickerConfig[]): Map<string, string> {
@@ -146,13 +148,19 @@ export async function fetchWatchlistCsv(sheetId: string): Promise<string> {
     return res.text();
 }
 
+/** Result of parsing watchlist CSV */
+export interface ParseWatchlistResult {
+    tickers: TickerConfig[];
+    invalidSkipped: string[];
+}
+
 /**
  * Parse CSV from Google Sheets into TickerConfig[].
  * - First row: treated as header if it looks like "Symbol" / "Sector" (case-insensitive), then skipped
  * - Column A: symbol (required); empty rows skipped
  * - Column B: sector (optional); default "Other" if empty
  */
-export function parseWatchlistCsv(csv: string): TickerConfig[] {
+export function parseWatchlistCsv(csv: string): ParseWatchlistResult {
     const lines = csv.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     if (lines.length === 0) {
         throw new Error('Watchlist sheet is empty.');
@@ -172,12 +180,14 @@ export function parseWatchlistCsv(csv: string): TickerConfig[] {
 
     const startIndex = rows.length > 0 && isHeaderRow(rows[0]) ? 1 : 0;
     const tickers: TickerConfig[] = [];
+    const invalidSkipped: string[] = [];
 
     for (let i = startIndex; i < rows.length; i++) {
         const cells = rows[i];
         const symbol = (cells[0] || '').trim();
         if (!symbol) continue;
         if (!validateTicker(symbol)) {
+            invalidSkipped.push(symbol);
             logger.warn(`Invalid ticker format skipped: "${symbol}"`);
             continue;
         }
@@ -189,7 +199,7 @@ export function parseWatchlistCsv(csv: string): TickerConfig[] {
         throw new Error('Watchlist sheet has no valid ticker rows (Column A = symbol).');
     }
 
-    return tickers;
+    return { tickers, invalidSkipped };
 }
 
 /**
@@ -202,8 +212,15 @@ export async function fetchAndCacheWatchlist(): Promise<void> {
         throw new Error('GOOGLE_SHEET_ID is required. Set it to your Google Sheet ID (from the sheet URL).');
     }
     const csv = await fetchWatchlistCsv(sheetId);
-    tickerCache = parseWatchlistCsv(csv);
+    const { tickers, invalidSkipped } = parseWatchlistCsv(csv);
+    tickerCache = tickers;
+    invalidTickersCache = invalidSkipped;
     sectorMap = null; // invalidate so next getTickers rebuilds
+}
+
+/** Tickers skipped during watchlist parse (invalid format). Call after fetchAndCacheWatchlist(). */
+export function getInvalidTickersFromWatchlist(): string[] {
+    return [...invalidTickersCache];
 }
 
 function getTickers(): TickerConfig[] {
