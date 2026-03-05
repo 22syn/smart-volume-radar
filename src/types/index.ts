@@ -103,3 +103,12 @@ export interface MarketStatus {
     currentTime: Date;
     message?: string;
 }
+
+/**
+ * Telegram API Error response
+ */
+export interface TelegramApiError {
+    ok: boolean;
+    error_code: number;
+    description: string;
+}
