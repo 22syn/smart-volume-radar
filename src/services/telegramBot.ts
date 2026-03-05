@@ -329,7 +329,7 @@ const STOCK_ROW_FORMAT = 'TICKER | RVOL X.XXx | Price ±X.XX% | RSI XX | Setup';
 function formatStockRow(stock: StockData, setupEmoji: '🎯' | '👀' | '—'): string {
     const sign = stock.priceChange >= 0 ? '+' : '';
     const rsi = stock.rsi != null ? stock.rsi.toFixed(0) : '—';
-    return `${stock.ticker} | RVOL ${stock.rvol.toFixed(2)}x | Price ${sign}${stock.priceChange.toFixed(2)}% | RSI ${rsi} | ${setupEmoji}`;
+    return `${escapeHtml(stock.ticker)} | RVOL ${stock.rvol.toFixed(2)}x | Price ${sign}${stock.priceChange.toFixed(2)}% | RSI ${rsi} | ${setupEmoji}`;
 }
 
 /**
@@ -463,7 +463,7 @@ async function buildLlmSummaryMessage(
     const llmDataHeader = formatMessageDataHeader(date, topSignals.length, volumeWithoutPrice.length, 'LLM Summary');
     const setupRef = formatSetupReference(topSignals, volumeWithoutPrice);
     const tickersSent = allSignalRows.map((r) => r.split('|')[0].trim()).join(', ');
-    const rvolNote = llmMinRvol > 0 ? ` (RVOL>${llmMinRvol})` : '';
+    const rvolNote = llmMinRvol > 0 ? ` (RVOL&gt;${llmMinRvol})` : '';
     const scopeLine =
         scope?.watchlistCount != null
             ? `\n<i>✅ נסרקו ${scope.watchlistCount} מניות מ-Sheets | ל-LLM נשלחו ${allSignalRows.length}${rvolNote}: ${tickersSent}</i>\n\n`
