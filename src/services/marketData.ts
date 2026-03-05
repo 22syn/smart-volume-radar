@@ -296,7 +296,7 @@ export async function fetchAllStocks(tickers: string[]): Promise<FetchAllStocksR
             logger.info(`✅ ${ticker}: RVOL=${formatRVOL(result.rvol)} (${successSource})`);
             return { ticker, data: result };
         } else {
-            logger.warn(`❌ ${ticker}: No data from any source`);
+            logger.warn(`❌ ${ticker}: No data from any source (Yahoo or Twelve Data). Check for typos or if the symbol is delisted.`);
             return { ticker, data: null };
         }
     }));

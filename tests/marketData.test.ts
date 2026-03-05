@@ -27,6 +27,7 @@ const mockFetch = jest.fn();
 global.fetch = mockFetch as typeof fetch;
 
 import { fetchAllStocks } from '../src/services/marketData.js';
+import logger from '../src/utils/logger.js';
 
 function createYahooChartResponse(ticker: string): object {
     const volumes = Array(70).fill(1000000);
@@ -61,13 +62,18 @@ describe('fetchAllStocks', () => {
         expect(failedTickers).toHaveLength(0);
     });
 
-    it('returns failedTickers when Yahoo returns no data', async () => {
+    it('returns failedTickers and logs warning when all sources return no data', async () => {
         const emptyYahoo = { chart: { result: [] } };
-        mockFetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(emptyYahoo) });
+        mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve(emptyYahoo) });
+        const warnSpy = jest.spyOn(logger, 'warn');
 
         const { stocks, failedTickers } = await fetchAllStocks(['BAD']);
         expect(stocks).toHaveLength(0);
         expect(failedTickers).toContain('BAD');
+        expect(warnSpy).toHaveBeenCalledWith(
+            expect.stringContaining('No data from any source (Yahoo or Twelve Data)')
+        );
+        warnSpy.mockRestore();
     });
 
     it('handles multiple tickers', async () => {
