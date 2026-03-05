@@ -30,6 +30,8 @@ async function fetchFromYahooChart(ticker: string): Promise<StockData | null> {
                 logger.warn(`⚠️ Yahoo Chart API rate limited for ${ticker}`);
             } else if (response.status === 404) {
                 logger.warn(`❌ Ticker not found on Yahoo Chart: ${ticker}`);
+            } else {
+                logger.warn(`❌ Yahoo Chart API error ${response.status} for ${ticker}`);
             }
             return null;
         }
@@ -53,7 +55,10 @@ async function fetchFromYahooChart(ticker: string): Promise<StockData | null> {
 
         // Must have at least one price data point to be useful.
         // Returning null here marks ticker as "Failed to fetch" (e.g., truly empty response).
-        if (closes.length < 1) return null;
+        if (closes.length < 1) {
+            logger.warn(`⚠️ No price history found on Yahoo Chart for ${ticker}`);
+            return null;
+        }
 
         // Current volume is the last entry
         const currentVolume = volumes.length > 0 ? volumes[volumes.length - 1] : 0;
@@ -193,9 +198,24 @@ async function fetchFromTwelveData(ticker: string): Promise<StockData | null> {
     try {
         const url = `${TWELVE_DATA_BASE}/quote?symbol=${encodeURIComponent(ticker)}&apikey=${apiKey}`;
         const response = await fetch(url);
+
+        if (!response.ok) {
+            if (response.status === 429) {
+                logger.warn(`⚠️ Twelve Data API rate limited for ${ticker}`);
+            } else if (response.status === 404) {
+                logger.warn(`❌ Ticker not found on Twelve Data: ${ticker}`);
+            } else {
+                logger.warn(`❌ Twelve Data API error ${response.status} for ${ticker}`);
+            }
+            return null;
+        }
+
         const data = await response.json() as any;
 
         if (data.status === 'error' || !data.close) {
+            if (data.status === 'error') {
+                logger.warn(`❌ Twelve Data error for ${ticker}: ${data.message || 'Unknown error'}`);
+            }
             return null;
         }
 
