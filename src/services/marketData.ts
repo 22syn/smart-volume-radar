@@ -49,11 +49,8 @@ async function fetchFromYahooChart(ticker: string): Promise<StockData | null> {
         const volumes = indicators?.volume?.filter((v: number | null) => v !== null && v > 0) || [];
         const closes = indicators?.close?.filter((c: number | null) => c !== null && c > 0) || [];
 
-        const isIndex = ticker.startsWith('^');
-
-        // Allow indices to have zero volume data, but must have price data
+        // Allow tickers (including indices) to have zero volume data, but must have price data
         if (closes.length < 2) return null;
-        if (!isIndex && volumes.length < 5) return null;
 
         // Current volume is the last entry
         const currentVolume = volumes.length > 0 ? volumes[volumes.length - 1] : 0;
@@ -191,7 +188,17 @@ async function fetchFromTwelveData(ticker: string): Promise<StockData | null> {
     try {
         const url = `${TWELVE_DATA_BASE}/quote?symbol=${encodeURIComponent(ticker)}&apikey=${apiKey}`;
         const response = await fetch(url);
-        const data = await response.json() as any;
+
+        if (!response.ok) {
+            if (response.status === 429) {
+                logger.warn(`⚠️ Twelve Data API rate limited for ${ticker}`);
+            } else if (response.status === 404) {
+                logger.warn(`❌ Ticker not found on Twelve Data: ${ticker}`);
+            }
+            return null;
+        }
+
+        const data = (await response.json()) as any;
 
         if (data.status === 'error' || !data.close) {
             return null;

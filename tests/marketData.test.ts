@@ -102,4 +102,25 @@ describe('fetchAllStocks', () => {
         expect(stocks[0].rvol).toBe(0);
         expect(failedTickers).toHaveLength(0);
     });
+
+    it('supports regular stocks with no volume data (rvol=0)', async () => {
+        const stockNoVolResponse = {
+            chart: {
+                result: [{
+                    meta: { regularMarketPrice: 50 },
+                    indicators: { quote: [{ volume: [], close: [48, 50] }] },
+                }],
+            },
+        };
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: () => Promise.resolve(stockNoVolResponse),
+        });
+
+        const { stocks, failedTickers } = await fetchAllStocks(['LOWVOL']);
+        expect(stocks).toHaveLength(1);
+        expect(stocks[0].ticker).toBe('LOWVOL');
+        expect(stocks[0].rvol).toBe(0);
+        expect(failedTickers).toHaveLength(0);
+    });
 });
