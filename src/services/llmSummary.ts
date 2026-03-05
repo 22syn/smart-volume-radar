@@ -352,7 +352,7 @@ export interface ParsedLlmReply {
     reason?: string;
 }
 
-const LLM_REPLY_REGEX = /My:\s*([🎯👀—])\s*\|?\s*Match:\s*(yes|no)\s*\|?\s*Analysis:\s*(.+)/i;
+const LLM_REPLY_REGEX = /My:\s*([🎯👀—])\s*\|?\s*Match:\s*(yes|no)\s*\|?\s*Analysis:\s*(.+)/iu;
 
 /**
  * Parse LLM reply to extract verdict, match, and reason. Falls back gracefully if format varies.
