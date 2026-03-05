@@ -28,6 +28,8 @@ async function fetchFromYahooChart(ticker: string): Promise<StockData | null> {
         if (!response.ok) {
             if (response.status === 429) {
                 logger.warn(`⚠️ Yahoo Chart API rate limited for ${ticker}`);
+            } else if (response.status === 404) {
+                logger.warn(`❌ Ticker not found on Yahoo Chart: ${ticker}`);
             }
             return null;
         }
@@ -43,30 +45,28 @@ async function fetchFromYahooChart(ticker: string): Promise<StockData | null> {
         const meta = result.meta;
         const indicators = result.indicators?.quote?.[0];
 
-        if (!indicators?.volume || indicators.volume.length === 0) {
-            return null;
-        }
-
         // Get volumes and closes (filter out nulls)
-        const volumes = indicators.volume.filter((v: number | null) => v !== null && v > 0);
-        const closes = indicators.close?.filter((c: number | null) => c !== null && c > 0) || [];
+        const volumes = indicators?.volume?.filter((v: number | null) => v !== null && v > 0) || [];
+        const closes = indicators?.close?.filter((c: number | null) => c !== null && c > 0) || [];
 
-        if (volumes.length < 5 || closes.length < 2) return null;
+        const isIndex = ticker.startsWith('^');
+
+        // Allow indices to have zero volume data, but must have price data
+        if (closes.length < 2) return null;
+        if (!isIndex && volumes.length < 5) return null;
 
         // Current volume is the last entry
-        const currentVolume = volumes[volumes.length - 1] || 0;
+        const currentVolume = volumes.length > 0 ? volumes[volumes.length - 1] : 0;
 
         // Average volume: 63-day SMA (industry standard ~3-month lookback for RVOL)
         const VOLUME_RVOL_LOOKBACK = 63;
-        const historicalVolumes = volumes.slice(0, -1);
+        const historicalVolumes = volumes.length > 0 ? volumes.slice(0, -1) : [];
         const lookbackVolumes = historicalVolumes.slice(-VOLUME_RVOL_LOOKBACK);
         const avgVolume = lookbackVolumes.length > 0
             ? lookbackVolumes.reduce((a: number, b: number) => a + b, 0) / lookbackVolumes.length
             : 0;
 
-        if (avgVolume === 0) return null;
-
-        const rvol = currentVolume / avgVolume;
+        const rvol = avgVolume > 0 ? currentVolume / avgVolume : 0;
 
         // Calculate price change from close prices
         const currentClose = closes[closes.length - 1];

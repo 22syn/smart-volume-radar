@@ -81,4 +81,25 @@ describe('fetchAllStocks', () => {
         expect(stocks[0].ticker).toBe('AAPL');
         expect(failedTickers).toContain('FAIL');
     });
+
+    it('supports indices with no volume data (rvol=0)', async () => {
+        const indexResponse = {
+            chart: {
+                result: [{
+                    meta: { regularMarketPrice: 4000 },
+                    indicators: { quote: [{ volume: [], close: [3900, 4000] }] },
+                }],
+            },
+        };
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: () => Promise.resolve(indexResponse),
+        });
+
+        const { stocks, failedTickers } = await fetchAllStocks(['^TNX']);
+        expect(stocks).toHaveLength(1);
+        expect(stocks[0].ticker).toBe('^TNX');
+        expect(stocks[0].rvol).toBe(0);
+        expect(failedTickers).toHaveLength(0);
+    });
 });
