@@ -72,6 +72,15 @@ export const config = {
     // CI / dev
     forceScan: process.env.FORCE_SCAN === 'true',
     debug: process.env.DEBUG === 'true',
+
+    /** Format precision — shared by code display and LLM input for consistency */
+    formatPrecision: {
+        price: 2,
+        pct: 2,
+        base: 2,
+        rvol: 2,
+        rsi: 0,
+    } as const,
 } as const;
 
 /** Valid ticker: 1-5 alphanumeric chars, optional .XX exchange suffix */
