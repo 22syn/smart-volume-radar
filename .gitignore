@@ -34,3 +34,6 @@ temp/
 
 # Maestro AI
 .agent/
+
+# Scan results (stored daily)
+results/

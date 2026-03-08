@@ -12,6 +12,7 @@ import { sendDailyReport, sendTelegramMessage } from './services/telegramBot.js'
 import { RVOLResult, MarketStatus } from './types/index.js';
 import logger from './utils/logger.js';
 import { formatErrorForTelegram } from './utils/errorHandler.js';
+import { buildStoredScanResult, writeScanResults } from './utils/writeScanResults.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -176,6 +177,11 @@ async function main(): Promise<void> {
                 reasonFetchFailed: fixableFailed.length,
             },
         });
+
+        const stored = buildStoredScanResult(today, finalSignals, volumeWithoutPrice);
+        const resultsDir = path.join(__dirname, '..', 'results');
+        writeScanResults(stored, resultsDir);
+        logger.info(`📁 Saved results to ${resultsDir}/scan-${today}.json`);
 
         // 9. Write run-issues for Jules – only fixable tickers; skip if same issues as last Jules run (one fix attempt)
         const hasFixable = fixableInvalid.length > 0 || fixableFailed.length > 0;
