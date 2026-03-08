@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- **Signal results persistence & weekly setup evaluation:** Save scan results as artifacts, evaluate full setup (🎯) performance, send summary to Telegram on Sundays
 - **Jules run-issues auto-fix:** When daily scan has invalid tickers or fetch failures, writes `.scan-issues.json` and invokes Jules to fix (extend TICKER_REGEX, improve fetch). Jules opens `fix/daily-scan-run-issues-*` PR; merge triggers re-run via existing verify-and-merge flow
 - **Run issues in Telegram:** Invalid tickers and failed-fetch list appear at top of first message for visibility
 - **Jules improvements:** `docs/standards-for-ci.md` — SSoT export for CI (derived from Maestro vault)
