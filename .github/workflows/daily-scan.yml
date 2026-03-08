@@ -52,6 +52,18 @@ jobs:
           FORCE_SCAN: 'true'
         run: npm run start
 
+      - name: Set artifact name
+        id: artifact
+        run: echo "name=scan-$(date -u +%Y-%m-%d)" >> $GITHUB_OUTPUT
+
+      - name: Upload scan results
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: results/
+          retention-days: 90
+
       - name: Report success
         if: success() && !hashFiles('.scan-issues.json')
         run: echo "✅ Smart Volume Radar completed successfully"
