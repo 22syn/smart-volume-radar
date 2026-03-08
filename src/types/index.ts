@@ -79,6 +79,21 @@ export interface ScanResults {
     executionTimeMs: number;
 }
 
+/** Per-stock entry for stored results (evaluate uses setupType) */
+export interface StoredSignal {
+    ticker: string;
+    lastPrice: number;
+    rvol: number;
+    setupType: 'full' | 'close' | 'none';
+    source: 'topSignals' | 'volumeWithoutPrice';
+}
+
+/** Daily scan output for persistence and evaluation */
+export interface StoredScanResult {
+    date: string; // YYYY-MM-DD
+    signals: StoredSignal[];
+}
+
 /**
  * API response from Finnhub news endpoint
  */
