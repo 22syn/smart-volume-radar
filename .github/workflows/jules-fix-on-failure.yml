@@ -12,11 +12,13 @@ on:
     branches: [main]
 
 jobs:
-  # 1. Daily scan failed → invoke Jules
+  # 1. Daily scan failed → invoke Jules (only for scheduled runs, not re-runs)
+  # Single fix attempt: schedule fails → fix → re-run. If re-run fails, no retry (no loop).
   invoke-jules:
     if: |
       github.event_name == 'workflow_run' &&
-      github.event.workflow_run.conclusion == 'failure'
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'schedule'
     runs-on: ubuntu-latest
     permissions:
       contents: read
