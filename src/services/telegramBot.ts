@@ -428,7 +428,7 @@ function formatRunIssuesSection(
     }
     if (failedTickers.length > 0) {
         parts.push(
-            `⚠️ <b>לא הצלחנו לשלוף נתונים:</b> <code>${failedTickers.map((t) => escapeHtml(t)).join(', ')}</code>\n<i>(בדקו שגיאות כתיב, אם הסימול נמחק מהבורסה, או אם חסרה סיומת בורסה כמו .L או .TA)</i>`
+            `⚠️ <b>לא הצלחנו לשלוף נתונים:</b> <code>${failedTickers.map((t) => escapeHtml(t)).join(', ')}</code>\n<i>(בדקו שגיאות כתיב (למשל COBE במקום CBOE), אם הסימול נמחק, חסרה סיומת בורסה (.L, .TA) או פורמט שגוי (למשל BRK.B במקום BRK-B))</i>`
         );
     }
     if (summary === '' && parts.length === 0) return '';
