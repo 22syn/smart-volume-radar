@@ -66,7 +66,7 @@ export async function sendTelegramMessage(message: string): Promise<void> {
 }
 
 function formatReportHeader(date: string, bullish: number, bearish: number): string {
-    return `🛰 <b>SMART VOLUME RADAR</b>\n📅 <code>${date}</code>\n🎭 Sentiment: ${bullish} 🟢 | ${bearish} 🔴\n<i>🟢 כניסה ירוקה (RVOL+מחיר) | 🔵 כניסה כחולה (3 תגיות)</i>\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    return `🛰 <b>SMART VOLUME RADAR</b>\n📅 <code>${date}</code>\n🎭 Sentiment: ${bullish} 🟢 | ${bearish} 🔴\n<i>🟢 כניסה ירוקה (RVOL+מחיר) | 🔵 כניסה כחולה (3 תגיות) — RVOL ומחיר לצורך מידע בלבד</i>\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 }
 
 function buildStockUrls(stock: RVOLResult): { tvUrl: string; yahooUrl: string; newsUrl: string; newsLabel: string } {
