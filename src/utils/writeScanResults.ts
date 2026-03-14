@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { RVOLResult, StockData, StoredSignal, StoredScanResult } from '../types/index.js';
+import type { ScanDebugInfo } from '../services/rvolCalculator.js';
 
 export function buildStoredScanResult(
     date: string,
@@ -32,6 +33,25 @@ export function writeScanResults(result: StoredScanResult, outDir: string): void
     fs.mkdirSync(outDir, { recursive: true });
     const serialized = JSON.stringify(
         result,
+        (_, v) => (v instanceof Date ? v.toISOString() : v),
+        2
+    );
+    fs.writeFileSync(file, serialized + '\n', 'utf-8');
+}
+
+/** Payload for scan-debug-{date}.json — for investigating missing signals */
+export interface ScanDebugPayload {
+    date: string;
+    failedTickers: string[];
+    fetchedCount: number;
+    debug: ScanDebugInfo;
+}
+
+export function writeScanDebug(payload: ScanDebugPayload, outDir: string): void {
+    const file = path.join(outDir, `scan-debug-${payload.date}.json`);
+    fs.mkdirSync(outDir, { recursive: true });
+    const serialized = JSON.stringify(
+        payload,
         (_, v) => (v instanceof Date ? v.toISOString() : v),
         2
     );

@@ -9,12 +9,32 @@ import { getTagCount, hasAllThreeTags } from '../utils/tags.js';
 
 export { formatRVOL, formatPriceChange } from '../utils/formatters.js';
 
+/** Debug entry for scan investigation */
+export interface ScanDebugEntry {
+    ticker: string;
+    rvol: number;
+    priceChange: number;
+    rank: number;
+}
+
+/** Debug info written to scan-debug-{date}.json for future investigation */
+export interface ScanDebugInfo {
+    greenSortedFull: ScanDebugEntry[];
+    greenCount: number;
+    blueOnlyCount: number;
+    topN: number;
+    minRVOL: number;
+    priceChangeThreshold: number;
+}
+
 /**
  * RVOL calculation results
  */
 export interface RVOLCalcResult {
     topSignals: StockData[];
     volumeWithoutPrice: StockData[];
+    /** Always present for scan-debug file; use for investigation when signals are missing */
+    debug: ScanDebugInfo;
 }
 
 /**
@@ -59,9 +79,12 @@ export function calculateRVOL(stocks: StockData[], rvolConfig: RVOLConfig): RVOL
     const topSignals = [...topByGreen, ...blueToAdd];
 
     // Volume without Price: high RVOL but low price change (silent accumulation)
+    // Exclude tickers already in topSignals to avoid duplicates (blue-path stocks with low price change)
+    const topTickersSet = new Set(topSignals.map((s) => s.ticker));
     const highRVOL = stocks.filter((s) => s.rvol >= minRVOL);
     const volumeWithoutPrice = highRVOL.filter(
-        (s) => Math.abs(s.priceChange) < priceChangeThreshold
+        (s) =>
+            Math.abs(s.priceChange) < priceChangeThreshold && !topTickersSet.has(s.ticker)
     );
 
     if (volumeWithoutPrice.length > 0) {
@@ -70,7 +93,23 @@ export function calculateRVOL(stocks: StockData[], rvolConfig: RVOLConfig): RVOL
         );
     }
 
-    return { topSignals, volumeWithoutPrice };
+    const greenSortedFull: ScanDebugEntry[] = green.map((s, i) => ({
+        ticker: s.ticker,
+        rvol: s.rvol,
+        priceChange: s.priceChange,
+        rank: i + 1,
+    }));
+
+    const debug: ScanDebugInfo = {
+        greenSortedFull,
+        greenCount: green.length,
+        blueOnlyCount: blueOnly.length,
+        topN,
+        minRVOL,
+        priceChangeThreshold,
+    };
+
+    return { topSignals, volumeWithoutPrice, debug };
 }
 
 /**

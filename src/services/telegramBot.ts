@@ -137,7 +137,6 @@ function formatVolumeWithoutPriceSection(volumeWithoutPrice: StockData[]): strin
     if (volumeWithoutPrice.length === 0) return '';
     const items = volumeWithoutPrice
         .sort((a, b) => b.rvol - a.rvol)
-        .slice(0, 5)
         .map((s) => {
             const tags = formatTagsForDisplay(s);
             return `• <b>${escapeHtml(s.ticker)}</b> (${formatRVOL(s.rvol)})${tags ? ` 🏷 ${escapeHtml(tags)}` : ''}`;

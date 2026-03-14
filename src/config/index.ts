@@ -25,7 +25,7 @@ function parseIntEnv(key: string, defaultVal: number): number {
 export const config = {
     // RVOL thresholds
     minRVOL: parseFloatEnv('MIN_RVOL', 2.0),
-    topN: parseIntEnv('TOP_N', 15),
+    topN: parseIntEnv('TOP_N', 999),
     priceChangeThreshold: parseFloatEnv('PRICE_CHANGE_THRESHOLD', 2),
 
     // Consolidation / pre-breakout indicators (flexible: show full ✓ and close ~)
@@ -265,12 +265,23 @@ function getTickers(): TickerConfig[] {
 }
 
 /**
- * Load tickers for scanning
- * @returns Array of ticker symbols
+ * Load tickers for scanning (deduped by symbol; first occurrence wins)
+ * Duplicates come from repeated rows in the Google Sheet watchlist.
  */
 export function loadWatchlist(): string[] {
     const tickers = getTickers();
-    return tickers.map(t => t.symbol.toUpperCase());
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const t of tickers) {
+        const key = t.symbol.toUpperCase();
+        if (seen.has(key)) {
+            logger.info(`Duplicate ticker skipped: ${t.symbol}`);
+            continue;
+        }
+        seen.add(key);
+        out.push(key);
+    }
+    return out;
 }
 
 /**

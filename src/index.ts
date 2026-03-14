@@ -12,7 +12,7 @@ import { sendDailyReport, sendTelegramMessage } from './services/telegramBot.js'
 import { RVOLResult, MarketStatus } from './types/index.js';
 import logger from './utils/logger.js';
 import { formatErrorForTelegram } from './utils/errorHandler.js';
-import { buildStoredScanResult, writeScanResults } from './utils/writeScanResults.js';
+import { buildStoredScanResult, writeScanResults, writeScanDebug } from './utils/writeScanResults.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -122,7 +122,7 @@ async function main(): Promise<void> {
 
         // 6. Calculate RVOL and filter
         logger.info('🔢 Calculating RVOL...');
-        const { topSignals, volumeWithoutPrice } = calculateRVOL(stocks, {
+        const { topSignals, volumeWithoutPrice, debug } = calculateRVOL(stocks, {
             minRVOL: config.minRVOL,
             topN: config.topN,
             priceChangeThreshold: config.priceChangeThreshold,
@@ -181,7 +181,12 @@ async function main(): Promise<void> {
         const stored = buildStoredScanResult(today, finalSignals, volumeWithoutPrice);
         const resultsDir = path.join(__dirname, '..', 'results');
         writeScanResults(stored, resultsDir);
+        writeScanDebug(
+            { date: today, failedTickers, fetchedCount: stocks.length, debug },
+            resultsDir
+        );
         logger.info(`📁 Saved results to ${resultsDir}/scan-${today}.json`);
+        logger.info(`📋 Saved scan-debug to ${resultsDir}/scan-debug-${today}.json (greenSortedFull, failedTickers, for investigation)`);
 
         // 9. Write run-issues for Jules – only fixable tickers; skip if same issues as last Jules run (one fix attempt)
         const hasFixable = fixableInvalid.length > 0 || fixableFailed.length > 0;

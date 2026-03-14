@@ -15,6 +15,158 @@ const COMMON_TYPO_FALLBACKS: Record<string, string> = {
     'COBE': 'CBOE',
 };
 
+/** Options for parseYahooChartResult (e.g. replay mode skips Twelve Data) */
+export interface ParseYahooOptions {
+    /** When true, skip Twelve Data RSI/SMA fetch (for historical replay) */
+    skipTwelveData?: boolean;
+}
+
+/**
+ * Parse Yahoo chart result into StockData. Same logic as production fetchFromYahooChart.
+ * Exported for replay scripts that need to run production code on historical data.
+ */
+/** Yahoo chart result shape (chart.result[0]) */
+type YahooChartResult = {
+    meta?: { regularMarketPrice?: number };
+    indicators?: { quote?: Array<{ close?: (number | null)[]; high?: (number | null)[]; low?: (number | null)[]; volume?: (number | null)[] }> };
+};
+
+export async function parseYahooChartResult(
+    result: YahooChartResult,
+    ticker: string,
+    opts: ParseYahooOptions = {}
+): Promise<StockData | null> {
+    const { skipTwelveData = false } = opts;
+    const meta = result.meta;
+    const indicators = result.indicators?.quote?.[0];
+
+    const rawCloses = indicators?.close ?? [];
+    const rawHighs = indicators?.high ?? [];
+    const rawLows = indicators?.low ?? [];
+    const volumes = (indicators?.volume?.filter((v): v is number => v != null && v > 0) ?? []) as number[];
+    const closes: number[] = [];
+    const highs: number[] = [];
+    const lows: number[] = [];
+    for (let i = 0; i < rawCloses.length; i++) {
+        const c = rawCloses[i];
+        if (c != null && c > 0) {
+            closes.push(c);
+            const h = rawHighs[i];
+            const l = rawLows[i];
+            highs.push(h != null && h > 0 ? h : c);
+            lows.push(l != null && l > 0 ? l : c);
+        }
+    }
+
+    const isIndex = ticker.startsWith('^');
+    if (closes.length < 1) return null;
+
+    const currentVolume = volumes.length > 0 ? volumes[volumes.length - 1] : 0;
+    const VOLUME_RVOL_LOOKBACK = 63;
+    const historicalVolumes = volumes.length > 0 ? volumes.slice(0, -1) : [];
+    const lookbackVolumes = historicalVolumes.slice(-VOLUME_RVOL_LOOKBACK);
+    const avgVolume = lookbackVolumes.length > 0
+        ? lookbackVolumes.reduce((a, b) => a + (b ?? 0), 0) / lookbackVolumes.length
+        : 0;
+    const rvol = (isIndex || historicalVolumes.length >= 5) && avgVolume > 0 ? currentVolume / avgVolume : 0;
+
+    const currentClose = closes[closes.length - 1];
+    const previousClose = closes.length >= 2 ? closes[closes.length - 2] : 0;
+    const priceChange = previousClose > 0 ? ((currentClose - previousClose) / previousClose) * 100 : 0;
+
+    const sma21 = calculateSMA(closes, 21);
+    const sma50 = calculateSMA(closes, 50);
+    const sma200 = calculateSMA(closes, 200);
+    const rsi = calculateRSI(closes, 14);
+    const lastPrice = meta?.regularMarketPrice || currentClose || 0;
+    const athData = calculate52wHighAndConsolidation(closes);
+
+    let finalSma21 = sma21;
+    let finalRsi = rsi;
+    if (!skipTwelveData && config.useFetchedIndicators && process.env.TWELVE_DATA_API_KEY) {
+        const fetched = await fetchIndicatorsFromTwelveData(ticker, process.env.TWELVE_DATA_API_KEY);
+        if (fetched.rsi != null) finalRsi = fetched.rsi;
+        if (fetched.sma21 != null) finalSma21 = fetched.sma21;
+    }
+
+    const lastDayLow = lows.length > 0 ? lows[lows.length - 1] : undefined;
+    const lastDayHigh = highs.length > 0 ? highs[highs.length - 1] : undefined;
+    const tags = computeNewlogicTags({
+        sma21: finalSma21,
+        lastDayLow,
+        lastDayHigh,
+        pctFromAth: athData?.pctFromAth,
+        closes,
+    });
+
+    return {
+        ticker,
+        currentVolume,
+        avgVolume,
+        rvol,
+        priceChange,
+        lastPrice,
+        sma21: finalSma21,
+        sma50,
+        sma200,
+        rsi: finalRsi,
+        ath: athData?.ath,
+        athSource: '52w',
+        pctFromAth: athData?.pctFromAth,
+        monthsInConsolidation: athData?.monthsInConsolidation,
+        lastDayLow,
+        lastDayHigh,
+        tags,
+    };
+}
+
+/**
+ * Fetch Yahoo chart data as of a specific date. Fetches full history, slices to asOfDate,
+ * then runs production parseYahooChartResult (same buggy volume logic). For replay/investigation.
+ */
+export async function fetchYahooChartAsOfDate(ticker: string, asOfDate: string): Promise<StockData | null> {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5y`;
+    const response = await fetch(url, {
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json',
+        },
+    });
+    if (!response.ok) return null;
+
+    const data = (await response.json()) as { chart?: { result?: unknown[] } };
+    const result = data?.chart?.result?.[0] as { meta?: unknown; timestamp?: number[]; indicators?: { quote?: Array<{ close?: (number | null)[]; high?: (number | null)[]; low?: (number | null)[]; volume?: (number | null)[] }> } } | undefined;
+    if (!result?.timestamp?.length) return null;
+
+    const ts = result.timestamp;
+    const quote = result.indicators?.quote?.[0];
+    if (!quote) return null;
+
+    const asOfEnd = new Date(asOfDate + 'T23:59:59Z').getTime() / 1000;
+    let lastIdx = -1;
+    for (let i = 0; i < ts.length; i++) {
+        if (ts[i]! <= asOfEnd) lastIdx = i;
+    }
+    if (lastIdx < 0) return null;
+
+    const slice = <T>(arr: T[] | undefined): T[] => (arr ? arr.slice(0, lastIdx + 1) : []);
+
+    const sliced: typeof result = {
+        meta: result.meta,
+        timestamp: slice(ts),
+        indicators: {
+            quote: [{
+                close: slice(quote.close),
+                high: slice(quote.high),
+                low: slice(quote.low),
+                volume: slice(quote.volume),
+            }],
+        },
+    };
+
+    return parseYahooChartResult(sliced as YahooChartResult, ticker, { skipTwelveData: true });
+}
+
 /**
  * Direct fetch from Yahoo Finance chart API
  * Uses 5y range for price history; 52w high and consolidation use last 252 days
@@ -64,108 +216,7 @@ async function fetchFromYahooChart(ticker: string, isFallback = false, attempt =
             return null;
         }
 
-        const meta = result.meta;
-        const indicators = result.indicators?.quote?.[0];
-
-        // Get volumes, closes, highs, lows (filter nulls; align by index)
-        const rawCloses = indicators?.close ?? [];
-        const rawHighs = indicators?.high ?? [];
-        const rawLows = indicators?.low ?? [];
-        const volumes = indicators?.volume?.filter((v: number | null) => v !== null && v > 0) || [];
-        const closes: number[] = [];
-        const highs: number[] = [];
-        const lows: number[] = [];
-        for (let i = 0; i < rawCloses.length; i++) {
-            const c = rawCloses[i];
-            if (c != null && c > 0) {
-                closes.push(c);
-                const h = rawHighs[i];
-                const l = rawLows[i];
-                highs.push(h != null && h > 0 ? h : c);
-                lows.push(l != null && l > 0 ? l : c);
-            }
-        }
-
-        const isIndex = ticker.startsWith('^');
-
-        // Must have at least one price data point to be useful.
-        // Returning null here marks ticker as "Failed to fetch" (e.g., truly empty response).
-        if (closes.length < 1) {
-            logger.warn(`⚠️ No price history found on Yahoo Chart for ${ticker}`);
-            return null;
-        }
-
-        // Current volume is the last entry
-        const currentVolume = volumes.length > 0 ? volumes[volumes.length - 1] : 0;
-
-        // Average volume: 63-day SMA (industry standard ~3-month lookback for RVOL)
-        const VOLUME_RVOL_LOOKBACK = 63;
-        const historicalVolumes = volumes.length > 0 ? volumes.slice(0, -1) : [];
-        const lookbackVolumes = historicalVolumes.slice(-VOLUME_RVOL_LOOKBACK);
-        const avgVolume = lookbackVolumes.length > 0
-            ? lookbackVolumes.reduce((a: number, b: number) => a + b, 0) / lookbackVolumes.length
-            : 0;
-
-        // Require 5+ volume days for a valid RVOL calculation (unless it's an index).
-        // For stocks with insufficient volume history, we return them with rvol=0 to avoid "Failed to fetch" noise.
-        const rvol = (isIndex || volumes.length >= 5) && avgVolume > 0 ? currentVolume / avgVolume : 0;
-
-        // Calculate price change from close prices (requires at least 2 points for valid % change)
-        const currentClose = closes[closes.length - 1];
-        const previousClose = closes.length >= 2 ? closes[closes.length - 2] : 0;
-        const priceChange = previousClose > 0 ? ((currentClose - previousClose) / previousClose) * 100 : 0;
-
-        // Calculate Technical Indicators
-        const sma21 = calculateSMA(closes, 21);
-        const sma50 = calculateSMA(closes, 50);
-        const sma200 = calculateSMA(closes, 200);
-        const rsi = calculateRSI(closes, 14);
-
-        const lastPrice = meta.regularMarketPrice || currentClose || 0;
-
-        // 52-week high and consolidation
-        const athData = calculate52wHighAndConsolidation(closes);
-        const ath = athData?.ath;
-        const pctFromAth = athData?.pctFromAth;
-
-        let finalSma21 = sma21;
-        let finalRsi = rsi;
-
-        if (config.useFetchedIndicators && process.env.TWELVE_DATA_API_KEY) {
-            const fetched = await fetchIndicatorsFromTwelveData(ticker, process.env.TWELVE_DATA_API_KEY);
-            if (fetched.rsi != null) finalRsi = fetched.rsi;
-            if (fetched.sma21 != null) finalSma21 = fetched.sma21;
-        }
-
-        const lastDayLow = lows.length > 0 ? lows[lows.length - 1] : undefined;
-        const lastDayHigh = highs.length > 0 ? highs[highs.length - 1] : undefined;
-        const tags = computeNewlogicTags({
-            sma21: finalSma21,
-            lastDayLow,
-            lastDayHigh,
-            pctFromAth,
-            closes,
-        });
-
-        return {
-            ticker,
-            currentVolume,
-            avgVolume,
-            rvol,
-            priceChange,
-            lastPrice,
-            sma21: finalSma21,
-            sma50,
-            sma200,
-            rsi: finalRsi,
-            ath,
-            athSource: '52w',
-            pctFromAth,
-            monthsInConsolidation: athData?.monthsInConsolidation,
-            lastDayLow,
-            lastDayHigh,
-            tags,
-        };
+        return parseYahooChartResult(result, ticker, { skipTwelveData: false });
     } catch (error) {
         if (attempt === 1) {
             logger.warn(`⚠️ Chart fetch failed for ${ticker} (${(error as Error).message}), retrying...`);

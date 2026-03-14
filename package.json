@@ -13,7 +13,8 @@
     "test:coverage": "jest --coverage",
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write \"src/**/*.ts\"",
-    "evaluate-setups": "tsx scripts/evaluate-setups.ts"
+    "evaluate-setups": "tsx scripts/evaluate-setups.ts",
+    "validate-scan": "tsx scripts/validate-scan.ts"
   },
   "keywords": [
     "stocks",
