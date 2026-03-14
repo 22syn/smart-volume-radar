@@ -2,14 +2,17 @@ name: Weekly Setup Evaluation
 
 on:
   schedule:
-    # Sunday 10:00 UTC (0 = Sunday in cron)
-    - cron: '0 10 * * 0'
+    # Saturday 10:00 UTC (6 = Saturday in cron) — weekly summary after Friday's close
+    - cron: '0 10 * * 6'
   workflow_dispatch:
 
 jobs:
   evaluate:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read   # Required for gh run list + gh run download
 
     steps:
       - name: Checkout repository
