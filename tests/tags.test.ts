@@ -7,21 +7,19 @@ import { getTagCount, formatTagsForDisplay } from '../src/utils/tags.js';
 import type { StockData } from '../src/types/index.js';
 
 describe('computeNewlogicTags', () => {
-    it('returns SMA21 Touch when Low <= SMA21 <= High', () => {
+    it('returns SMA21 Touch when lastClose within threshold of sma21', () => {
         const tags = computeNewlogicTags({
             sma21: 100,
-            lastDayLow: 95,
-            lastDayHigh: 105,
+            lastClose: 101, // 1% from sma21, within default 3%
             closes: [100, 100, 100],
         });
         expect(tags).toContain('SMA21 Touch');
     });
 
-    it('returns no SMA21 Touch when range does not include SMA21', () => {
+    it('returns no SMA21 Touch when lastClose outside threshold', () => {
         const tags = computeNewlogicTags({
             sma21: 100,
-            lastDayLow: 105,
-            lastDayHigh: 110,
+            lastClose: 110, // 10% from sma21, outside default 3%
             closes: [100, 100, 100],
         });
         expect(tags).not.toContain('SMA21 Touch');

@@ -3,12 +3,15 @@
 ## Unreleased
 
 ### Added
-- **Newlogic tags:** Replaced Setup (🎯/👀) with independent tags: SMA21 Touch, Pullback 15%, 1M Breakout. Tags shown per stock; Silent Activity and Top Signals both receive tags.
+- **Momentum Edition:** Stage 2 Momentum Breakout scoring layer (Intel/AMKR/MXL pattern). 8 criteria — 4 mandatory (RVOL · Stage2 · Pivot · AVWAP) + 4 quality (LowRisk · Tightness · Ants · BigMove). Tiers: 🎯 Full / 🦅 Recovery (bull bounce, no SMA200 yet) / 👀 Watchlist. Regime-aware RVOL threshold (bull=2.0, bear=3.0). New helpers: `projectedRvol`, `calculateAVWAP`, `detectEarningsGap`, `calculateSMA200Slope`, `countConsecutiveGreenDays`. New file `src/utils/setup.ts` (the momentum brain).
+- **Monitor follow-up tracking:** New scan-to-scan state machine in `src/services/monitorTracker.ts` + `src/utils/monitorStore.ts`. Surfaces graduations, manual-entry candidates, SMA21 pullbacks, expirations as a separate Telegram message. Persists to `results/monitor-list.json` (now committed daily so CI runs share state).
+- **Newlogic tags:** Replaced legacy Setup (🎯/👀) with independent tags: SMA21 Touch, Pullback 15%, 1M Breakout. Tags travel with each stock; Silent Activity and Top Signals both receive tags.
 
 ### Changed
-- **Report logic:** Entry has two paths: (1) Green: RVOL ≥ 2 AND |priceChange| ≥ 2%; (2) Blue: all three tags (SMA21 Touch, Pullback 15%, 1M Breakout). Stock enters if green OR blue.
+- **Telegram report (BREAKING):** Now driven exclusively by momentum tiers (Full / Recovery / Watchlist). The legacy 3-path entry filter (Green / Pullback / SMA21) and the Silent Activity Watchlist section are no longer in Telegram output. Each stock block shows the full 8-criteria checklist (✓/✗), distance metrics (SMA21, ATH, days since ATH), and trend stack (Price vs SMA50, SMA50 vs SMA200, SMA200 slope). Stocks group by tier — Full appears before Watchlist regardless of RVOL.
+- **JSON history retained:** `scan-YYYY-MM-DD.json` still records the legacy 3-path + silent set so existing backtest scripts (`evaluate-setups`, `evaluate-retro-advanced`) keep working.
+- **TOP_N default:** 15 → 999 (effectively unlimited — momentum filter caps the report length organically).
 - **Weekly report:** Now lists all signals (no tag filter).
-- **Removed:** `setup.ts`, Full/Close Setup; `StoredSignal` uses `tags` array instead of `setupType`.
 
 ### Added 
 - **Signal results persistence & weekly setup evaluation:** Save scan results as artifacts, evaluate full setup (🎯) performance, send summary to Telegram on Sundays

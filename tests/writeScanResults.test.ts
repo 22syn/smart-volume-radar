@@ -28,12 +28,13 @@ describe('buildStoredScanResult', () => {
         const taggedStock: StockData = {
             ...baseStock,
             tags: ['SMA21 Touch', 'Pullback 15%'],
+            entryPath: 'green',
         };
         const result = buildStoredScanResult('2026-03-08', [toRVOLResult(taggedStock)], []);
         expect(result.date).toBe('2026-03-08');
         expect(result.signals).toHaveLength(1);
         expect(result.signals[0].tags).toEqual(['SMA21 Touch', 'Pullback 15%']);
-        expect(result.signals[0].source).toBe('topSignals');
+        expect(result.signals[0].source).toBe('topSignals-green');
         expect(result.signals[0].ticker).toBe('AAPL');
         expect(result.signals[0].lastPrice).toBe(100);
         expect(result.signals[0].rvol).toBe(2);
@@ -49,15 +50,39 @@ describe('buildStoredScanResult', () => {
         expect(result.signals[0].tags).toEqual([]);
     });
 
-    it('sets source "topSignals" for finalSignals and "volumeWithoutPrice" for volumeWithoutPrice', () => {
-        const stock: StockData = { ...baseStock, ticker: 'A' };
+    it('sets source "topSignals-green/pullback/sma21" for finalSignals and "volumeWithoutPrice" for volumeWithoutPrice', () => {
+        const stock: StockData = { ...baseStock, ticker: 'A', entryPath: 'green' };
         const silentStock: StockData = { ...baseStock, ticker: 'B', tags: ['1M Breakout'] };
         const result = buildStoredScanResult('2026-03-08', [toRVOLResult(stock)], [silentStock]);
         expect(result.signals).toHaveLength(2);
-        expect(result.signals[0].source).toBe('topSignals');
+        expect(result.signals[0].source).toBe('topSignals-green');
         expect(result.signals[0].ticker).toBe('A');
         expect(result.signals[1].source).toBe('volumeWithoutPrice');
         expect(result.signals[1].ticker).toBe('B');
+    });
+
+    it('sets source "topSignals-pullback" when entryPath is pullback', () => {
+        const pullbackStock: StockData = {
+            ...baseStock,
+            ticker: 'XYZ',
+            tags: ['Pullback 15%'],
+            entryPath: 'pullback',
+        };
+        const result = buildStoredScanResult('2026-03-08', [toRVOLResult(pullbackStock)], []);
+        expect(result.signals[0].source).toBe('topSignals-pullback');
+        expect(result.signals[0].ticker).toBe('XYZ');
+    });
+
+    it('sets source "topSignals-sma21" when entryPath is sma21', () => {
+        const sma21Stock: StockData = {
+            ...baseStock,
+            ticker: 'ABC',
+            tags: ['SMA21 Touch'],
+            entryPath: 'sma21',
+        };
+        const result = buildStoredScanResult('2026-03-08', [toRVOLResult(sma21Stock)], []);
+        expect(result.signals[0].source).toBe('topSignals-sma21');
+        expect(result.signals[0].ticker).toBe('ABC');
     });
 });
 
@@ -67,7 +92,13 @@ describe('writeScanResults', () => {
         const stored = {
             date: '2026-03-08',
             signals: [
-                { ticker: 'AAPL', lastPrice: 100, rvol: 2, tags: ['SMA21 Touch'], source: 'topSignals' as const },
+                {
+                    ticker: 'AAPL',
+                    lastPrice: 100,
+                    rvol: 2,
+                    tags: ['SMA21 Touch'],
+                    source: 'topSignals-green' as const,
+                },
             ],
         };
         writeScanResults(stored, outDir);
@@ -82,7 +113,7 @@ describe('writeScanResults', () => {
             lastPrice: 100,
             rvol: 2,
             tags: ['SMA21 Touch'],
-            source: 'topSignals',
+            source: 'topSignals-green',
         });
         fs.rmSync(outDir, { recursive: true, force: true });
     });

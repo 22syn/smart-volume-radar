@@ -7,6 +7,47 @@
 export type NewlogicTag = 'SMA21 Touch' | 'Pullback 15%' | '1M Breakout';
 
 /**
+ * Momentum-edition signal level (additive, orthogonal to NewlogicTag/entryPath).
+ *   • 'full'      — Stage 2 momentum breakout (4 mandatory + ≥1 quality marker)
+ *   • 'recovery'  — Bear-market recovery rally: above SMA50, SMA50 turning up,
+ *                   pivot break, RVOL ≥ 2.5. SMA200 may still be down.
+ *   • 'close'     — Watchlist (RVOL ≥ 1.5 + pivot or near-SMA21)
+ *   • 'none'      — No signal
+ */
+export type MomentumLevel = 'full' | 'recovery' | 'close' | 'none';
+
+/** Per-criterion booleans recorded for diagnostics + Telegram tooltip */
+export interface MomentumCriteria {
+    /** projectedRvol >= regime-aware threshold (2.0 bull / 3.0 bear) */
+    rvolPass: boolean;
+    /** price > SMA50 AND SMA50 > SMA200 AND SMA200 slope not declining */
+    stage2: boolean;
+    /** distance from SMA21 <= 8% */
+    lowRiskEntry: boolean;
+    /** lastPrice >= ath * 0.98 */
+    pivotBreakout: boolean;
+    /** daysSinceAth >= 15 (rested ≥ 3 weeks before breakout) */
+    tightness: boolean;
+    /** No earnings gap, OR price still >= AVWAP anchored at the gap */
+    aboveGapAvwap: boolean;
+    /** ≥12 green days in last 15 (independent flag — does not gate Full) */
+    antsAccumulation: boolean;
+    /** Today's priceChange ≥ 3% — explosive continuation breakout day. Quality marker. */
+    bigMoveToday: boolean;
+}
+
+export interface MomentumResult {
+    level: MomentumLevel;
+    criteria: MomentumCriteria;
+    /** Names of criteria that prevented Full (empty when level==='full', or when bypass granted Full) */
+    failures: Array<keyof MomentumCriteria>;
+    /** Threshold used for rvolPass (depends on regime) */
+    rvolThreshold: number;
+    /** True when Full was granted via the high-conviction bypass (RVOL≥3 + pivot + Stage 2 → ignore lowRiskEntry). */
+    highConvictionBypass?: boolean;
+}
+
+/**
  * Raw stock data from market API
  */
 export interface StockData {
@@ -35,6 +76,29 @@ export interface StockData {
     lastDayHigh?: number;
     /** Newlogic tags: SMA21 Touch, Pullback 15%, 1M Breakout */
     tags?: NewlogicTag[];
+    /** How the stock entered topSignals: green (RVOL+price), pullback (Pullback 15%), or sma21 (SMA21 Touch) */
+    entryPath?: 'green' | 'pullback' | 'sma21';
+
+    // ─── Momentum Edition (additive) ────────────────────────────────────────
+    /** Slope of SMA200 over last ~20 bars: 'up' / 'flat' / 'down' */
+    sma200Slope?: 'up' | 'flat' | 'down';
+    /** Slope of SMA50 over last ~10 bars: 'up' / 'flat' / 'down' (used by Recovery Rally tier) */
+    sma50Slope?: 'up' | 'flat' | 'down';
+    /** Trading days since last touch of 52w high */
+    daysSinceAth?: number;
+    /** Consecutive green-day count over last 15 bars (close[i] > close[i-1]) */
+    consecutiveGreenDays?: number;
+    /** Latest detected earnings/news gap day (open > prevHigh by ≥3%) within last 60 bars.
+     *  `barsAgo` = trading days from gap to current bar (0 means gap is today). */
+    gapDay?: { date: string; level: number; barsAgo: number } | null;
+    /** Anchored VWAP from gapDay forward (price still above it = signal valid) */
+    avwapFromGap?: number;
+    /** Time-weighted RVOL: currentVolume / (minutesElapsed/390) / avg63DayVolume. Equals rvol after close. */
+    projectedRvol?: number;
+    /** Market regime at scan time (set from SPY) — affects RVOL threshold for Full */
+    marketRegime?: 'bull' | 'bear';
+    /** Computed momentum signal (set by evaluateMomentumSetup downstream of fetch) */
+    momentum?: MomentumResult;
 }
 
 /**
@@ -82,13 +146,149 @@ export interface StoredSignal {
     lastPrice: number;
     rvol: number;
     tags: NewlogicTag[];
-    source: 'topSignals' | 'volumeWithoutPrice';
+    source: 'topSignals-green' | 'topSignals-pullback' | 'topSignals-sma21' | 'volumeWithoutPrice';
+    /** Momentum-edition: 'full' / 'recovery' / 'close' when triggered, omitted otherwise (back-compat with old result files) */
+    momentumLevel?: 'full' | 'recovery' | 'close';
 }
 
-/** Daily scan output for persistence and evaluation */
+/** Daily scan output for persistence and evaluation (legacy — being phased out). */
 export interface StoredScanResult {
     date: string; // YYYY-MM-DD
     signals: StoredSignal[];
+}
+
+/**
+ * NEW SCHEMA — full per-stock snapshot for ALL stocks scanned (not just signals).
+ * Saved as `results/scan-YYYY-MM-DD.json`. Enables retroactive debugging of
+ * "why didn't X fire?" without re-fetching from Yahoo.
+ */
+export interface ScanStockSnapshot {
+    // ─── Identification ──────────────────────────────────────────────
+    ticker: string;
+    sector?: string;
+
+    // ─── Verdict ─────────────────────────────────────────────────────
+    /** Final classification by evaluateMomentumSetup */
+    level: MomentumLevel;
+    /** True when Full was granted via the high-conviction bypass (not pristine entry) */
+    highConvictionBypass?: boolean;
+
+    // ─── Price + Volume ──────────────────────────────────────────────
+    lastPrice: number;
+    /** % change vs previous close */
+    priceChange: number;
+    currentVolume: number;
+    /** 63-day average volume (used by RVOL) */
+    avgVolume: number;
+    rvol: number;
+    /** Time-weighted intraday RVOL (=== rvol after market close) */
+    projectedRvol: number;
+
+    // ─── Indicators ──────────────────────────────────────────────────
+    sma21?: number;
+    sma50?: number;
+    sma200?: number;
+    sma200Slope?: 'up' | 'flat' | 'down';
+    sma50Slope?: 'up' | 'flat' | 'down';
+    rsi?: number;
+    /** 52w high (close basis) */
+    ath?: number;
+    /** % distance from ATH (negative when below) */
+    pctFromAth?: number;
+    /** Trading days since last touch of the prior cycle high */
+    daysSinceAth?: number;
+    /** Consecutive green-day count over last 15 bars */
+    consecutiveGreenDays?: number;
+
+    // ─── Gap data (optional, when detected) ──────────────────────────
+    gapDay?: { date: string; level: number; barsAgo: number } | null;
+    /** Anchored VWAP from the gap day forward */
+    avwapFromGap?: number;
+
+    // ─── Decision detail (for debugging "why?") ──────────────────────
+    momentum: MomentumResult;
+}
+
+export interface ScanResultDay {
+    date: string; // YYYY-MM-DD
+    /** Wall-clock time the scan took (informational) */
+    scanTimeMs?: number;
+    /** SPY-derived market regime at scan time */
+    marketRegime: 'bull' | 'bear';
+
+    // Watchlist coverage
+    watchlistTotal: number;
+    fetchedSuccessfully: number;
+    failedTickers: string[];
+
+    /** Quick counts by level (for at-a-glance review) */
+    summary: {
+        full: number;
+        recovery: number;
+        watchlist: number;
+        none: number;
+    };
+
+    /** Per-stock snapshots — INCLUDING level='none' for retro debugging */
+    stocks: ScanStockSnapshot[];
+}
+
+/**
+ * Monitor list — tracks tickers from FIRST alert through resolution.
+ * State machine:
+ *   monitoring (initial) →
+ *      graduated     (later fired Full → BUY signal)
+ *      manual-entry  (clean breakout: pivot+RVOL+green day)
+ *      sma21-pullback (clean pullback to SMA21 with low RVOL)
+ *      expired       (30 trading days without resolution)
+ *      stopped       (entered + stopped out — for tracking only, doesn't re-add)
+ */
+export type MonitorStatus = 'monitoring' | 'graduated' | 'manual-entry' | 'sma21-pullback' | 'expired' | 'stopped';
+
+export interface MonitorEvent {
+    /** Date of the event (YYYY-MM-DD) */
+    date: string;
+    /** Brief description: e.g. "alert-Full", "alert-Watchlist", "graduated", "expired" */
+    type: string;
+    /** Price at the event */
+    price: number;
+    /** RVOL at the event (when relevant) */
+    rvol?: number;
+    /** Free-form note */
+    note?: string;
+}
+
+export interface MonitorEntry {
+    ticker: string;
+    /** Date of FIRST alert that put this ticker into the monitor list */
+    firstAlertDate: string;
+    /** Level of FIRST alert: full / recovery / close */
+    firstAlertLevel: 'full' | 'recovery' | 'close';
+    /** Price at first alert (for return tracking) */
+    firstAlertPrice: number;
+    /** RVOL at first alert */
+    firstAlertRvol: number;
+    /** Last date this entry was checked / refreshed */
+    lastChecked: string;
+    /** Current status (state machine) */
+    status: MonitorStatus;
+    /** Date status changed to non-'monitoring' (graduated/manual-entry/etc.) */
+    resolvedDate?: string;
+    /** Price at resolution (for "if I had entered then" tracking) */
+    resolvedPrice?: number;
+    /** Brief reason for resolution */
+    resolvedReason?: string;
+    /** Sector for grouping in Telegram report */
+    sector?: string;
+    /** Audit trail of significant events on this monitor */
+    events: MonitorEvent[];
+}
+
+export interface MonitorState {
+    /** Last full update date (YYYY-MM-DD) */
+    lastUpdated: string;
+    /** All entries — both active and resolved (kept for history) */
+    entries: MonitorEntry[];
 }
 
 /**

@@ -1,5 +1,9 @@
 /**
- * Telegram Formatter Tests
+ * Telegram Formatter Tests — momentum-only output (2026-05-05)
+ *
+ * The daily report is now driven exclusively by momentum tiers
+ * (Full / Recovery / Watchlist). Legacy entry-path labels and the
+ * Silent Activity section are no longer in the Telegram output.
  */
 
 // Mock config and llmSummary before importing telegramBot (avoids p-limit ESM in Jest)
@@ -25,108 +29,182 @@ jest.mock('../src/services/llmSummary.js', () => ({
 }));
 
 import { formatDailyReport } from '../src/services/telegramBot';
-import { RVOLResult, StockData } from '../src/types';
+import { RVOLResult, MomentumResult } from '../src/types';
 
-describe('Telegram Formatter', () => {
-    const mockSignals: RVOLResult[] = [
-        {
-            ticker: 'NVDA',
-            lastPrice: 850.0,
-            priceChange: 6.25,
-            currentVolume: 80000000,
-            avgVolume: 16000000,
-            rvol: 5.0,
-            news: [
-                {
-                    headline: 'NVIDIA Reports Record Q4 Revenue',
-                    url: 'https://example.com/news1',
-                    source: 'Reuters',
-                    publishedAt: new Date(),
-                },
-            ],
-            isVolumeWithoutPrice: false,
-        },
-        {
-            ticker: 'AMD',
-            lastPrice: 145.0,
-            priceChange: -3.33,
-            currentVolume: 60000000,
-            avgVolume: 20000000,
-            rvol: 3.0,
-            news: [],
-            isVolumeWithoutPrice: false,
-        },
-    ];
+const fullCriteria: MomentumResult['criteria'] = {
+    rvolPass: true,
+    stage2: true,
+    lowRiskEntry: true,
+    pivotBreakout: true,
+    tightness: true,
+    aboveGapAvwap: true,
+    antsAccumulation: false,
+    bigMoveToday: true,
+};
+const watchlistCriteria: MomentumResult['criteria'] = {
+    rvolPass: true,
+    stage2: true,
+    lowRiskEntry: false,
+    pivotBreakout: true,
+    tightness: false,
+    aboveGapAvwap: true,
+    antsAccumulation: false,
+    bigMoveToday: false,
+};
 
-    const mockVolumeWithoutPrice: StockData[] = [
-        {
-            ticker: 'MSFT',
-            lastPrice: 405.0,
-            priceChange: 0.25,
-            currentVolume: 50000000,
-            avgVolume: 23000000,
-            rvol: 2.17,
-        },
-    ];
+const fullMomentum: MomentumResult = {
+    level: 'full',
+    criteria: fullCriteria,
+    failures: [],
+};
+const watchlistMomentum: MomentumResult = {
+    level: 'close',
+    criteria: watchlistCriteria,
+    failures: ['lowRiskEntry', 'tightness'],
+};
+
+describe('Telegram Formatter (momentum-only)', () => {
+    const fullStock: RVOLResult = {
+        ticker: 'NVDA',
+        sector: 'Semiconductor',
+        lastPrice: 850.0,
+        priceChange: 6.25,
+        currentVolume: 80_000_000,
+        avgVolume: 16_000_000,
+        rvol: 5.0,
+        rsi: 65,
+        sma50: 800,
+        sma200: 700,
+        sma200Slope: 'up',
+        sma21: 820,
+        ath: 855,
+        pctFromAth: -0.6,
+        daysSinceAth: 25,
+        news: [],
+        isVolumeWithoutPrice: false,
+        momentum: fullMomentum,
+    };
+    const watchlistStock: RVOLResult = {
+        ticker: 'AMD',
+        sector: 'Semiconductor',
+        lastPrice: 145.0,
+        priceChange: 2.1,
+        currentVolume: 60_000_000,
+        avgVolume: 20_000_000,
+        rvol: 3.0,
+        rsi: 60,
+        sma50: 140,
+        sma200: 130,
+        sma200Slope: 'flat',
+        sma21: 130,
+        ath: 150,
+        pctFromAth: -3.3,
+        daysSinceAth: 8,
+        news: [],
+        isVolumeWithoutPrice: false,
+        momentum: watchlistMomentum,
+    };
 
     describe('formatDailyReport', () => {
-        it('should format report with signals correctly', () => {
-            const report = formatDailyReport('2026-02-01', mockSignals, mockVolumeWithoutPrice);
+        it('renders header, sentiment, and tier sections', () => {
+            const report = formatDailyReport('2026-02-01', [fullStock, watchlistStock], []);
 
             expect(report).toContain('SMART VOLUME RADAR');
             expect(report).toContain('2026-02-01');
             expect(report).toContain('Sentiment:');
+            expect(report).toContain('FULL MOMENTUM');
+            expect(report).toContain('MOMENTUM WATCHLIST');
             expect(report).toContain('NVDA');
-            expect(report).toContain('5.00');
-            expect(report).toContain('🟢'); // Bullish NVDA
-            expect(report).toContain('🔴'); // Bearish AMD
-            expect(report).toContain('SILENT ACTIVITY WATCHLIST');
-            expect(report).toContain('MSFT');
+            expect(report).toContain('AMD');
         });
 
-        it('should include news when available', () => {
-            const report = formatDailyReport('2026-02-01', mockSignals, []);
+        it('renders the 8-criteria checklist (mandatory + quality)', () => {
+            const report = formatDailyReport('2026-02-01', [fullStock], []);
 
-            expect(report).toContain('📑');
-            expect(report).toContain('NVIDIA Reports Record Q4 Revenue');
+            expect(report).toContain('Mandatory:');
+            expect(report).toContain('Quality:');
+            expect(report).toContain('RVOL ✓');
+            expect(report).toContain('Stage2 ✓');
+            expect(report).toContain('Pivot ✓');
+            expect(report).toContain('AVWAP ✓');
+            expect(report).toContain('LowRisk ✓');
+            expect(report).toContain('Tight ✓');
         });
 
-        it('should handle empty signals', () => {
+        it('marks failing criteria with ✗ for watchlist stock and labels them in Hebrew', () => {
+            const report = formatDailyReport('2026-02-01', [watchlistStock], []);
+
+            expect(report).toContain('LowRisk ✗');
+            expect(report).toContain('Tight ✗');
+            // Hebrew labels in the (חסר: ...) hint instead of camelCase code names
+            expect(report).toContain('מרחק SMA21');
+            expect(report).toContain('תקופת בסיס');
+        });
+
+        it('shows distance metrics (SMA21 / ATH / days since ATH)', () => {
+            const report = formatDailyReport('2026-02-01', [fullStock], []);
+
+            expect(report).toContain('SMA21'); // distance row
+            expect(report).toContain('ATH -0.6%');
+            expect(report).toContain('25d since ATH');
+        });
+
+        it('shows trend stack (Price vs SMA50, SMA50 vs SMA200, SMA200 slope)', () => {
+            const report = formatDailyReport('2026-02-01', [fullStock], []);
+
+            expect(report).toContain('Price ↑ SMA50');
+            expect(report).toContain('SMA50 ↑ SMA200');
+            expect(report).toContain('SMA200 ↗up');
+        });
+
+        it('handles the empty case with a momentum-specific message', () => {
             const report = formatDailyReport('2026-02-01', [], []);
 
-            expect(report).toContain('No high-volume signals detected today');
+            expect(report).toContain('אין מניות במומנטום היום');
             expect(report).not.toContain('Sentiment:');
         });
 
-        it('should handle empty volume without price', () => {
-            const report = formatDailyReport('2026-02-01', mockSignals, []);
+        it('does not render Silent Activity Watchlist (momentum-only Telegram)', () => {
+            const report = formatDailyReport('2026-02-01', [fullStock], []);
 
             expect(report).not.toContain('SILENT ACTIVITY WATCHLIST');
         });
 
-        it('should use correct emoji for price direction', () => {
-            const report = formatDailyReport('2026-02-01', mockSignals, []);
+        it('does not include legacy entry-path labels (RVOL+מחיר / Pullback / SMA21 Touch)', () => {
+            const report = formatDailyReport('2026-02-01', [fullStock, watchlistStock], []);
 
-            // NVDA is up (6.25%) - has high RVOL so gets ⚡️ emoji
-            expect(report).toContain('NVDA');
-            expect(report).toContain('🟢 +6.25%');
-            // AMD is down (-3.33%)
-            expect(report).toContain('AMD');
-            expect(report).toContain('🔴 -3.33%');
+            expect(report).not.toContain('כניסה: RVOL+מחיר');
+            expect(report).not.toContain('כניסה: Pullback 15%');
+            expect(report).not.toContain('כניסה: SMA21 Touch');
         });
 
-        it('should not include failed tickers in report body (they appear in run-issues header only)', () => {
-            const report = formatDailyReport('2026-02-01', mockSignals, [], ['BAD.TA', 'MISSING']);
+        it('groups by tier — Full appears before Watchlist regardless of input order', () => {
+            const report = formatDailyReport('2026-02-01', [watchlistStock, fullStock], []);
+            const fullIdx = report.indexOf('FULL MOMENTUM');
+            const watchIdx = report.indexOf('MOMENTUM WATCHLIST');
+
+            expect(fullIdx).toBeGreaterThan(0);
+            expect(watchIdx).toBeGreaterThan(fullIdx);
+        });
+
+        it('uses correct price-direction emoji per stock', () => {
+            const report = formatDailyReport('2026-02-01', [fullStock, watchlistStock], []);
+
+            expect(report).toContain('🟢 +6.25%');
+            expect(report).toContain('🟢 +2.10%');
+        });
+
+        it('includes sector hint next to the ticker', () => {
+            const report = formatDailyReport('2026-02-01', [fullStock], []);
+
+            expect(report).toContain('Semiconductor');
+        });
+
+        it('does not leak failed tickers into the report body (issues section is separate)', () => {
+            const report = formatDailyReport('2026-02-01', [fullStock], [], ['BAD.TA', 'MISSING']);
 
             expect(report).not.toContain('Could not check');
             expect(report).not.toContain('BAD.TA');
-        });
-
-        it('should not include failed tickers in empty-signals report body', () => {
-            const report = formatDailyReport('2026-02-01', [], [], ['ERR1']);
-
-            expect(report).toContain('No high-volume signals detected today');
-            expect(report).not.toContain('Could not check');
         });
     });
 });

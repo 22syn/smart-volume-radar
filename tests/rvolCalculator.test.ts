@@ -106,30 +106,41 @@ describe('RVOL Calculator', () => {
             expect(result.volumeWithoutPrice).toHaveLength(0);
         });
 
-        it('should include blue-path stocks (all 3 tags) in topSignals even without green', () => {
-            const stocksWithAllTags = mockStocks.map((s) =>
-                s.ticker === 'GOOGL'
-                    ? {
-                          ...s,
-                          tags: ['SMA21 Touch', 'Pullback 15%', '1M Breakout'] as const,
-                      }
-                    : s
+        it('should include pullback-path stocks (Pullback 15%) in topSignals even without green', () => {
+            const stocksWithPullback = mockStocks.map((s) =>
+                s.ticker === 'GOOGL' ? { ...s, tags: ['Pullback 15%' as const] } : s
             );
-            const result = calculateRVOL(stocksWithAllTags, {
+            const result = calculateRVOL(stocksWithPullback, {
                 minRVOL: 2.0,
                 topN: 15,
                 priceChangeThreshold: 2,
             });
 
             expect(result.topSignals.map((s) => s.ticker)).toContain('GOOGL');
-            expect(result.topSignals).toHaveLength(3); // AAPL, NVDA (green) + GOOGL (blue)
+            expect(result.topSignals.find((s) => s.ticker === 'GOOGL')?.entryPath).toBe('pullback');
+            expect(result.topSignals).toHaveLength(3); // AAPL, NVDA (green) + GOOGL (pullback)
         });
 
-        it('should not include stock with only one tag in blue path', () => {
-            const stocksWithOneTag = mockStocks.map((s) =>
+        it('should include sma21-path stocks (SMA21 Touch) in topSignals even without green', () => {
+            const stocksWithSma21 = mockStocks.map((s) =>
                 s.ticker === 'GOOGL' ? { ...s, tags: ['SMA21 Touch' as const] } : s
             );
-            const result = calculateRVOL(stocksWithOneTag, {
+            const result = calculateRVOL(stocksWithSma21, {
+                minRVOL: 2.0,
+                topN: 15,
+                priceChangeThreshold: 2,
+            });
+
+            expect(result.topSignals.map((s) => s.ticker)).toContain('GOOGL');
+            expect(result.topSignals.find((s) => s.ticker === 'GOOGL')?.entryPath).toBe('sma21');
+            expect(result.topSignals).toHaveLength(3); // AAPL, NVDA (green) + GOOGL (sma21)
+        });
+
+        it('should not include stock with only 1M Breakout (informational tag, not an entry path)', () => {
+            const stocksWithBreakoutOnly = mockStocks.map((s) =>
+                s.ticker === 'GOOGL' ? { ...s, tags: ['1M Breakout' as const] } : s
+            );
+            const result = calculateRVOL(stocksWithBreakoutOnly, {
                 minRVOL: 2.0,
                 topN: 15,
                 priceChangeThreshold: 2,
@@ -177,3 +188,4 @@ describe('RVOL Calculator', () => {
         });
     });
 });
+

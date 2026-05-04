@@ -14,7 +14,18 @@
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write \"src/**/*.ts\"",
     "evaluate-setups": "tsx scripts/evaluate-setups.ts",
-    "validate-scan": "tsx scripts/validate-scan.ts"
+    "evaluate-setups-30d": "tsx scripts/evaluate-setups-30d.ts",
+    "replay-missing-days": "tsx scripts/replay-missing-days.ts",
+    "replay-march-9-14": "tsx scripts/replay-march-9-14.ts",
+    "backtest-momentum": "tsx scripts/backtest-momentum.ts",
+    "backtest-watchlist": "tsx scripts/backtest-watchlist.ts",
+    "scan-now": "tsx scripts/scan-now.ts",
+    "monitor-update": "tsx scripts/monitor-update.ts",
+    "rebuild-history": "tsx scripts/rebuild-history.ts",
+    "evaluate-retro": "tsx scripts/evaluate-retro.ts",
+    "validate-scan": "tsx scripts/validate-scan.ts",
+    "regenerate-results": "tsx scripts/regenerate-results.ts",
+    "evaluate-retro-advanced": "tsx scripts/evaluate-retro-advanced.ts"
   },
   "keywords": [
     "stocks",

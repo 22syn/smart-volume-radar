@@ -40,7 +40,8 @@ retro-*.txt
 # Maestro AI
 .agent/
 
-# Scan results (stored daily)
-results/
+# Scan results (stored daily) — exclude contents but not the directory itself, so the
+# exception below can re-include monitor-list.json (parent-dir exclusions block re-include).
+results/*
 # Exception: monitor-list.json IS committed daily so follow-up state survives CI runs.
 !results/monitor-list.json

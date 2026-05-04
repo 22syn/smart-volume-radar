@@ -69,7 +69,7 @@ The watchlist is loaded from a **Google Sheet** at each run. You manage symbols 
 |----------|---------|-------------|
 | `GOOGLE_SHEET_ID` | — | **Required.** Google Sheet ID for watchlist (Column A = symbol, B = sector) |
 | `MIN_RVOL` | 2.0 | Minimum RVOL to trigger signal |
-| `TOP_N` | 15 | Max signals to include in report |
+| `TOP_N` | 999 | Max signals to include in report (999 = effectively unlimited) |
 | `PRICE_CHANGE_THRESHOLD` | 2 | % threshold for "volume w/o price" (silent activity) |
 | `TWELVE_DATA_API_KEY` | — | **Optional.** Fetch RSI/SMA from Twelve Data; also used as fallback when Yahoo fails |
 | `USE_FETCHED_INDICATORS` | true | Set to `false` to always calculate RSI/SMA locally |

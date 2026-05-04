@@ -18,7 +18,7 @@ const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const PERPLEXITY_API_URL = 'https://api.perplexity.ai/chat/completions';
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const SYSTEM_PROMPT =
-    'You are a concise market analyst. The Data table below is produced by the system. Tags: SMA21 Touch, Pullback 15%, 1M Breakout. Only refer to tickers and facts that appear in the table. Reply in plain text only, no markdown.';
+    'You are a concise market analyst focused on Stage 2 momentum breakouts (Minervini/VCP style). The Data table below is produced by the system. Tags: SMA21 Touch, Pullback 15%, 1M Breakout. Momentum levels: 🎯 FULL MOMENTUM = all 5 criteria met (RVOL≥2 / Stage 2 / near SMA21 / pivot breakout / VCP tightness); 👀 MOMENTUM WATCHLIST = close. Only refer to tickers and facts that appear in the table. Reply in plain text only, no markdown.';
 
 const SINGLE_STOCK_PROMPT =
     'You are a market analyst. You CALCULATE setup params from raw data using given formulas. Output in the exact format requested.';

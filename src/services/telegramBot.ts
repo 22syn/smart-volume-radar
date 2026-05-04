@@ -3,21 +3,21 @@
  * Sends formatted reports via Telegram Bot API
  */
 
-import { RVOLResult, StockData, TelegramApiError } from '../types/index.js';
+import { RVOLResult, StockData, TelegramApiError, MonitorEntry, MonitorState } from '../types/index.js';
 import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
-import { formatTagsForDisplay, hasAllThreeTags } from '../utils/tags.js';
+import { formatTagsForDisplay } from '../utils/tags.js';
 import { formatRVOL, formatPriceChange } from '../utils/formatters.js';
 import { getReportSummary, getPerStockAnalyses, parseLlmReply, formatCodeVsLlmLine } from './llmSummary.js';
+import type { MonitorUpdateSummary } from './monitorTracker.js';
 
 const TELEGRAM_MAX_LENGTH = 4096;
+/** Delay between sends to avoid Telegram rate limit (429) when sending many chunks */
+const TELEGRAM_SEND_DELAY_MS = 1200;
 
-/**
- * Truncate string to max length with ellipsis
- */
-function truncate(str: string, maxLen: number): string {
-    return str.length > maxLen ? str.slice(0, maxLen - 3) + '...' : str;
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -48,13 +48,32 @@ export async function sendTelegramMessage(message: string): Promise<void> {
         });
 
         if (!response.ok) {
-            const error = (await response.json()) as TelegramApiError;
+            const error = (await response.json()) as TelegramApiError & { parameters?: { retry_after?: number } };
+            if (response.status === 429 && error.parameters?.retry_after) {
+                const waitSec = error.parameters.retry_after;
+                logger.warn(`Telegram rate limit (429), waiting ${waitSec}s before retry`);
+                await sleep(waitSec * 1000);
+                const retryRes = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: telegramChatId,
+                        text: message,
+                        parse_mode: 'HTML',
+                        disable_web_page_preview: true,
+                    }),
+                });
+                if (!retryRes.ok) {
+                    const retryErr = (await retryRes.json()) as TelegramApiError;
+                    throw new Error(`Telegram API error: ${JSON.stringify(retryErr)}`);
+                }
+                logger.info('Telegram message sent successfully (after retry)');
+                return;
+            }
             let errorMessage = `Telegram API error: ${JSON.stringify(error)}`;
-
             if (error.description === 'Bad Request: chat not found') {
                 errorMessage += '\n💡 TIP: Ensure your TELEGRAM_CHAT_ID is correct and the bot has been started by the user or added to the group.';
             }
-
             throw new Error(errorMessage);
         }
 
@@ -65,8 +84,28 @@ export async function sendTelegramMessage(message: string): Promise<void> {
     }
 }
 
-function formatReportHeader(date: string, bullish: number, bearish: number): string {
-    return `🛰 <b>SMART VOLUME RADAR</b>\n📅 <code>${date}</code>\n🎭 Sentiment: ${bullish} 🟢 | ${bearish} 🔴\n<i>🟢 כניסה ירוקה (RVOL+מחיר) | 🔵 כניסה כחולה (3 תגיות) — RVOL ומחיר לצורך מידע בלבד</i>\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+function formatReportHeader(
+    date: string,
+    bullish: number,
+    bearish: number,
+    regime: 'bull' | 'bear' | undefined,
+    tierCounts: { full: number; recovery: number; close: number }
+): string {
+    const regimeBadge =
+        regime === 'bear' ? ' | 🐻 Bear (SPY<SMA200)' : regime === 'bull' ? ' | 🐂 Bull' : '';
+    const tierBits: string[] = [];
+    if (tierCounts.full > 0) tierBits.push(`🎯 ${tierCounts.full} Full`);
+    if (tierCounts.recovery > 0) tierBits.push(`🦅 ${tierCounts.recovery} Recovery`);
+    if (tierCounts.close > 0) tierBits.push(`👀 ${tierCounts.close} Watchlist`);
+    const tierLine = tierBits.length > 0 ? `${tierBits.join(' | ')}\n` : '';
+    return (
+        `🛰 <b>SMART VOLUME RADAR</b>\n` +
+        `📅 <code>${date}</code>${regimeBadge}\n` +
+        tierLine +
+        `🎭 Sentiment: ${bullish} 🟢 | ${bearish} 🔴\n` +
+        `<i>🎯 Full = 4 mandatory + ≥1 quality | 🦅 Recovery = bull bounce w/o SMA200 | 👀 Watchlist = קרוב</i>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n\n`
+    );
 }
 
 function buildStockUrls(stock: RVOLResult): { tvUrl: string; yahooUrl: string; newsUrl: string; newsLabel: string } {
@@ -84,65 +123,129 @@ function buildStockUrls(stock: RVOLResult): { tvUrl: string; yahooUrl: string; n
     };
 }
 
+/** Hebrew labels for momentum criteria — used in the (חסר: ...) failures hint. */
+const CRITERIA_LABEL_HE: Record<string, string> = {
+    rvolPass: 'נפח (RVOL)',
+    stage2: 'מגמה Stage 2',
+    pivotBreakout: 'פריצת ATH',
+    aboveGapAvwap: 'AVWAP מעל גאפ',
+    lowRiskEntry: 'מרחק SMA21',
+    tightness: 'תקופת בסיס',
+    antsAccumulation: 'אקומולציה (Ants)',
+    bigMoveToday: 'תנועת מחיר היום',
+};
+
+/** Translate a list of criteria keys to a comma-separated Hebrew label string. */
+function criteriaListHe(keys: string[]): string {
+    return keys.map((k) => CRITERIA_LABEL_HE[k] ?? k).join(', ');
+}
+
+/** Compact ✓/✗ row for the 4 mandatory + 4 quality momentum criteria. */
+function formatMomentumCriteriaRows(stock: RVOLResult): string {
+    const c = stock.momentum?.criteria;
+    if (!c) return '';
+    const mark = (b: boolean | undefined): string => (b ? '✓' : '✗');
+    const mandatory =
+        `RVOL ${mark(c.rvolPass)} | Stage2 ${mark(c.stage2)} | ` +
+        `Pivot ${mark(c.pivotBreakout)} | AVWAP ${mark(c.aboveGapAvwap)}`;
+    const quality =
+        `LowRisk ${mark(c.lowRiskEntry)} | Tight ${mark(c.tightness)} | ` +
+        `Ants ${mark(c.antsAccumulation)} | BigMove ${mark(c.bigMoveToday)}`;
+    return `├ ✅ <b>Mandatory:</b> ${mandatory}\n├ ⭐ <b>Quality:</b> ${quality}\n`;
+}
+
+/** Distance from SMA21 in percent, formatted. Returns null when SMA21 unavailable. */
+function formatSma21Distance(stock: RVOLResult): string | null {
+    if (stock.sma21 == null || stock.sma21 <= 0 || stock.lastPrice == null) return null;
+    const distPct = ((stock.lastPrice - stock.sma21) / stock.sma21) * 100;
+    const sign = distPct >= 0 ? '+' : '';
+    return `${sign}${distPct.toFixed(1)}%`;
+}
+
 function formatSingleStockBlock(stock: RVOLResult): string {
-    const isIsraeli = stock.ticker.endsWith('.TA');
     let statusEmoji = stock.priceChange >= 0 ? '↗️' : '↘️';
     if (stock.rvol > 4) statusEmoji = '⚡️';
     else if (stock.rvol > 2) statusEmoji = '🔥';
 
-    const isGreen =
-        stock.rvol >= config.minRVOL && Math.abs(stock.priceChange) >= config.priceChangeThreshold;
-    const isBlue = hasAllThreeTags(stock);
-    const entryBadge = isGreen ? '🟢 ' : isBlue ? '🔵 ' : '';
-
     const trendColor = stock.priceChange >= 0 ? '🟢' : '🔴';
-    const { tvUrl, yahooUrl, newsUrl, newsLabel } = buildStockUrls(stock);
+    const { tvUrl, yahooUrl } = buildStockUrls(stock);
 
-    let block = `${entryBadge}${statusEmoji} <b><a href="${tvUrl}">${escapeHtml(stock.ticker)}</a></b>\n`;
-    block += `├ 📊 <b>RVOL</b> ${formatRVOL(stock.rvol)}\n`;
-    block += `├ <b>Price</b> ${trendColor} ${formatPriceChange(stock.priceChange)}\n`;
+    let block = `${statusEmoji} <b><a href="${tvUrl}">${escapeHtml(stock.ticker)}</a></b>`;
+    if (stock.sector) {
+        block += ` <i>(${escapeHtml(stock.sector)})</i>`;
+    }
+    block += '\n';
+
+    // Momentum badge — primary signal (Telegram is momentum-only).
+    if (stock.momentum?.level === 'full') {
+        block += `├ 🎯 <b>FULL MOMENTUM</b>\n`;
+    } else if (stock.momentum?.level === 'recovery') {
+        block += `├ 🦅 <b>RECOVERY RALLY</b> <i>(SMA200 עוד למטה — סיכון/סיכוי גבוה)</i>\n`;
+    } else if (stock.momentum?.level === 'close') {
+        const reasons = criteriaListHe(stock.momentum.failures.slice(0, 3));
+        block += `├ 👀 <b>MOMENTUM WATCHLIST</b>${reasons ? ` <i>(חסר: ${escapeHtml(reasons)})</i>` : ''}\n`;
+    }
+
+    // 8-criteria breakdown (4 mandatory + 4 quality) — the "ניתוח מומנטום".
+    block += formatMomentumCriteriaRows(stock);
+
+    // Core metrics
+    block += `├ 📊 <b>RVOL</b> ${formatRVOL(stock.rvol)}`;
+    if (stock.projectedRvol != null && Math.abs(stock.projectedRvol - stock.rvol) > 0.05) {
+        block += ` <i>(proj ${formatRVOL(stock.projectedRvol)})</i>`;
+    }
+    block += '\n';
+    block += `├ <b>Price</b> ${trendColor} ${formatPriceChange(stock.priceChange)} <i>($${stock.lastPrice.toFixed(2)})</i>\n`;
 
     if (stock.rsi != null) {
-        const rsiContext = stock.rsi > 70 ? ' ⚠️' : stock.rsi < 30 ? ' ✅' : '';
+        const rsiContext = stock.rsi > 70 ? ' ⚠️ קניית יתר' : stock.rsi < 30 ? ' ✅ מכירת יתר' : '';
         block += `├ 📈 <b>RSI</b> ${stock.rsi.toFixed(0)}${rsiContext}\n`;
     }
+
+    // Trend stack (Stage 2 picture). Use ↑/↓ instead of </> which Telegram parses as HTML tags.
+    const trendBits: string[] = [];
     if (stock.sma50 != null) {
-        const trend = stock.lastPrice > stock.sma50 ? 'Above SMA50' : 'Below SMA50';
-        block += `├ ${trend}\n`;
+        trendBits.push(stock.lastPrice > stock.sma50 ? 'Price ↑ SMA50' : 'Price ↓ SMA50');
+    }
+    if (stock.sma200 != null && stock.sma50 != null) {
+        trendBits.push(stock.sma50 > stock.sma200 ? 'SMA50 ↑ SMA200' : 'SMA50 ↓ SMA200');
+    }
+    if (stock.sma200Slope) {
+        const arrow = stock.sma200Slope === 'up' ? '↗' : stock.sma200Slope === 'down' ? '↘' : '→';
+        trendBits.push(`SMA200 ${arrow}${stock.sma200Slope}`);
+    }
+    if (trendBits.length > 0) {
+        block += `├ 📉 ${trendBits.join(' | ')}\n`;
     }
 
+    // Distance metrics — show all that are available, using actual distFrom percentages.
+    const sma21Dist = formatSma21Distance(stock);
+    const distBits: string[] = [];
+    if (sma21Dist) distBits.push(`SMA21 ${sma21Dist}`);
+    if (stock.pctFromAth != null) distBits.push(`ATH ${stock.pctFromAth.toFixed(1)}%`);
+    if (stock.daysSinceAth != null) distBits.push(`${stock.daysSinceAth}d since ATH`);
+    if (distBits.length > 0) {
+        block += `├ 📐 ${escapeHtml(distBits.join(' | '))}\n`;
+    }
+
+    // Quality flags
+    if (stock.momentum?.criteria.antsAccumulation) {
+        const greenDays = stock.consecutiveGreenDays ?? 0;
+        block += `├ 🐜 <i>Ants accumulation${greenDays > 0 ? ` (${greenDays} green days)` : ''}</i>\n`;
+    }
+    if (stock.gapDay && stock.avwapFromGap != null) {
+        const gapDir = stock.lastPrice >= stock.avwapFromGap ? '✓ above' : '✗ below';
+        block += `├ ⛳ Gap day ${stock.gapDay.barsAgo}d ago — AVWAP ${gapDir} ($${stock.avwapFromGap.toFixed(2)})\n`;
+    }
+
+    // Existing tags (informational only — entry already determined by momentum)
     const tagStr = formatTagsForDisplay(stock);
     if (tagStr) {
         block += `├ 🏷 ${escapeHtml(tagStr)}\n`;
     }
 
-    block += `├ ⛓ <a href="${tvUrl}">TV</a>  <a href="${yahooUrl}">YF</a>  <a href="${newsUrl}">${newsLabel}</a>\n`;
-
-    if (stock.news && stock.news.length > 0) {
-        block += `└ 📑\n`;
-        for (const news of stock.news.slice(0, 2)) {
-            const source = news.source ? escapeHtml(news.source) + ' ' : '';
-            const headline = escapeHtml(truncate(news.headline, 55));
-            const safeUrl = news.url.startsWith('https://') ? news.url.replace(/"/g, '&quot;') : '#';
-            block += `   • <a href="${safeUrl}">${source}${headline}</a>\n`;
-        }
-    } else {
-        block += isIsraeli ? `└ 📑 <a href="${newsUrl}">BizPortal news</a>\n` : `└ <i>No recent news</i>\n`;
-    }
-    block += `\n`;
+    block += `└ ⛓ <a href="${tvUrl}">TV</a>  <a href="${yahooUrl}">YF</a>\n\n`;
     return block;
-}
-
-function formatVolumeWithoutPriceSection(volumeWithoutPrice: StockData[]): string {
-    if (volumeWithoutPrice.length === 0) return '';
-    const items = volumeWithoutPrice
-        .sort((a, b) => b.rvol - a.rvol)
-        .map((s) => {
-            const tags = formatTagsForDisplay(s);
-            return `• <b>${escapeHtml(s.ticker)}</b> (${formatRVOL(s.rvol)})${tags ? ` 🏷 ${escapeHtml(tags)}` : ''}`;
-        })
-        .join('\n');
-    return `━━━━━━━━━━━━━━━━━━━━━━\n👀 <b>SILENT ACTIVITY WATCHLIST</b>\n<i>(High RVOL, low price change - potential breakouts)</i>\n${items}`;
 }
 
 /**
@@ -185,30 +288,43 @@ export function formatDailyReport(
     _failedTickers: string[] = []
 ): string {
     if (topSignals.length === 0) {
-        return `📊 <b>Smart Volume Radar</b>\n📅 ${date}\n\n📭 No high-volume signals detected today.\n\nEverything within normal range.`;
+        return `📊 <b>Smart Volume Radar</b>\n📅 ${date}\n\n📭 אין מניות במומנטום היום (Full / Recovery / Watchlist).\n\n<i>הסורק רץ תקין — פשוט אין כיום מניה שעוברת את הקריטריונים.</i>`;
     }
 
-    const sortedSignals = [...topSignals].sort((a, b) => b.rvol - a.rvol);
+    // Caller already sorted by tier (full→recovery→close) then RVOL — preserve that.
     const bullish = topSignals.filter((s) => s.priceChange > 0).length;
     const bearish = topSignals.filter((s) => s.priceChange < 0).length;
+    const regime = topSignals.find((s) => s.marketRegime)?.marketRegime;
 
-    let message = formatReportHeader(date, bullish, bearish);
-
-    const sectors: Record<string, RVOLResult[]> = {};
-    for (const stock of sortedSignals) {
-        const sector = stock.sector || 'Other';
-        if (!sectors[sector]) sectors[sector] = [];
-        sectors[sector].push(stock);
+    // Group by tier so Full Momentum stocks always appear first as a coherent block.
+    const tierBuckets: Record<'full' | 'recovery' | 'close', RVOLResult[]> = { full: [], recovery: [], close: [] };
+    for (const stock of topSignals) {
+        const lvl = (stock.momentum?.level ?? 'close') as 'full' | 'recovery' | 'close' | 'none';
+        if (lvl !== 'none') tierBuckets[lvl].push(stock);
     }
+    const tierCounts = {
+        full: tierBuckets.full.length,
+        recovery: tierBuckets.recovery.length,
+        close: tierBuckets.close.length,
+    };
 
-    for (const [sectorName, stocks] of Object.entries(sectors)) {
-        message += `📍 <b>${escapeHtml(sectorName.toUpperCase())}</b>\n━━━━━━━━━━━━━━━━━━━━━━\n`;
-        for (const stock of stocks) {
+    let message = formatReportHeader(date, bullish, bearish, regime, tierCounts);
+
+    const tierHeaders = {
+        full: '🎯 <b>FULL MOMENTUM</b>',
+        recovery: '🦅 <b>RECOVERY RALLY</b>',
+        close: '👀 <b>MOMENTUM WATCHLIST</b>',
+    } as const;
+    for (const tier of ['full', 'recovery', 'close'] as const) {
+        const bucket = tierBuckets[tier];
+        if (bucket.length === 0) continue;
+        message += `${tierHeaders[tier]} <i>(${bucket.length})</i>\n━━━━━━━━━━━━━━━━━━━━━━\n`;
+        for (const stock of bucket) {
             message += formatSingleStockBlock(stock);
         }
     }
 
-    message += formatVolumeWithoutPriceSection(volumeWithoutPrice);
+    // Silent activity intentionally omitted — Telegram is momentum-only.
     return message;
 }
 
@@ -314,6 +430,8 @@ export interface ReportScope {
     invalidTickers?: string[];
     /** Indices skipped – not supported, not sent to Jules */
     indexTickers?: string[];
+    /** Tickers where SMA21 Touch could not be evaluated (missing sma21 or lastPrice) */
+    sma21TouchSkippedTickers?: string[];
     /** Summary stats for watchlist coverage */
     watchlistStats?: {
         totalInSheet: number;
@@ -341,7 +459,8 @@ function formatRunIssuesSection(
     invalidTickers: string[],
     failedTickers: string[],
     indexTickers: string[] = [],
-    watchlistStats?: ReportScope['watchlistStats']
+    watchlistStats?: ReportScope['watchlistStats'],
+    sma21TouchSkippedTickers: string[] = []
 ): string {
     const summary = formatWatchlistSummary(watchlistStats);
     const parts: string[] = [];
@@ -355,6 +474,9 @@ function formatRunIssuesSection(
         parts.push(
             `⚠️ <b>לא הצלחנו לשלוף נתונים:</b> <code>${failedTickers.map((t) => escapeHtml(t)).join(', ')}</code>\n<i>(בדקו שגיאות כתיב (למשל COBE במקום CBOE), אם הסימול נמחק, חסרה סיומת בורסה (.L, .TA) או פורמט שגוי (למשל BRK.B במקום BRK-B))</i>`
         );
+    }
+    if (sma21TouchSkippedTickers.length > 0) {
+        parts.push(`⚠️ <b>SMA21 Touch לא חושב (חסר נתונים):</b> <code>${sma21TouchSkippedTickers.map((t) => escapeHtml(t)).join(', ')}</code>`);
     }
     if (summary === '' && parts.length === 0) return '';
     const body = parts.length > 0 ? '\n' + parts.join('\n') : '';
@@ -450,12 +572,18 @@ export async function sendDailyReport(
         scope?.invalidTickers ?? [],
         failedTickers,
         scope?.indexTickers ?? [],
-        scope?.watchlistStats
+        scope?.watchlistStats,
+        scope?.sma21TouchSkippedTickers ?? []
     );
     const llmMessage = await buildLlmSummaryMessage(date, topSignals, volumeWithoutPrice, scope);
     if (llmMessage) {
-        await sendTelegramMessage((issuesSection ? issuesSection : '') + llmMessage);
-        logger.info('LLM summary sent as first Telegram message');
+        const firstPayload = (issuesSection ? issuesSection : '') + llmMessage;
+        const firstChunks = chunkMessage(firstPayload);
+        for (let i = 0; i < firstChunks.length; i++) {
+            if (i > 0) await sleep(TELEGRAM_SEND_DELAY_MS);
+            await sendTelegramMessage(firstChunks[i]!);
+        }
+        logger.info(`LLM summary sent as first Telegram message(s) (${firstChunks.length} chunk(s))`);
         if (config.debug) {
             logger.info('--- LLM MESSAGE PREVIEW ---\n' + llmMessage.replace(/<[^>]*>/g, '') + '\n--- END LLM PREVIEW ---');
         }
@@ -481,15 +609,143 @@ export async function sendDailyReport(
         logger.info('LLM summary skipped (no high-RVOL signals to summarize)');
     }
 
-    logger.info(`Sending ${chunks.length} message(s) to Telegram`);
+    logger.info(`Sending report (${chunks.length} part(s)) to Telegram`);
 
-    // Issues section goes in first message only (LLM or first report chunk)
+    // Issues section goes in first message only (LLM or first report chunk). Each sent message must be ≤ max length.
     const issuesInFirstReport = !llmMessage && issuesSection;
     for (let i = 0; i < chunks.length; i++) {
+        if (i > 0) await sleep(TELEGRAM_SEND_DELAY_MS);
         const partLabel = chunks.length > 1 ? `Part ${i + 1}/${chunks.length}` : undefined;
         const msgDataHeader = formatMessageDataHeader(date, topSignals.length, volumeWithoutPrice.length, partLabel);
         const content =
             i === 0 && issuesInFirstReport ? issuesSection + msgDataHeader + chunks[i] : msgDataHeader + chunks[i];
-        await sendTelegramMessage(content);
+        const toSend = chunkMessage(content);
+        for (let j = 0; j < toSend.length; j++) {
+            if (j > 0) await sleep(TELEGRAM_SEND_DELAY_MS);
+            await sendTelegramMessage(toSend[j]!);
+        }
     }
+}
+
+// ─── Monitor / Followup Telegram formatter ──────────────────────────────
+
+/** Format the price-change since first alert, given current price. */
+function formatMonitorReturn(entry: MonitorEntry, currentPrice: number | undefined): string {
+    if (!currentPrice || entry.firstAlertPrice <= 0) return '';
+    const ret = ((currentPrice - entry.firstAlertPrice) / entry.firstAlertPrice) * 100;
+    const sign = ret >= 0 ? '+' : '';
+    return `${sign}${ret.toFixed(1)}%`;
+}
+
+/** Trading-day distance helper (Mon-Fri only). */
+function calendarDaysSince(fromIso: string, toIso: string): number {
+    return Math.max(0, Math.round((Date.parse(toIso) - Date.parse(fromIso)) / 86400_000));
+}
+
+/**
+ * Build a separate Telegram message for the monitor follow-up.
+ * Returns null if there's nothing actionable AND no active monitors (no point pinging).
+ *
+ * Sections:
+ *   🚨 ACTIONABLE TODAY  — graduations, manual-entries, sma21-pullbacks
+ *   🆕 NEW MONITORS      — added this scan
+ *   👀 ACTIVE            — count + top-N by recent activity
+ *   🗑️ EXPIRED          — removed today
+ */
+export function formatMonitorTelegramMessage(
+    summary: MonitorUpdateSummary,
+    state: MonitorState,
+    asOfDate: string,
+    stocksByTicker: Map<string, StockData>
+): string | null {
+    const actionable = summary.transitions.filter((t) =>
+        ['graduated', 'manual-entry', 'sma21-pullback'].includes(t.newStatus ?? '')
+    );
+    const expired = summary.transitions.filter((t) => t.newStatus === 'expired');
+    const active = state.entries.filter((e) => e.status === 'monitoring');
+
+    // Skip if nothing happened AND no active monitors.
+    if (
+        actionable.length === 0 &&
+        summary.newEntries.length === 0 &&
+        expired.length === 0 &&
+        active.length === 0
+    ) {
+        return null;
+    }
+
+    const parts: string[] = [];
+    parts.push(`📊 <b>MONITOR FOLLOWUP</b>\n📅 <code>${asOfDate}</code>\n━━━━━━━━━━━━━━━━━━━━━━`);
+
+    // 1. Actionable — the most important section.
+    if (actionable.length > 0) {
+        parts.push(`\n🚨 <b>ACTIONABLE TODAY (${actionable.length})</b>`);
+        for (const t of actionable) {
+            const e = t.entry;
+            const stock = stocksByTicker.get(e.ticker.toUpperCase());
+            const ret = formatMonitorReturn(e, stock?.lastPrice);
+            const days = calendarDaysSince(e.firstAlertDate, asOfDate);
+            const emoji =
+                t.newStatus === 'graduated' ? '🎓🎯'
+                    : t.newStatus === 'manual-entry' ? '🟢'
+                        : '📐';
+            const statusLabel =
+                t.newStatus === 'graduated' ? 'גרדואציה ל-Full'
+                    : t.newStatus === 'manual-entry' ? 'כניסה ידנית מאושרת'
+                        : 'פולבק נקי ל-SMA21';
+            parts.push(
+                `${emoji} <b>${escapeHtml(e.ticker)}</b> — ${escapeHtml(statusLabel)}\n` +
+                `   ₪/$${e.firstAlertPrice.toFixed(2)} → $${(stock?.lastPrice ?? 0).toFixed(2)}  ` +
+                `(${escapeHtml(ret)} ב-${days}d)\n` +
+                `   <i>${escapeHtml(t.reason ?? '')}</i>`
+            );
+        }
+    }
+
+    // 2. New monitors.
+    if (summary.newEntries.length > 0) {
+        const sortOrder: Record<string, number> = { full: 0, recovery: 1, close: 2 };
+        const sorted = [...summary.newEntries].sort(
+            (a, b) => sortOrder[a.firstAlertLevel] - sortOrder[b.firstAlertLevel]
+        );
+        const fullCount = sorted.filter((e) => e.firstAlertLevel === 'full').length;
+        const recoveryCount = sorted.filter((e) => e.firstAlertLevel === 'recovery').length;
+        const closeCount = sorted.filter((e) => e.firstAlertLevel === 'close').length;
+        parts.push(
+            `\n🆕 <b>NEW MONITORS (${summary.newEntries.length})</b> — ` +
+            `🎯${fullCount} 🦅${recoveryCount} 👀${closeCount}`
+        );
+        // Show only top 10 to keep message size manageable.
+        for (const e of sorted.slice(0, 10)) {
+            const lvEmoji =
+                e.firstAlertLevel === 'full' ? '🎯'
+                    : e.firstAlertLevel === 'recovery' ? '🦅'
+                        : '👀';
+            const sector = e.sector ? ` · ${escapeHtml(e.sector.slice(0, 18))}` : '';
+            parts.push(
+                `${lvEmoji} <b>${escapeHtml(e.ticker)}</b> @ $${e.firstAlertPrice.toFixed(2)}  ` +
+                `RVOL ${e.firstAlertRvol.toFixed(2)}${sector}`
+            );
+        }
+        if (sorted.length > 10) {
+            parts.push(`<i>...ועוד ${sorted.length - 10} מניות</i>`);
+        }
+    }
+
+    // 3. Active monitors summary (count only — full list is in the JSON).
+    parts.push(
+        `\n👀 <b>STILL MONITORING:</b> ${active.length} מניות פעילות` +
+        ` | <b>סך כל אי-פעם:</b> ${state.entries.length}`
+    );
+
+    // 4. Expired (rarely shows; informational).
+    if (expired.length > 0) {
+        parts.push(
+            `\n🗑️ <b>EXPIRED TODAY:</b> ${expired.length} מניות עברו 30 ימים ללא resolution: ` +
+            expired.slice(0, 5).map((t) => escapeHtml(t.entry.ticker)).join(', ') +
+            (expired.length > 5 ? `, +${expired.length - 5}` : '')
+        );
+    }
+
+    return parts.join('\n');
 }

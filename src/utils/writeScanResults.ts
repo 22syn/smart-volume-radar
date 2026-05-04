@@ -13,14 +13,37 @@ export function buildStoredScanResult(
     finalSignals: RVOLResult[],
     volumeWithoutPrice: StockData[]
 ): StoredScanResult {
-    const toSignal = (s: StockData, source: 'topSignals' | 'volumeWithoutPrice'): StoredSignal => ({
-        ticker: s.ticker,
-        lastPrice: s.lastPrice,
-        rvol: s.rvol,
-        tags: s.tags ?? [],
-        source,
-    });
-    const fromTop = finalSignals.map((s) => toSignal(s, 'topSignals'));
+    type SourceType = StoredSignal['source'];
+    const toSignal = (s: StockData, source: SourceType): StoredSignal => {
+        const sig: StoredSignal = {
+            ticker: s.ticker,
+            lastPrice: s.lastPrice,
+            rvol: s.rvol,
+            tags: s.tags ?? [],
+            source,
+        };
+        if (
+            s.momentum?.level === 'full' ||
+            s.momentum?.level === 'recovery' ||
+            s.momentum?.level === 'close'
+        ) {
+            sig.momentumLevel = s.momentum.level;
+        }
+        return sig;
+    };
+    const entryPathToSource = (p: StockData['entryPath']): SourceType => {
+        switch (p) {
+            case 'green':
+                return 'topSignals-green';
+            case 'pullback':
+                return 'topSignals-pullback';
+            case 'sma21':
+                return 'topSignals-sma21';
+            default:
+                return 'topSignals-green';
+        }
+    };
+    const fromTop = finalSignals.map((s) => toSignal(s, entryPathToSource(s.entryPath)));
     const fromSilent = volumeWithoutPrice.map((s) => toSignal(s, 'volumeWithoutPrice'));
     return {
         date,

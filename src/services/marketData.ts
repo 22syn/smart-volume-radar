@@ -8,7 +8,19 @@ import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
 import { formatRVOL } from '../utils/formatters.js';
 import pLimit from 'p-limit';
-import { calculateSMA, calculateRSI, calculate52wHighAndConsolidation, computeNewlogicTags } from '../utils/technicalAnalysis.js';
+import {
+    calculateSMA,
+    calculateRSI,
+    calculate52wHighAndConsolidation,
+    computeNewlogicTags,
+    calculateSMA200Slope,
+    calculateSmaSlope,
+    countConsecutiveGreenDays,
+    detectEarningsGap,
+    calculateAVWAP,
+    calculateDaysSinceLastHigh,
+} from '../utils/technicalAnalysis.js';
+import { marketSessionMinutesElapsed, projectedRvol as computeProjectedRvol } from './rvolCalculator.js';
 
 /** Common ticker typos and their correct symbols */
 const COMMON_TYPO_FALLBACKS: Record<string, string> = {
@@ -28,7 +40,16 @@ export interface ParseYahooOptions {
 /** Yahoo chart result shape (chart.result[0]) */
 type YahooChartResult = {
     meta?: { regularMarketPrice?: number };
-    indicators?: { quote?: Array<{ close?: (number | null)[]; high?: (number | null)[]; low?: (number | null)[]; volume?: (number | null)[] }> };
+    timestamp?: number[];
+    indicators?: {
+        quote?: Array<{
+            open?: (number | null)[];
+            close?: (number | null)[];
+            high?: (number | null)[];
+            low?: (number | null)[];
+            volume?: (number | null)[];
+        }>;
+    };
 };
 
 export async function parseYahooChartResult(
@@ -43,20 +64,34 @@ export async function parseYahooChartResult(
     const rawCloses = indicators?.close ?? [];
     const rawHighs = indicators?.high ?? [];
     const rawLows = indicators?.low ?? [];
-    const volumes = (indicators?.volume?.filter((v): v is number => v != null && v > 0) ?? []) as number[];
+    const rawOpens = indicators?.open ?? [];
+    const rawVolumes = indicators?.volume ?? [];
+    const rawTimestamps = result.timestamp ?? [];
+    // Aligned series: keep arrays the same length so volumes[i] / dates[i] match closes[i].
     const closes: number[] = [];
     const highs: number[] = [];
     const lows: number[] = [];
+    const opens: number[] = [];
+    const dates: string[] = [];
+    const alignedVolumes: number[] = [];
     for (let i = 0; i < rawCloses.length; i++) {
         const c = rawCloses[i];
         if (c != null && c > 0) {
             closes.push(c);
             const h = rawHighs[i];
             const l = rawLows[i];
+            const o = rawOpens[i];
+            const v = rawVolumes[i];
             highs.push(h != null && h > 0 ? h : c);
             lows.push(l != null && l > 0 ? l : c);
+            opens.push(o != null && o > 0 ? o : c);
+            alignedVolumes.push(v != null && v > 0 ? v : 0);
+            const ts = rawTimestamps[i];
+            dates.push(ts != null ? new Date(ts * 1000).toISOString().slice(0, 10) : '');
         }
     }
+    // Volume-only series (legacy RVOL) — drops zero-volume days.
+    const volumes = alignedVolumes.filter((v) => v > 0);
 
     const isIndex = ticker.startsWith('^');
     if (closes.length < 1) return null;
@@ -89,15 +124,35 @@ export async function parseYahooChartResult(
         if (fetched.sma21 != null) finalSma21 = fetched.sma21;
     }
 
-    const lastDayLow = lows.length > 0 ? lows[lows.length - 1] : undefined;
-    const lastDayHigh = highs.length > 0 ? highs[highs.length - 1] : undefined;
     const tags = computeNewlogicTags({
         sma21: finalSma21,
-        lastDayLow,
-        lastDayHigh,
+        lastClose: lastPrice,
+        sma21TouchThresholdPct: config.sma21TouchThresholdPct,
         pctFromAth: athData?.pctFromAth,
         closes,
     });
+
+    // ─── Momentum-edition fields (additive; do not affect existing tag/path logic) ───
+    const sma200Slope = calculateSMA200Slope(closes, 20);
+    // SMA50 slope over 10 bars — shorter lookback because SMA50 is more responsive.
+    // Used by Recovery Rally tier to detect bear-market reversals before SMA200 turns up.
+    const sma50Slope = calculateSmaSlope(closes, 50, 10);
+    const consecutiveGreenDays = countConsecutiveGreenDays(closes, 15);
+    // Days since prior cycle high (excludes today). On a fresh-ATH day this returns the
+    // base length, not 0 — so the tightness criterion can actually fire on breakout day.
+    const daysSinceAth = calculateDaysSinceLastHigh(closes, 252);
+    // Earnings-gap: scan last 60 bars; AVWAP from gap forward, anchored at gap index.
+    const gap = detectEarningsGap(opens, highs, dates, 60, 3);
+    const gapDay = gap
+        ? { date: gap.date, level: gap.level, barsAgo: closes.length - 1 - gap.index }
+        : null;
+    const avwapFromGap =
+        gap != null
+            ? calculateAVWAP(highs, lows, closes, alignedVolumes, gap.index)
+            : undefined;
+    // projectedRvol: only meaningful intraday. After-close it equals raw rvol.
+    const minutesElapsed = marketSessionMinutesElapsed();
+    const projected = computeProjectedRvol(currentVolume, avgVolume, minutesElapsed);
 
     return {
         ticker,
@@ -114,9 +169,15 @@ export async function parseYahooChartResult(
         athSource: '52w',
         pctFromAth: athData?.pctFromAth,
         monthsInConsolidation: athData?.monthsInConsolidation,
-        lastDayLow,
-        lastDayHigh,
         tags,
+        // Momentum edition:
+        sma200Slope,
+        sma50Slope,
+        daysSinceAth,
+        consecutiveGreenDays,
+        gapDay,
+        avwapFromGap,
+        projectedRvol: projected,
     };
 }
 
@@ -135,7 +196,7 @@ export async function fetchYahooChartAsOfDate(ticker: string, asOfDate: string):
     if (!response.ok) return null;
 
     const data = (await response.json()) as { chart?: { result?: unknown[] } };
-    const result = data?.chart?.result?.[0] as { meta?: unknown; timestamp?: number[]; indicators?: { quote?: Array<{ close?: (number | null)[]; high?: (number | null)[]; low?: (number | null)[]; volume?: (number | null)[] }> } } | undefined;
+    const result = data?.chart?.result?.[0] as { meta?: unknown; timestamp?: number[]; indicators?: { quote?: Array<{ open?: (number | null)[]; close?: (number | null)[]; high?: (number | null)[]; low?: (number | null)[]; volume?: (number | null)[] }> } } | undefined;
     if (!result?.timestamp?.length) return null;
 
     const ts = result.timestamp;
@@ -151,11 +212,18 @@ export async function fetchYahooChartAsOfDate(ticker: string, asOfDate: string):
 
     const slice = <T>(arr: T[] | undefined): T[] => (arr ? arr.slice(0, lastIdx + 1) : []);
 
+    // Strip regularMarketPrice so parseYahooChartResult uses the historical close (currentClose),
+    // not today's live price which Yahoo always returns in meta regardless of slice date.
+    const metaWithoutLive = result.meta
+        ? { ...(result.meta as Record<string, unknown>), regularMarketPrice: undefined }
+        : undefined;
+
     const sliced: typeof result = {
-        meta: result.meta,
+        meta: metaWithoutLive as typeof result.meta,
         timestamp: slice(ts),
         indicators: {
             quote: [{
+                open: slice(quote.open),
                 close: slice(quote.close),
                 high: slice(quote.high),
                 low: slice(quote.low),
@@ -165,6 +233,33 @@ export async function fetchYahooChartAsOfDate(ticker: string, asOfDate: string):
     };
 
     return parseYahooChartResult(sliced as YahooChartResult, ticker, { skipTwelveData: true });
+}
+
+/**
+ * Min average daily volume to keep a ticker in the scan.
+ * Default 0 (no filter — scan everything in the watchlist).
+ * Override with env var, e.g. MIN_AVG_DAILY_VOLUME=100000 to filter pump-and-dump candidates.
+ */
+const MIN_AVG_DAILY_VOLUME = (() => {
+    const n = parseInt(process.env.MIN_AVG_DAILY_VOLUME ?? '0', 10);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+})();
+
+/**
+ * Fetch market regime from SPY: 'bear' if SPY.lastClose < SPY.SMA200, else 'bull'.
+ * Returns 'bull' on any failure (fail-open — don't tighten thresholds when the data is missing).
+ * Pass `asOfDate` for historical/backtest mode.
+ */
+export async function fetchMarketRegime(asOfDate?: string): Promise<'bull' | 'bear'> {
+    try {
+        const spy = asOfDate
+            ? await fetchYahooChartAsOfDate('SPY', asOfDate)
+            : await fetchFromYahooChart('SPY');
+        if (!spy || !spy.sma200 || spy.sma200 <= 0) return 'bull';
+        return spy.lastPrice < spy.sma200 ? 'bear' : 'bull';
+    } catch {
+        return 'bull';
+    }
 }
 
 /**
@@ -325,6 +420,8 @@ async function fetchFromTwelveData(ticker: string, isFallback = false, attempt =
         const pctFromAth = ath != null && ath > 0 ? ((lastPrice - ath) / ath) * 100 : undefined;
         const tags = computeNewlogicTags({
             sma21,
+            lastClose: lastPrice,
+            sma21TouchThresholdPct: config.sma21TouchThresholdPct,
             pctFromAth,
             closes: [], // Twelve Data quote has no history; only Pullback 15% can apply
         });
@@ -357,6 +454,66 @@ async function fetchFromTwelveData(ticker: string, isFallback = false, attempt =
 export interface FetchAllStocksResult {
     stocks: StockData[];
     failedTickers: string[];
+}
+
+/**
+ * Fetch all stocks as of a specific date (Yahoo only; Twelve Data has no asOfDate support).
+ * Used for daily scan to ensure data matches scan date regardless of run time.
+ */
+export async function fetchAllStocksAsOfDate(
+    tickers: string[],
+    asOfDate: string
+): Promise<FetchAllStocksResult> {
+    logger.info(`🚀 Starting fetch for ${tickers.length} tickers as of ${asOfDate} (Yahoo only)...`);
+
+    const limit = pLimit(3);
+    const results: StockData[] = [];
+    const failedTickers: string[] = [];
+
+    const tasks = tickers.map((ticker, index) =>
+        limit(async () => {
+            logger.info(`[${index + 1}/${tickers.length}] Fetching ${ticker}...`);
+
+            let result = await fetchYahooChartAsOfDate(ticker, asOfDate);
+            let successSource = 'Yahoo Chart (asOfDate)';
+
+            if (!result && COMMON_TYPO_FALLBACKS[ticker.toUpperCase()]) {
+                const fallbackTicker = COMMON_TYPO_FALLBACKS[ticker.toUpperCase()];
+                logger.info(`🔍 Ticker ${ticker} failed, trying common typo fallback: ${fallbackTicker}`);
+                result = await fetchYahooChartAsOfDate(fallbackTicker, asOfDate);
+                if (result) result.ticker = fallbackTicker;
+            }
+
+            if (result) {
+                // Low-liquidity filter (skip pump-and-dump candidates).
+                if (result.avgVolume > 0 && result.avgVolume < MIN_AVG_DAILY_VOLUME) {
+                    logger.warn(
+                        `⏭️ ${ticker}: avgVolume=${result.avgVolume.toFixed(0)} < ${MIN_AVG_DAILY_VOLUME} — dropped (low liquidity)`
+                    );
+                    return { ticker, data: null };
+                }
+                logger.info(`✅ ${ticker}: RVOL=${formatRVOL(result.rvol)} (${successSource})`);
+                return { ticker, data: result };
+            }
+            logger.warn(`❌ ${ticker}: No data from Yahoo as of ${asOfDate}`);
+            return { ticker, data: null };
+        })
+    );
+
+    const fetchResults = await Promise.all(tasks);
+    fetchResults.forEach((res) => {
+        if (res.data) {
+            results.push(res.data);
+        } else {
+            failedTickers.push(res.ticker);
+        }
+    });
+
+    logger.info(`📊 Final: ${results.length}/${tickers.length} stocks fetched successfully`);
+    if (failedTickers.length > 0) {
+        logger.warn(`⚠️ Failed to fetch: ${failedTickers.join(', ')}`);
+    }
+    return { stocks: results, failedTickers };
 }
 
 /**

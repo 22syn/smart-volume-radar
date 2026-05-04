@@ -5,14 +5,18 @@
 
 import { loadWatchlist, validateConfig, config, getSectorForTicker, fetchAndCacheWatchlist, getInvalidTickersFromWatchlist, getIndexSkippedFromWatchlist } from './config/index.js';
 import { classifyTickersWithGroq } from './services/llmSummary.js';
-import { fetchAllStocks } from './services/marketData.js';
+import { fetchAllStocksAsOfDate, fetchMarketRegime } from './services/marketData.js';
+import { evaluateMomentumSetup } from './utils/setup.js';
 import { calculateRVOL } from './services/rvolCalculator.js';
 import { enrichWithNews } from './services/newsService.js';
-import { sendDailyReport, sendTelegramMessage } from './services/telegramBot.js';
-import { RVOLResult, MarketStatus } from './types/index.js';
+import { sendDailyReport, sendTelegramMessage, formatMonitorTelegramMessage } from './services/telegramBot.js';
+import { loadMonitorState, saveMonitorState } from './utils/monitorStore.js';
+import { updateMonitorState } from './services/monitorTracker.js';
+import { RVOLResult, MarketStatus, StockData } from './types/index.js';
 import logger from './utils/logger.js';
 import { formatErrorForTelegram } from './utils/errorHandler.js';
 import { buildStoredScanResult, writeScanResults, writeScanDebug } from './utils/writeScanResults.js';
+import { getLastTradingDay } from './utils/tradingDate.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -110,9 +114,18 @@ async function main(): Promise<void> {
         const tickers = loadWatchlist();
         logger.info(`📋 Loaded ${tickers.length} tickers to scan`);
 
-        // 5. Fetch market data
-        logger.info('📊 Fetching market data...');
-        const { stocks, failedTickers } = await fetchAllStocks(tickers);
+        // 5. Determine scan date (last US trading day) and fetch market data
+        const scanDate = getLastTradingDay();
+        logger.info(`📅 Scan date: ${scanDate} (last US trading day)`);
+        // Market regime (bull/bear) from SPY vs SMA200 — scoped to scanDate so backtests stay honest.
+        const marketRegime = await fetchMarketRegime(scanDate);
+        logger.info(`🧭 Market regime: ${marketRegime.toUpperCase()} (SPY vs SMA200)`);
+        const { stocks, failedTickers } = await fetchAllStocksAsOfDate(tickers, scanDate);
+        // Tag every stock with the regime + run momentum evaluator (additive — does not affect existing pipeline).
+        for (const s of stocks) {
+            s.marketRegime = marketRegime;
+            s.momentum = evaluateMomentumSetup(s, { regime: marketRegime });
+        }
         logger.info(`✅ Fetched data for ${stocks.length}/${tickers.length} stocks`);
 
         if (stocks.length === 0) {
@@ -120,30 +133,46 @@ async function main(): Promise<void> {
             return;
         }
 
-        // 6. Calculate RVOL and filter
-        logger.info('🔢 Calculating RVOL...');
+        // 6. Calculate RVOL — kept only for JSON history / backtest scripts.
+        //    Telegram is driven exclusively by momentum (see step 6.5).
+        logger.info('🔢 Calculating RVOL (for JSON history)...');
         const { topSignals, volumeWithoutPrice, debug } = calculateRVOL(stocks, {
             minRVOL: config.minRVOL,
             topN: config.topN,
             priceChangeThreshold: config.priceChangeThreshold,
         });
-        logger.info(`🎯 Found ${topSignals.length} signals (RVOL ≥ ${config.minRVOL})`);
+        logger.info(`🎯 Legacy 3-path: ${topSignals.length} signals + ${volumeWithoutPrice.length} silent (history only)`);
 
-        // 7. Enrich with news
-        logger.info('📰 Enriching with news...');
-        const enrichedSignals = await enrichWithNews(topSignals);
-
-        // Mark volume without price stocks and add sector
-        const finalSignals: RVOLResult[] = enrichedSignals.map((s) => {
-            return {
-                ...s,
-                sector: getSectorForTicker(s.ticker),
-                isVolumeWithoutPrice: volumeWithoutPrice.some((v) => v.ticker === s.ticker),
-            };
+        // 6.5. Momentum-only signal list — THIS is what Telegram sends.
+        //      Built directly from `stocks` so a Full/Close/Recovery stock can never be
+        //      filtered out by the legacy 3-path rule.
+        const momentumStocks = stocks.filter(
+            (s) => s.momentum?.level === 'full' || s.momentum?.level === 'close' || s.momentum?.level === 'recovery'
+        );
+        const tierRank = (lvl: 'full' | 'close' | 'recovery' | 'none' | undefined): number =>
+            lvl === 'full' ? 0 : lvl === 'recovery' ? 1 : lvl === 'close' ? 2 : 3;
+        momentumStocks.sort((a, b) => {
+            const tDiff = tierRank(a.momentum?.level) - tierRank(b.momentum?.level);
+            if (tDiff !== 0) return tDiff;
+            return (b.rvol ?? 0) - (a.rvol ?? 0);
         });
+        const fullCount = momentumStocks.filter((s) => s.momentum?.level === 'full').length;
+        const recoveryCount = momentumStocks.filter((s) => s.momentum?.level === 'recovery').length;
+        const closeCount = momentumStocks.filter((s) => s.momentum?.level === 'close').length;
+        logger.info(`🎯 Momentum signals (Telegram): ${fullCount} Full + ${recoveryCount} Recovery + ${closeCount} Watchlist`);
+
+        // 7. Enrich with news — only momentum stocks (what Telegram sends)
+        logger.info('📰 Enriching with news...');
+        const enrichedMomentum = await enrichWithNews(momentumStocks);
+
+        // Build RVOLResult shape (with sector). isVolumeWithoutPrice always false for momentum.
+        const finalSignals: RVOLResult[] = enrichedMomentum.map((s) => ({
+            ...s,
+            sector: getSectorForTicker(s.ticker),
+            isVolumeWithoutPrice: false,
+        }));
 
         // 8. Classify problematic tickers (invalid + failed) with Groq – INDEX/BOND excluded from Jules
-        const today = new Date().toISOString().split('T')[0];
         const invalidTickers = getInvalidTickersFromWatchlist();
         let indexTickers = [...getIndexSkippedFromWatchlist()];
         const combined = [...new Set([...invalidTickers, ...failedTickers])];
@@ -164,10 +193,17 @@ async function main(): Promise<void> {
 
         const totalInSheet = tickers.length + invalidTickers.length + getIndexSkippedFromWatchlist().length;
         const notAnalyzed = fixableInvalid.length + indexTickers.length + fixableFailed.length;
-        await sendDailyReport(today, finalSignals, volumeWithoutPrice, fixableFailed, {
+        // SMA21 skip check covers everything we evaluated (so the diagnostic catches issues even
+        // for stocks that never made the momentum cut).
+        const sma21TouchSkippedTickers = stocks
+            .filter((s) => !s.sma21 || s.sma21 <= 0 || !s.lastPrice || s.lastPrice <= 0)
+            .map((s) => s.ticker);
+        // Telegram: momentum-only (finalSignals already filtered). Pass [] for silent activity.
+        await sendDailyReport(scanDate, finalSignals, [], fixableFailed, {
             watchlistCount: tickers.length,
             invalidTickers: fixableInvalid,
             indexTickers,
+            sma21TouchSkippedTickers,
             watchlistStats: {
                 totalInSheet,
                 analyzed: stocks.length,
@@ -178,15 +214,47 @@ async function main(): Promise<void> {
             },
         });
 
-        const stored = buildStoredScanResult(today, finalSignals, volumeWithoutPrice);
+        // JSON history keeps the legacy 3-path + silent set so backtest scripts still see them.
+        // News not enriched here (it's only fetched for momentum stocks above) — empty array is fine.
+        const legacyForHistory: RVOLResult[] = topSignals.map((s) => ({
+            ...s,
+            sector: getSectorForTicker(s.ticker),
+            isVolumeWithoutPrice: false,
+            news: [],
+        }));
+        const stored = buildStoredScanResult(scanDate, legacyForHistory, volumeWithoutPrice);
         const resultsDir = path.join(__dirname, '..', 'results');
         writeScanResults(stored, resultsDir);
         writeScanDebug(
-            { date: today, failedTickers, fetchedCount: stocks.length, debug },
+            { date: scanDate, failedTickers, fetchedCount: stocks.length, debug },
             resultsDir
         );
-        logger.info(`📁 Saved results to ${resultsDir}/scan-${today}.json`);
-        logger.info(`📋 Saved scan-debug to ${resultsDir}/scan-debug-${today}.json (greenSortedFull, failedTickers, for investigation)`);
+        logger.info(`📁 Saved results to ${resultsDir}/scan-${scanDate}.json`);
+        logger.info(`📋 Saved scan-debug to ${resultsDir}/scan-debug-${scanDate}.json (greenSortedFull, failedTickers, for investigation)`);
+
+        // 8.5 Monitor follow-up — track Watchlist/Full alerts through resolution.
+        // (graduations, manual-entry candidates, SMA21 pullbacks, expirations)
+        try {
+            logger.info('📊 Updating monitor follow-up state...');
+            const stocksByTicker = new Map<string, StockData>();
+            for (const s of stocks) stocksByTicker.set(s.ticker.toUpperCase(), s);
+            const monitorState = loadMonitorState(resultsDir);
+            const monitorSummary = updateMonitorState(monitorState, stocksByTicker, scanDate);
+            saveMonitorState(monitorState, resultsDir);
+            logger.info(`💾 Saved monitor-list.json (${monitorState.entries.length} entries)`);
+
+            // Send a separate Telegram message with the followup if there's anything to report.
+            const monitorMsg = formatMonitorTelegramMessage(monitorSummary, monitorState, scanDate, stocksByTicker);
+            if (monitorMsg) {
+                await sendTelegramMessage(monitorMsg);
+                logger.info('✉️ Monitor followup sent to Telegram');
+            } else {
+                logger.info('Monitor followup: nothing to report (no transitions, new entries, or active monitors)');
+            }
+        } catch (monitorErr) {
+            // Monitor failures must never break the daily scan — log + continue.
+            logger.error('⚠️ Monitor update failed (non-fatal):', (monitorErr as Error).message);
+        }
 
         // 9. Write run-issues for Jules – only fixable tickers; skip if same issues as last Jules run (one fix attempt)
         const hasFixable = fixableInvalid.length > 0 || fixableFailed.length > 0;
@@ -216,7 +284,7 @@ async function main(): Promise<void> {
             if (!skipJules) {
                 const issuesFile = process.env.SCAN_ISSUES_FILE || '.scan-issues.json';
                 const payload = {
-                    date: today,
+                    date: scanDate,
                     invalidTickers: fixableInvalid,
                     failedTickers: fixableFailed,
                     summary: `Invalid format: ${fixableInvalid.length} | Fetch failed: ${fixableFailed.length}`,
@@ -228,7 +296,7 @@ async function main(): Promise<void> {
                     hash: issuesHash,
                     invalidTickers: fixableInvalid,
                     failedTickers: fixableFailed,
-                    date: today,
+                    date: scanDate,
                 };
                 fs.writeFileSync(
                     path.join(__dirname, '..', '.jules-last-issues.json'),
@@ -241,7 +309,7 @@ async function main(): Promise<void> {
         // 10. Log completion
         const duration = ((Date.now() - startTime) / 1000).toFixed(1);
         logger.info(`\n✅ Report sent successfully in ${duration}s`);
-        logger.info(`   Scanned: ${stocks.length} | Signals: ${topSignals.length} | Silent: ${volumeWithoutPrice.length}`);
+        logger.info(`   Scanned: ${stocks.length} | Telegram(momentum): ${finalSignals.length} | History(3-path+silent): ${topSignals.length}+${volumeWithoutPrice.length}`);
 
     } catch (error) {
         const errorMessage = formatErrorForTelegram(error);
