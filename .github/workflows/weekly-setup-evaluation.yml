@@ -32,7 +32,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p results
-          for run in $(gh run list --workflow daily-scan.yml --limit 10 --json databaseId,conclusion -q '.[] | select(.conclusion=="success") | .databaseId'); do
+          for run in $(gh run list --workflow daily-scan.yml --limit 35 --json databaseId,conclusion -q '.[] | select(.conclusion=="success") | .databaseId'); do
             gh run download "$run" -D results || true
           done
 
@@ -42,7 +42,7 @@ jobs:
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-        run: npm run evaluate-setups > eval_output.txt 2>&1 || true
+        run: npm run evaluate-setups-30d > eval_output.txt 2>&1 || true
 
       - name: Validate scan logs (replay vs actual)
         id: validate
