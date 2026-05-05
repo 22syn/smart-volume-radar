@@ -1,0 +1,85 @@
+name: Weekly Criteria Analysis
+
+# Re-runs analyze-criteria-importance.ts on the accumulated monitor history,
+# posts a compact summary to Telegram, and commits the updated CSV. Intended
+# as the long-term feedback loop for tuning the radar (per
+# docs/criteria-analysis-2026-05-05.md "Re-evaluation cadence").
+
+concurrency:
+  group: weekly-analysis
+  cancel-in-progress: false
+
+on:
+  schedule:
+    # Sunday 09:00 UTC = 12:00 Israel time. After all Friday data has settled.
+    - cron: '0 9 * * 0'
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write  # commit results/criteria-importance.csv
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          # We need the latest monitor-list.json that the daily scan commits back.
+          ref: main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run criteria importance analysis (sends Telegram summary)
+        env:
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          # Tells the script to send a Telegram summary at the end.
+          WEEKLY_ANALYSIS: '1'
+        run: npm run analyze-criteria-importance
+
+      - name: Commit-back criteria-importance.csv
+        if: success() && hashFiles('results/criteria-importance.csv') != ''
+        continue-on-error: true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add results/criteria-importance.csv
+          if git diff --staged --quiet; then
+            echo "No CSV changes to commit"
+          else
+            DATE=$(date -u +%Y-%m-%d)
+            git commit -m "chore(analysis): weekly criteria-importance.csv update ($DATE)"
+            git pull --rebase origin main || true
+            git push origin HEAD:main || echo "Push failed — will retry next run"
+          fi
+
+      - name: Upload analysis artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: criteria-importance-${{ github.run_number }}
+          path: results/criteria-importance.csv
+          retention-days: 365
+
+      - name: Notify Telegram on failure
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              -d "chat_id=${TELEGRAM_CHAT_ID}&text=⚠️ Weekly criteria-importance analysis failed. Check GitHub Actions."
+          fi

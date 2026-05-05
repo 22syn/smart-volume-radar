@@ -20,6 +20,7 @@ import pLimit from 'p-limit';
 import { fetchYahooChartAsOfDate, fetchMarketRegime } from '../src/services/marketData.js';
 import { evaluateMomentumSetup } from '../src/utils/setup.js';
 import { fetchAndCacheWatchlist, validateConfig } from '../src/config/index.js';
+import { sendTelegramMessage } from '../src/services/telegramBot.js';
 import type { MomentumCriteria, MomentumLevel } from '../src/types/index.js';
 import logger from '../src/utils/logger.js';
 
@@ -487,6 +488,17 @@ async function main(): Promise<void> {
         );
     }
 
+    // ─── Telegram summary (when run via weekly cron / WEEKLY_ANALYSIS=1) ─
+    if (process.env.WEEKLY_ANALYSIS === '1' || process.argv.includes('--telegram')) {
+        try {
+            const msg = buildTelegramSummary(analyzed);
+            await sendTelegramMessage(msg);
+            logger.info('✉️ Weekly criteria-analysis summary sent to Telegram');
+        } catch (err) {
+            logger.error('Telegram summary failed:', (err as Error).message);
+        }
+    }
+
     // ─── CSV export ─────────────────────────────────────────────────
     const csvPath = path.join(__dirname, '..', 'results', 'criteria-importance.csv');
     const headers = [
@@ -528,6 +540,143 @@ async function main(): Promise<void> {
     }
     fs.writeFileSync(csvPath, csvLines.join('\n'), 'utf-8');
     console.log(`\n📁 Saved CSV: ${csvPath}`);
+}
+
+/**
+ * Build a compact Telegram summary of the weekly analysis.
+ * Returns HTML-formatted text under ~3KB so it fits a single message.
+ */
+function buildTelegramSummary(rows: AnalyzedEntry[]): string {
+    const today = new Date().toISOString().slice(0, 10);
+    const lines: string[] = [];
+    lines.push(`📊 <b>WEEKLY CRITERIA ANALYSIS</b>\n📅 <code>${today}</code>`);
+    lines.push(`<i>Sample: ${rows.length} historical alerts</i>`);
+    lines.push('━━━━━━━━━━━━━━━━━━━━━━');
+
+    // Use +10td as the canonical decision window (most data, best signal-to-noise)
+    const ret10 = (e: AnalyzedEntry): number | null => e.forwardReturns[10] ?? null;
+    const valid = rows.filter((e) => ret10(e) != null && Number.isFinite(ret10(e)!));
+
+    if (valid.length < 20) {
+        lines.push(`\n⚠️ Only ${valid.length} entries with +10td return — need ≥20.`);
+        lines.push(`(Most alerts are still within their 10-day forward window.)`);
+        return lines.join('\n');
+    }
+
+    const sorted = [...valid].sort((a, b) => ret10(b)! - ret10(a)!);
+    const qSize = Math.max(5, Math.floor(sorted.length * 0.2));
+    const top = sorted.slice(0, qSize);
+    const bot = sorted.slice(-qSize);
+    const overallMedian = median(valid.map((e) => ret10(e)!));
+    const winRate = valid.filter((e) => ret10(e)! > 0).length / valid.length;
+
+    // Header stats
+    lines.push(
+        `\n📈 <b>+10td median:</b> ${overallMedian >= 0 ? '+' : ''}${overallMedian.toFixed(1)}% | ` +
+            `<b>Win rate:</b> ${(winRate * 100).toFixed(0)}%`
+    );
+
+    // Compute lifts at +10td
+    type LiftRow = { key: keyof MomentumCriteria; lift: number; topPct: number; botPct: number };
+    const liftRows: LiftRow[] = CRITERIA_KEYS.map((k) => {
+        const tp = top.filter((e) => e.criteriaAtAlert?.[k]).length / top.length;
+        const bp = bot.filter((e) => e.criteriaAtAlert?.[k]).length / bot.length;
+        return {
+            key: k,
+            lift: bp > 0 ? tp / bp : tp > 0 ? Infinity : 1,
+            topPct: tp,
+            botPct: bp,
+        };
+    });
+
+    // Top predictors (lift ≥ 1.5, sorted desc) — strongest signal
+    const predictors = liftRows
+        .filter((r) => r.lift >= 1.5 && r.lift !== Infinity)
+        .sort((a, b) => b.lift - a.lift)
+        .slice(0, 3);
+    if (predictors.length > 0) {
+        lines.push('\n🔥 <b>Top predictors (+10td):</b>');
+        for (const r of predictors) {
+            lines.push(`  • <code>${r.key}</code>: ${r.lift.toFixed(2)}x lift`);
+        }
+    }
+
+    // Anti-predictors (lift ≤ 0.83, sorted asc)
+    const antiPredictors = liftRows
+        .filter((r) => r.lift <= 0.83)
+        .sort((a, b) => a.lift - b.lift)
+        .slice(0, 3);
+    if (antiPredictors.length > 0) {
+        lines.push('\n⚠️ <b>Anti-predictors (+10td):</b>');
+        for (const r of antiPredictors) {
+            lines.push(`  • <code>${r.key}</code>: ${r.lift.toFixed(2)}x lift`);
+        }
+    }
+
+    // Best sector (≥3 entries, sorted by median desc)
+    const bySector = new Map<string, AnalyzedEntry[]>();
+    for (const e of valid) {
+        if (!bySector.has(e.sector)) bySector.set(e.sector, []);
+        bySector.get(e.sector)!.push(e);
+    }
+    const sectorRows = Array.from(bySector.entries())
+        .filter(([, r]) => r.length >= 3)
+        .map(([sec, r]) => ({
+            sector: sec,
+            n: r.length,
+            median: median(r.map((e) => ret10(e)!)),
+        }))
+        .sort((a, b) => b.median - a.median);
+    if (sectorRows.length > 0) {
+        lines.push('\n🏭 <b>Top sectors (+10td median):</b>');
+        for (const s of sectorRows.slice(0, 3)) {
+            lines.push(`  • ${s.sector} (n=${s.n}): ${s.median >= 0 ? '+' : ''}${s.median.toFixed(1)}%`);
+        }
+        const worst = sectorRows[sectorRows.length - 1]!;
+        if (worst.median < 0) {
+            lines.push(`  ⚠️ Worst: ${worst.sector} (n=${worst.n}): ${worst.median.toFixed(1)}%`);
+        }
+    }
+
+    // Persistence sweet spot
+    const buckets = new Map<string, AnalyzedEntry[]>();
+    const bucketKey = (k: number): string =>
+        k === 0 ? '0' : k === 1 ? '1' : k === 2 ? '2' : k <= 4 ? '3-4' : '5+';
+    for (const e of valid) {
+        const lbl = bucketKey(e.reAlertCount);
+        if (!buckets.has(lbl)) buckets.set(lbl, []);
+        buckets.get(lbl)!.push(e);
+    }
+    const persistRows = Array.from(buckets.entries())
+        .map(([lbl, r]) => ({
+            label: lbl,
+            n: r.length,
+            winRate: r.filter((e) => ret10(e)! > 0).length / r.length,
+            median: median(r.map((e) => ret10(e)!)),
+        }))
+        .filter((r) => r.n >= 5);
+    const persistBest = [...persistRows].sort((a, b) => b.winRate - a.winRate)[0];
+    if (persistBest) {
+        lines.push(
+            `\n🔁 <b>Persistence sweet spot:</b> ${persistBest.label} re-alerts → ` +
+                `${(persistBest.winRate * 100).toFixed(0)}% win rate (n=${persistBest.n})`
+        );
+    }
+
+    // Graduation status
+    const graduated = rows.filter((e) => e.status === 'graduated');
+    if (graduated.length > 0) {
+        const gradMedian = median(graduated.map((e) => e.returnPct));
+        lines.push(
+            `\n🎓 <b>Graduations:</b> ${graduated.length} entries, ` +
+                `${gradMedian >= 0 ? '+' : ''}${gradMedian.toFixed(1)}% median return`
+        );
+    }
+
+    lines.push('\n━━━━━━━━━━━━━━━━━━━━━━');
+    lines.push('<i>Full report: results/criteria-importance.csv</i>');
+
+    return lines.join('\n');
 }
 
 main().catch((err) => {

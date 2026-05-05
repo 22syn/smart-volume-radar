@@ -25,7 +25,9 @@
     "evaluate-retro": "tsx scripts/evaluate-retro.ts",
     "validate-scan": "tsx scripts/validate-scan.ts",
     "regenerate-results": "tsx scripts/regenerate-results.ts",
-    "evaluate-retro-advanced": "tsx scripts/evaluate-retro-advanced.ts"
+    "evaluate-retro-advanced": "tsx scripts/evaluate-retro-advanced.ts",
+    "analyze-criteria-importance": "tsx scripts/analyze-criteria-importance.ts",
+    "preview-report": "tsx scripts/preview-report.ts"
   },
   "keywords": [
     "stocks",
