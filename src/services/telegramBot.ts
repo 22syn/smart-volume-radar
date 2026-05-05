@@ -285,10 +285,13 @@ export function formatDailyReport(
     date: string,
     topSignals: RVOLResult[],
     volumeWithoutPrice: StockData[],
-    _failedTickers: string[] = []
+    _failedTickers: string[] = [],
+    graduations?: GraduationInfo[]
 ): string {
+    const gradSection = formatGraduationSection(graduations);
     if (topSignals.length === 0) {
-        return `📊 <b>Smart Volume Radar</b>\n📅 ${date}\n\n📭 אין מניות במומנטום היום (Full / Recovery / Watchlist).\n\n<i>הסורק רץ תקין — פשוט אין כיום מניה שעוברת את הקריטריונים.</i>`;
+        const empty = `📊 <b>Smart Volume Radar</b>\n📅 ${date}\n\n📭 אין מניות במומנטום היום (Full / Recovery / Watchlist).\n\n<i>הסורק רץ תקין — פשוט אין כיום מניה שעוברת את הקריטריונים.</i>`;
+        return gradSection ? gradSection + empty : empty;
     }
 
     // Caller already sorted by tier (full→recovery→close) then RVOL — preserve that.
@@ -309,6 +312,9 @@ export function formatDailyReport(
     };
 
     let message = formatReportHeader(date, bullish, bearish, regime, tierCounts);
+    if (gradSection) {
+        message = gradSection + message;
+    }
 
     const tierHeaders = {
         full: '🎯 <b>FULL MOMENTUM</b>',
@@ -424,6 +430,21 @@ function formatMessageDataHeader(
     return `📊 <code>${parts.join(' • ')}</code>\n\n`;
 }
 
+/**
+ * One graduation event = a stock that transitioned Watchlist→Full today.
+ * Highest-confidence signal in the system per 2026-05-05 criteria analysis
+ * (median +24% return vs +2-7% for any other resolution status).
+ */
+export interface GraduationInfo {
+    ticker: string;
+    sector?: string;
+    firstAlertDate: string;
+    firstAlertPrice: number;
+    currentPrice: number;
+    daysSinceAlert: number;
+    returnPct: number;
+}
+
 /** Scope info for LLM verification and run issues */
 export interface ReportScope {
     watchlistCount?: number;
@@ -441,6 +462,37 @@ export interface ReportScope {
         reasonIndex: number;
         reasonFetchFailed: number;
     };
+    /** Stocks that graduated today (Watchlist→Full). Surfaced at top of report. */
+    graduations?: GraduationInfo[];
+}
+
+/**
+ * Format the graduation block — the highest-priority section of the report.
+ * Empty string when no graduations today.
+ */
+function formatGraduationSection(graduations: GraduationInfo[] | undefined): string {
+    if (!graduations || graduations.length === 0) return '';
+    const lines: string[] = [];
+    lines.push(
+        `🎓 <b>GRADUATION ALERT (${graduations.length})</b>  <i>Watchlist → Full Momentum</i>`
+    );
+    lines.push('━━━━━━━━━━━━━━━━━━━━━━');
+    for (const g of graduations) {
+        const sector = g.sector ? ` <i>(${escapeHtml(g.sector)})</i>` : '';
+        const sign = g.returnPct >= 0 ? '+' : '';
+        lines.push(
+            `🎯 <b>${escapeHtml(g.ticker)}</b>${sector}\n` +
+                `├ ${sign}${g.returnPct.toFixed(1)}% מהאיתות הראשון  ` +
+                `($${g.firstAlertPrice.toFixed(2)} → $${g.currentPrice.toFixed(2)})\n` +
+                `└ ${g.daysSinceAlert} ימים מאיתות Watchlist`
+        );
+    }
+    lines.push(
+        `\n<i>📊 גרדואציה היא הסיגנל החזק ביותר ההיסטורית: median +24% תשואה ` +
+            `(לעומת +2-7% לסטטוסים אחרים, n=15 ב-30 ימים האחרונים).</i>\n`
+    );
+    lines.push('━━━━━━━━━━━━━━━━━━━━━━\n');
+    return lines.join('\n');
 }
 
 /** Format watchlist summary: total in sheet, analyzed, not analyzed with reasons */
@@ -565,7 +617,7 @@ export async function sendDailyReport(
     failedTickers: string[] = [],
     scope?: ReportScope
 ): Promise<void> {
-    const report = formatDailyReport(date, topSignals, volumeWithoutPrice, failedTickers);
+    const report = formatDailyReport(date, topSignals, volumeWithoutPrice, failedTickers, scope?.graduations);
     const chunks = chunkMessage(report);
 
     const issuesSection = formatRunIssuesSection(

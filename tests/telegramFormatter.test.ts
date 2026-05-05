@@ -206,5 +206,58 @@ describe('Telegram Formatter (momentum-only)', () => {
             expect(report).not.toContain('Could not check');
             expect(report).not.toContain('BAD.TA');
         });
+
+        describe('Graduation alert section', () => {
+            const graduations = [
+                {
+                    ticker: 'NXPI',
+                    sector: 'Semiconductor',
+                    firstAlertDate: '2026-04-15',
+                    firstAlertPrice: 88.20,
+                    currentPrice: 99.05,
+                    daysSinceAlert: 12,
+                    returnPct: 12.3,
+                },
+            ];
+
+            it('renders the graduation block when graduations are passed', () => {
+                const report = formatDailyReport('2026-04-27', [fullStock], [], [], graduations);
+
+                expect(report).toContain('GRADUATION ALERT (1)');
+                expect(report).toContain('Watchlist → Full Momentum');
+                expect(report).toContain('NXPI');
+                expect(report).toContain('Semiconductor');
+                expect(report).toContain('+12.3%');
+                expect(report).toContain('12 ימים');
+            });
+
+            it('places graduation block before the FULL MOMENTUM section', () => {
+                const report = formatDailyReport('2026-04-27', [fullStock], [], [], graduations);
+                const gradIdx = report.indexOf('GRADUATION ALERT');
+                // Tier section header is "🎯 <b>FULL MOMENTUM</b> <i>(1)</i>" — find the FIRST
+                // FULL MOMENTUM occurrence after the graduation block, which is the tier header
+                // (not the per-stock badge inside the graduation block).
+                const reportRadarHeaderIdx = report.indexOf('SMART VOLUME RADAR');
+                const fullIdx = report.indexOf('FULL MOMENTUM', reportRadarHeaderIdx);
+
+                expect(gradIdx).toBeGreaterThanOrEqual(0);
+                expect(fullIdx).toBeGreaterThan(gradIdx);
+            });
+
+            it('omits the section entirely when no graduations', () => {
+                const report = formatDailyReport('2026-04-27', [fullStock], [], [], []);
+
+                expect(report).not.toContain('GRADUATION ALERT');
+            });
+
+            it('still shows graduation block when there are no momentum signals', () => {
+                const report = formatDailyReport('2026-04-27', [], [], [], graduations);
+
+                expect(report).toContain('GRADUATION ALERT');
+                expect(report).toContain('NXPI');
+                // Empty-state for momentum is still appended
+                expect(report).toContain('אין מניות במומנטום היום');
+            });
+        });
     });
 });

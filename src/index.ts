@@ -9,7 +9,7 @@ import { fetchAllStocksAsOfDate, fetchMarketRegime } from './services/marketData
 import { evaluateMomentumSetup } from './utils/setup.js';
 import { calculateRVOL } from './services/rvolCalculator.js';
 import { enrichWithNews } from './services/newsService.js';
-import { sendDailyReport, sendTelegramMessage, formatMonitorTelegramMessage } from './services/telegramBot.js';
+import { sendDailyReport, sendTelegramMessage, formatMonitorTelegramMessage, GraduationInfo } from './services/telegramBot.js';
 import { loadMonitorState, saveMonitorState } from './utils/monitorStore.js';
 import { updateMonitorState } from './services/monitorTracker.js';
 import { RVOLResult, MarketStatus, StockData } from './types/index.js';
@@ -198,7 +198,55 @@ async function main(): Promise<void> {
         const sma21TouchSkippedTickers = stocks
             .filter((s) => !s.sma21 || s.sma21 <= 0 || !s.lastPrice || s.lastPrice <= 0)
             .map((s) => s.ticker);
-        // Telegram: momentum-only (finalSignals already filtered). Pass [] for silent activity.
+
+        // 7.5. Monitor state update — must run BEFORE sendDailyReport so the report
+        // can surface today's Watchlist→Full graduations at the top (highest-confidence
+        // signal per 2026-05-05 criteria analysis: median +24% vs +2-7% for other tiers).
+        const stocksByTicker = new Map<string, StockData>();
+        for (const s of stocks) stocksByTicker.set(s.ticker.toUpperCase(), s);
+        const resultsDir = path.join(__dirname, '..', 'results');
+        const monitorState = loadMonitorState(resultsDir);
+        let monitorSummary: ReturnType<typeof updateMonitorState> | null = null;
+        let graduations: GraduationInfo[] = [];
+        try {
+            logger.info('📊 Updating monitor follow-up state...');
+            monitorSummary = updateMonitorState(monitorState, stocksByTicker, scanDate);
+            saveMonitorState(monitorState, resultsDir);
+            logger.info(`💾 Saved monitor-list.json (${monitorState.entries.length} entries)`);
+
+            graduations = monitorSummary.transitions
+                .filter((t) => t.newStatus === 'graduated')
+                .map((t) => {
+                    const e = t.entry;
+                    const stock = stocksByTicker.get(e.ticker.toUpperCase());
+                    const currentPrice = stock?.lastPrice ?? e.firstAlertPrice;
+                    const returnPct = e.firstAlertPrice > 0
+                        ? ((currentPrice - e.firstAlertPrice) / e.firstAlertPrice) * 100
+                        : 0;
+                    const daysSinceAlert = Math.max(
+                        0,
+                        Math.round(
+                            (Date.parse(scanDate) - Date.parse(e.firstAlertDate)) / 86400_000
+                        )
+                    );
+                    return {
+                        ticker: e.ticker,
+                        sector: e.sector,
+                        firstAlertDate: e.firstAlertDate,
+                        firstAlertPrice: e.firstAlertPrice,
+                        currentPrice,
+                        daysSinceAlert,
+                        returnPct,
+                    };
+                });
+            if (graduations.length > 0) {
+                logger.info(`🎓 ${graduations.length} graduation(s) detected today — surfacing at top of report`);
+            }
+        } catch (monitorErr) {
+            logger.error('⚠️ Monitor update failed (non-fatal):', (monitorErr as Error).message);
+        }
+
+        // 8. Telegram: momentum-only (finalSignals already filtered). Pass [] for silent activity.
         await sendDailyReport(scanDate, finalSignals, [], fixableFailed, {
             watchlistCount: tickers.length,
             invalidTickers: fixableInvalid,
@@ -212,6 +260,7 @@ async function main(): Promise<void> {
                 reasonIndex: indexTickers.length,
                 reasonFetchFailed: fixableFailed.length,
             },
+            graduations,
         });
 
         // JSON history keeps the legacy 3-path + silent set so backtest scripts still see them.
@@ -223,7 +272,6 @@ async function main(): Promise<void> {
             news: [],
         }));
         const stored = buildStoredScanResult(scanDate, legacyForHistory, volumeWithoutPrice);
-        const resultsDir = path.join(__dirname, '..', 'results');
         writeScanResults(stored, resultsDir);
         writeScanDebug(
             { date: scanDate, failedTickers, fetchedCount: stocks.length, debug },
@@ -232,17 +280,11 @@ async function main(): Promise<void> {
         logger.info(`📁 Saved results to ${resultsDir}/scan-${scanDate}.json`);
         logger.info(`📋 Saved scan-debug to ${resultsDir}/scan-debug-${scanDate}.json (greenSortedFull, failedTickers, for investigation)`);
 
-        // 8.5 Monitor follow-up — track Watchlist/Full alerts through resolution.
-        // (graduations, manual-entry candidates, SMA21 pullbacks, expirations)
+        // 8.5 Send the monitor follow-up message (separate from daily report).
         try {
-            logger.info('📊 Updating monitor follow-up state...');
-            const stocksByTicker = new Map<string, StockData>();
-            for (const s of stocks) stocksByTicker.set(s.ticker.toUpperCase(), s);
-            const monitorState = loadMonitorState(resultsDir);
-            const monitorSummary = updateMonitorState(monitorState, stocksByTicker, scanDate);
-            saveMonitorState(monitorState, resultsDir);
-            logger.info(`💾 Saved monitor-list.json (${monitorState.entries.length} entries)`);
-
+            if (!monitorSummary) {
+                throw new Error('Monitor state not initialized — skipping followup message');
+            }
             // Send a separate Telegram message with the followup if there's anything to report.
             const monitorMsg = formatMonitorTelegramMessage(monitorSummary, monitorState, scanDate, stocksByTicker);
             if (monitorMsg) {
