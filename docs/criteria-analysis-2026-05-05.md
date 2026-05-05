@@ -124,3 +124,109 @@ month-on-month train/test and to notice regime breaks.
       different month windows
 - [ ] If `lowRiskEntry` stays anti-predictive across two regimes, drop it
 - [ ] Decide on Momentum Score 2.0 implementation
+
+## 2026-05-05 update — extended dataset (66 days)
+
+After running `rebuild-history --from 2026-02-01 --to 2026-05-04` we have
+353 monitor entries (vs the original 245 from 30 days). The findings shift
+materially compared to the 30-day analysis above — direction-of-effect for
+several criteria flips when sample is adequate. **The 30-day findings should
+be considered superseded by these.**
+
+### Stable findings (66 days, train+test confirmed)
+
+| Criterion         | +10td  | Train Lift | Test Lift | Stability |
+|-------------------|--------|------------|-----------|-----------|
+| `stage2`          | 2.00x  | 2.07x      | 1.64x     | ✓ POSITIVE |
+| `pivotBreakout`   | 2.00x  | 2.25x      | 3.00x     | ✓ POSITIVE |
+| `rvolPass`        | 0.86x  | 0.67x      | 0.78x     | ✓ ANTI |
+| `lowRiskEntry`    | 0.88x  | 0.88x      | 0.85x     | ✓ ANTI (mild) |
+| `aboveGapAvwap`   | 0.95x  | 1.00x      | 0.96x     | ✓ NEUTRAL (drop) |
+| `tightness`       | 0.74x  | 0.57x      | 0.93x     | ✗ FLIPS |
+| `antsAccumulation`| 1.00x  | 2.00x      | 1.00x     | ✗ FLIPS |
+| `bigMoveToday`    | 1.00x  | 1.00x      | 1.36x     | ✗ FLIPS |
+
+### Key reversals from 30-day analysis
+
+- `stage2`: was 0.75x (anti) at 30 days, now 2.33x (positive). The 30-day
+  analysis WAS WRONG about stage2. With proper sample, stage2 is the most
+  important predictor along with pivotBreakout.
+- `pivotBreakout`: was reported as 14x dominant; now a more believable 2.0x.
+  Still positive but not "the king".
+- `antsAccumulation`: was ∞ at 30 days (1% prevalence — sample too small);
+  now 0.00x at +20td (anti). The 30-day result was a sample artifact.
+
+### Headline finding: expired alerts lose money
+
+Status breakdown reveals 43% of all alerts (153/353) end as `expired` with
+**median -5.1% return**. They're not neutral — they're actively losing
+trades. Reducing the false-positive rate is the highest-ROI improvement.
+
+| Status              | n    | Median  | Avg     |
+|---------------------|------|---------|---------|
+| expired             | 153  | -5.1%   | -3.9%   |
+| sma21-pullback      | 101  | +1.7%   | +2.1%   |
+| graduated           | 69   | +6.4%   | +10.2%  |
+| manual-entry        | 24   | +7.8%   | +12.5%  |
+| monitoring (active) | 5    | +0.1%   | -0.3%   |
+
+### Sector skew (66 days)
+
+Software is the worst-performing sector at -10.8% median (n=31, win rate 19%).
+This is counter-intuitive given software is usually a bull-market leader.
+Semiconductor (n=47, +6.7% median, 83% win) and AI - Chain (n=23, +7.0%,
+74% win) are the clear winners.
+
+### Tier confirmation
+
+| Tier  | n    | Median | Avg    | Win% |
+|-------|------|--------|--------|------|
+| full  | 29   | +3.5%  | +4.7%  | 86%  |
+| close | 321  | +1.1%  | +1.5%  | 57%  |
+
+Full delivers 3x median return and 30 percentage points higher win rate.
+The tier system works.
+
+## 2026-05-05 attempt — extending to 87 days (Jan 2 → May 4)
+
+Tried `rebuild-history --from 2026-01-02` to add January data. **Aborted —
+data quality issues:**
+
+1. **rvolPass = 100% across all 365 entries** (impossible; should be ~40%
+   in normal data). The rebuild's recompute returns true universally on
+   the new dataset.
+2. **All entries have ≥5 re-alerts** — every monitor entry is in the same
+   bucket, defeating the persistence-vs-return analysis.
+3. **182 entries (~50%) had `firstAlertDate = 2026-01-02`** — a single
+   day. Post-holiday volume flood created a one-day artifact that
+   monopolized the monitor.
+4. **Status distribution collapsed to {graduated, expired}** — the
+   sma21-pullback and manual-entry transitions disappeared from the
+   reconstructed state machine.
+
+The Jan 2 post-holiday volume spike is a known backtest artifact — first
+trading day after a long market closure shows abnormally high RVOL because
+the 63-day average is computed against the previous trading days but the
+current day's trading is psychologically clustered.
+
+**Decision:** restored from 66-day backup (`/tmp/svr-backup-jan-1777988339`).
+The 66-day dataset is the authoritative source for the findings above.
+
+### To extend safely later
+
+- Start window after Jan 5-10 to skip post-holiday artifact
+- Or: filter out entries where `firstAlertDate` is the first trading
+  day after a market closure ≥3 days
+- Investigate why the rebuild's recompute reports rvolPass=100% — likely
+  a `BACKTEST_MODE` interaction with the data freshness guard
+
+## Automation — weekly criteria analysis (deployed 2026-05-05)
+
+`.github/workflows/weekly-analysis.yml` runs every Sunday 09:00 UTC.
+Re-runs the analysis on whatever monitor history exists, posts a compact
+Telegram summary (top predictors, anti-predictors, sector skew,
+persistence sweet spot, graduation rate), and commits the updated CSV
+to results/.
+
+By 2026-07 we'll have ~120 days × ~5 alerts/day ≈ 600 entries — enough
+for honest month-on-month train/test and to notice regime breaks.
