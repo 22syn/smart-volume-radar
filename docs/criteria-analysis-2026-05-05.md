@@ -230,3 +230,118 @@ to results/.
 
 By 2026-07 we'll have ~120 days × ~5 alerts/day ≈ 600 entries — enough
 for honest month-on-month train/test and to notice regime breaks.
+
+## 2026-05-06 update — extended to 86 days (Jan 5 → May 4)
+
+After the Jan 2 artifact problem, we restarted the rebuild from
+**Jan 5 2026** (post-holiday) through May 4. Result: 358 monitor
+entries with full status diversity:
+
+```
+manual-entry    32
+expired        142
+graduated       75
+sma21-pullback 106
+monitoring       3
+```
+
+This is the cleanest dataset to date — all five resolution paths
+present, status ratios consistent with the 66-day window
+(graduated ≈ 21%, expired ≈ 40%, sma21-pullback ≈ 30%).
+
+### Stable findings — 86 days, train+test agreement
+
+| Criterion         | All Lift | Train Lift | Test Lift | Stable | Note |
+|-------------------|----------|------------|-----------|--------|------|
+| `pivotBreakout`   | 2.60x    | 1.75x      | **10.00x**| ✓ STRONG | Top of test split |
+| `stage2`          | 1.89x    | 1.37x      | **3.29x** | ✓ STRONG | |
+| `antsAccumulation`| 2.00x    | ∞          | 2.00x     | ✓ POSITIVE | Recovered from 66-day artifact |
+| `lowRiskEntry`    | 0.82x    | 0.74x      | 0.82x     | ✓ ANTI | Use as penalty |
+| `rvolPass`        | 0.70x    | 1.00x      | 1.00x     | ✓ NEUTRAL | Drop or low weight |
+| `aboveGapAvwap`   | 1.02x    | 0.97x      | 1.19x     | ✓ NEUTRAL | Drop |
+| `tightness`       | 0.91x    | 0.91x      | 0.68x     | ✗ FLIPS  | Don't act on |
+| `bigMoveToday`    | 1.14x    | 1.19x      | 1.43x     | ✗ FLIPS  | Don't act on |
+
+**6/8 criteria are now train/test stable** — the cleanest signal we've
+had. The two flippers (`tightness`, `bigMoveToday`) directionally agree
+across the train and test halves but the magnitudes drift, so we can't
+yet weight them.
+
+### Time-normalized lift trajectory (86 days)
+
+```
+                  +3td    +5td    +10td   +20td   +40td
+pivotBreakout    1.50x   2.31x   3.00x   2.15x   2.50x   ← consistent winner
+stage2           1.38x   1.57x   2.27x   1.88x   1.50x   ← consistent winner
+antsAccumulation 4.00x      ∞    4.00x      ∞    3.00x   ← strong but small n
+lowRiskEntry     0.88x   0.75x   0.78x   0.80x   0.75x   ← consistent anti
+tightness        0.92x   0.85x   0.70x   0.74x   0.84x   ← anti at 5-20td
+bigMoveToday     1.07x   1.30x   1.36x   1.09x   1.65x   ← varies
+rvolPass         0.95x   0.89x   1.26x   0.87x   0.93x   ← drifts neutral
+aboveGapAvwap    1.05x   1.13x   1.07x   1.02x   0.98x   ← stable neutral
+```
+
+The story: **`pivotBreakout` and `stage2` are the engine. `lowRiskEntry`
+is the brake.** Everything else is decoration.
+
+### Sector skew (86 days)
+
+```
+OIL              23  +9.9% median  78% win    ← top
+Data Centers      8  +8.6%         88%
+Semiconductor    47  +6.6%         81%
+Cleantech        34  +4.8%         76%
+Industrials       8  +4.8%         75%
+AI - Chain       23  +3.6%         70%
+─────────────────────────────────────────
+Real estate      18  -1.2%         22%        ← weak
+Retail/Consumer   7  -2.8%         43%
+Software         32 -10.4%         19%        ← worst
+```
+
+Software remains the worst-performing sector across all dataset
+versions (30/66/86 days). 19% win rate over 86 days is a strong signal
+to deprioritize software alerts in this regime.
+
+### Tier confirmation
+
+```
+Initial tier   n     Median   Avg    Win%
+full          54     +2.7%   +2.9%   67%
+close        303     +2.0%   +1.6%   61%
+```
+
+The Full vs Close gap narrowed compared to 66-day (was +3.5% / +1.1%).
+Full still outperforms but margin is smaller — likely because the
+larger Full sample now includes more borderline cases.
+
+### Re-alert persistence (86 days)
+
+```
+Re-alerts    n     Median   Avg    Win%
+0 (single)   11    -0.7%   +5.7%   45%   ← noisy / small n
+1            18    -1.9%   -3.8%   50%
+2            16    -0.7%   -2.4%   44%
+3-4          52    +1.5%   +1.4%   56%
+5+          260    +2.2%   +2.4%   66%   ← largest, most reliable
+```
+
+The 5+ re-alert cohort is the dominant outcome — 73% of all entries
+end up there. Median +2.2% with 66% win rate. The persistence-marker
+hierarchy (🆕 / 🔁N / 🔁🔥N) is data-supported.
+
+### Decision (still): no criteria changes yet
+
+Despite 6/8 criteria now being train/test stable, the train half is
+still only 8 trading days. We need at least one more month of organic
+data before we should bet real money on the weights.
+
+What we **can** do now without waiting:
+- Trust the qualitative direction: `stage2 + pivotBreakout` are good,
+  `lowRiskEntry` is a brake, `aboveGapAvwap + tightness` are noise.
+- Use the sector data: Software's 19% win rate is enough to flag
+  deprioritization in the report.
+- Persistence markers are validated.
+
+When the weekly automation gets us to ~600 entries (around 2026-07),
+we should be ready to ship Momentum Score 2.0.
