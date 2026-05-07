@@ -289,3 +289,98 @@ export function calculateRSI(prices: number[], periods: number = 14): number | u
     const rs = avgGain / avgLoss;
     return 100 - (100 / (1 + rs));
 }
+
+// ─── ChampionScan Phase 2 Indicators (added 2026-05-07) ───────────────────
+
+/**
+ * Calculate the latest Bollinger Band values: middle = SMA(period), upper/lower = mid ± mult·σ.
+ * Returns `undefined` if fewer than `period` closes are available.
+ *
+ * Default Bollinger Bands (Bollinger 1980): period=20, mult=2 → ~95% containment under
+ * normal distribution. Squeeze (band-width / price < ~5%) = volatility contraction
+ * preceding many breakouts (Bollinger Band Squeeze setup).
+ */
+export function calculateBollingerBands(
+    closes: number[],
+    period: number = 20,
+    mult: number = 2
+): { upper: number; mid: number; lower: number } | undefined {
+    if (closes.length < period) return undefined;
+    const window = closes.slice(closes.length - period);
+    const mid = window.reduce((s, x) => s + x, 0) / period;
+    const variance = window.reduce((s, x) => s + (x - mid) * (x - mid), 0) / period;
+    const stdDev = Math.sqrt(variance);
+    return {
+        upper: mid + mult * stdDev,
+        mid,
+        lower: mid - mult * stdDev,
+    };
+}
+
+/**
+ * Calculate the latest Exponential Moving Average using the standard
+ * 2/(N+1) smoothing factor (Wells Wilder, 1978; modern EMA convention).
+ *
+ * Seed: SMA of the first `period` closes. Then iteratively apply
+ *   EMA[i] = price[i]·k + EMA[i-1]·(1-k),  k = 2/(period+1).
+ *
+ * Returns `undefined` if fewer than `period` closes available.
+ */
+export function calculateEMA(closes: number[], period: number): number | undefined {
+    if (closes.length < period) return undefined;
+    const k = 2 / (period + 1);
+    // Seed with SMA of first `period` closes
+    let ema = 0;
+    for (let i = 0; i < period; i++) ema += closes[i]!;
+    ema /= period;
+    // Iterate forward
+    for (let i = period; i < closes.length; i++) {
+        ema = closes[i]! * k + ema * (1 - k);
+    }
+    return ema;
+}
+
+/**
+ * Count accumulation and distribution days over a lookback window.
+ *
+ *   Accumulation: close[i] > close[i-1] AND volume[i] > avgVolume(20-day before i)
+ *   Distribution: close[i] < close[i-1] AND volume[i] > avgVolume(20-day before i)
+ *
+ * 25 trading days (~5 weeks) is the IBD/Minervini convention. ≥5 distribution
+ * days in 25 = institutional selling warning. ≥5 accumulation days = institutional
+ * buying confirmation.
+ *
+ * Returns `{ accumulationDays: 0, distributionDays: 0 }` if not enough history;
+ * otherwise the counts within the last `lookback` bars.
+ */
+export function countAccumulationDistributionDays(
+    closes: number[],
+    volumes: number[],
+    lookback: number = 25
+): { accumulationDays: number; distributionDays: number } {
+    if (closes.length !== volumes.length) {
+        return { accumulationDays: 0, distributionDays: 0 };
+    }
+    // Need at least lookback + 21 bars: 20 for the trailing avg + lookback to count.
+    const VOL_AVG_PERIOD = 20;
+    const start = Math.max(VOL_AVG_PERIOD + 1, closes.length - lookback);
+    if (start >= closes.length) return { accumulationDays: 0, distributionDays: 0 };
+
+    let accum = 0;
+    let dist = 0;
+    for (let i = start; i < closes.length; i++) {
+        const prevClose = closes[i - 1]!;
+        const close = closes[i]!;
+        const vol = volumes[i]!;
+        // Trailing 20-bar avg volume EXCLUDING today (so today's volume can stand out).
+        let avgVol = 0;
+        for (let j = i - VOL_AVG_PERIOD; j < i; j++) avgVol += volumes[j]!;
+        avgVol /= VOL_AVG_PERIOD;
+        if (avgVol <= 0) continue;
+        if (vol <= avgVol) continue; // only "above-average volume" bars count
+
+        if (close > prevClose) accum++;
+        else if (close < prevClose) dist++;
+    }
+    return { accumulationDays: accum, distributionDays: dist };
+}

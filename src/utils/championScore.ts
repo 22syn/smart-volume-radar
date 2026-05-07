@@ -48,7 +48,20 @@ const WEIGHTS = {
     lowRiskEntryPenalty: -10,
     /** Stocks below SMA200 are off-trend in this regime — hard penalty. */
     belowSma200: -15,
+    // ─── Phase 2 weights (2026-05-07) ──────────────────────────────────
+    /** Accumulation days ≥ 3 in last 25 = institutional buying confirmation. */
+    accumulation: 5,
+    /** Distribution days ≥ 3 in last 25 = institutional selling warning. */
+    distributionPenalty: -10,
+    /** RS percentile ≥ 80 = top quintile of watchlist by 63d alpha vs SPY. */
+    topRS: 5,
+    /** Bollinger Band squeeze (BB-width / price < 5%) = volatility contraction
+     *  preceding many breakouts. */
+    bbSqueeze: 3,
 } as const;
+
+/** Threshold for the BB squeeze flag: (upper - lower) / price as a fraction. */
+const BB_SQUEEZE_FRACTION = 0.05;
 
 /** Threshold for `rvolPass` is regime-aware (mirrors evaluateMomentumSetup). */
 function rvolPassThreshold(regime: 'bull' | 'bear' | undefined): number {
@@ -93,7 +106,21 @@ export function computeChampionScore(stock: StockData): number {
         score += bonus;
     }
 
+    // ─── Phase 2 contributors ─────────────────────────────────────────
+    if ((stock.accumulationDays ?? 0) >= 3) score += WEIGHTS.accumulation;
+    if ((stock.distributionDays ?? 0) >= 3) score += WEIGHTS.distributionPenalty;
+    if ((stock.rsPercentile ?? 0) >= 80) score += WEIGHTS.topRS;
+    if (isBBSqueeze(stock)) score += WEIGHTS.bbSqueeze;
+
     return Math.max(0, Math.min(100, Math.round(score * 10) / 10));
+}
+
+/** True when Bollinger Band width is < 5% of price (volatility contraction). */
+export function isBBSqueeze(stock: StockData): boolean {
+    if (stock.bbUpper == null || stock.bbLower == null || !stock.lastPrice) return false;
+    const width = stock.bbUpper - stock.bbLower;
+    if (width <= 0) return false;
+    return width / stock.lastPrice < BB_SQUEEZE_FRACTION;
 }
 
 /**
@@ -176,6 +203,11 @@ export function determineAction(
     plan: TradePlan | undefined
 ): ActionLabel {
     if (score < 40) return 'PASS';
+
+    // Distribution-pressure guard (Phase 2): institutional selling overrides
+    // the breakout/extension cascade. ≥4 distribution days in 25 = warn.
+    if ((stock.distributionDays ?? 0) >= 4) return 'CAUTION_DISTRIBUTION';
+
     if (!stage || !plan) return score >= 60 ? 'WATCH' : 'PASS';
 
     if (plan.extensionPct > 10) return 'PASS_TOO_LATE';
@@ -224,6 +256,7 @@ export const ACTION_LABEL_HE: Record<ActionLabel, string> = {
     WATCH: 'מעקב — setup מתפתח',
     CAUTION_EXTENDED: 'זהירות — extended מעבר ל-pivot',
     CAUTION_NO_VOL: 'זהירות — על ה-pivot אבל ללא נפח מספק',
+    CAUTION_DISTRIBUTION: 'זהירות — לחץ מכירה מוסדי (distribution days)',
     PASS_TOO_LATE: 'דילוג — extended יותר מדי, איחרת',
     PASS: 'דילוג — לא עומד בקריטריונים',
 };
@@ -234,6 +267,7 @@ export const ACTION_EMOJI: Record<ActionLabel, string> = {
     WATCH: '👀',
     CAUTION_EXTENDED: '⚠️',
     CAUTION_NO_VOL: '⚠️',
+    CAUTION_DISTRIBUTION: '🔻',
     PASS_TOO_LATE: '⏰',
     PASS: '⏭️',
 };

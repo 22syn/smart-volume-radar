@@ -97,6 +97,29 @@ export interface StockData {
     projectedRvol?: number;
     /** Market regime at scan time (set from SPY) — affects RVOL threshold for Full */
     marketRegime?: 'bull' | 'bear';
+
+    // ─── Phase 2 indicators (ChampionScan-inspired, added 2026-05-07) ──────
+    /** Bollinger Band upper line (SMA20 + 2σ). */
+    bbUpper?: number;
+    /** Bollinger Band middle line (SMA20). */
+    bbMid?: number;
+    /** Bollinger Band lower line (SMA20 - 2σ). */
+    bbLower?: number;
+    /** Exponential Moving Average over 10 bars (faster than SMA10 for trend reactivity). */
+    ema10?: number;
+    /** Exponential Moving Average over 21 bars (parallels existing sma21, EMA-style). */
+    ema21Ema?: number;
+    /** Number of accumulation days (close-up + above-avg volume) in last 25 bars. */
+    accumulationDays?: number;
+    /** Number of distribution days (close-down + above-avg volume) in last 25 bars.
+     *  ≥4 = institutional selling warning. */
+    distributionDays?: number;
+    /** Total return over the last 63 trading days (~3 months), as % (e.g. +12.5).
+     *  Used as the input for relative-strength ranking. */
+    return63d?: number;
+    /** Relative-Strength percentile (0-100) vs other watchlist members over 63 trading
+     *  days, using SPY-relative return (alpha). Populated post-fetch in `index.ts`. */
+    rsPercentile?: number;
     /** Computed momentum signal (set by evaluateMomentumSetup downstream of fetch) */
     momentum?: MomentumResult;
 
@@ -128,6 +151,7 @@ export type ActionLabel =
     | 'WATCH'
     | 'CAUTION_EXTENDED'
     | 'CAUTION_NO_VOL'
+    | 'CAUTION_DISTRIBUTION'
     | 'PASS_TOO_LATE'
     | 'PASS';
 

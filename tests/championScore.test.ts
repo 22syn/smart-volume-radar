@@ -7,6 +7,7 @@ import {
     computeTradePlan,
     determineAction,
     applyChampionScore,
+    isBBSqueeze,
 } from '../src/utils/championScore';
 import type { MomentumCriteria, MomentumResult, StockData } from '../src/types';
 
@@ -231,6 +232,102 @@ describe('determineAction', () => {
         const plan = computeTradePlan(stock);
         // bear threshold is 3.0, so rvol 2.5 fails
         expect(determineAction(stock, 80, 'Breaking Out', plan)).toBe('CAUTION_NO_VOL');
+    });
+});
+
+describe('Phase 2 score contributors', () => {
+    it('+5 for accumulationDays >= 3', () => {
+        const base = makeStock({
+            momentum: makeMomentum(makeCriteria({ pivotBreakout: true })),
+            accumulationDays: 0,
+        });
+        const withAcc = makeStock({
+            momentum: makeMomentum(makeCriteria({ pivotBreakout: true })),
+            accumulationDays: 4,
+        });
+        expect(computeChampionScore(withAcc) - computeChampionScore(base)).toBe(5);
+    });
+
+    it('-10 for distributionDays >= 3', () => {
+        const base = makeStock({
+            momentum: makeMomentum(makeCriteria({ pivotBreakout: true })),
+            distributionDays: 0,
+        });
+        const withDist = makeStock({
+            momentum: makeMomentum(makeCriteria({ pivotBreakout: true })),
+            distributionDays: 4,
+        });
+        expect(computeChampionScore(withDist) - computeChampionScore(base)).toBe(-10);
+    });
+
+    it('+5 for rsPercentile >= 80', () => {
+        const base = makeStock({
+            momentum: makeMomentum(makeCriteria({ pivotBreakout: true })),
+            rsPercentile: 50,
+        });
+        const topRS = makeStock({
+            momentum: makeMomentum(makeCriteria({ pivotBreakout: true })),
+            rsPercentile: 88,
+        });
+        expect(computeChampionScore(topRS) - computeChampionScore(base)).toBe(5);
+    });
+
+    it('+3 for BB squeeze (band-width / price < 5%)', () => {
+        const base = makeStock({
+            momentum: makeMomentum(makeCriteria({ pivotBreakout: true })),
+            lastPrice: 100,
+            bbUpper: 110,
+            bbLower: 90, // width = 20, 20% — no squeeze
+        });
+        const squeezed = makeStock({
+            momentum: makeMomentum(makeCriteria({ pivotBreakout: true })),
+            lastPrice: 100,
+            bbUpper: 102,
+            bbLower: 98, // width = 4, 4% — squeeze
+        });
+        expect(computeChampionScore(squeezed) - computeChampionScore(base)).toBe(3);
+    });
+});
+
+describe('isBBSqueeze', () => {
+    it('returns true when band width < 5% of price', () => {
+        const stock = makeStock({ lastPrice: 100, bbUpper: 102, bbLower: 99 });
+        expect(isBBSqueeze(stock)).toBe(true);
+    });
+
+    it('returns false when bands missing', () => {
+        const stock = makeStock({ bbUpper: undefined });
+        expect(isBBSqueeze(stock)).toBe(false);
+    });
+
+    it('returns false when band width >= 5%', () => {
+        const stock = makeStock({ lastPrice: 100, bbUpper: 110, bbLower: 95 });
+        expect(isBBSqueeze(stock)).toBe(false);
+    });
+});
+
+describe('CAUTION_DISTRIBUTION action', () => {
+    it('overrides BUY when distributionDays >= 4', () => {
+        const stock = makeStock({
+            lastPrice: 100,
+            ath: 100,
+            rvol: 2.5,
+            distributionDays: 5,
+        });
+        const plan = computeTradePlan(stock);
+        // Without distribution would be BUY at Breaking Out
+        expect(determineAction(stock, 80, 'Breaking Out', plan)).toBe('CAUTION_DISTRIBUTION');
+    });
+
+    it('does not fire when distributionDays = 3 (just below threshold)', () => {
+        const stock = makeStock({
+            lastPrice: 100,
+            ath: 100,
+            rvol: 2.5,
+            distributionDays: 3,
+        });
+        const plan = computeTradePlan(stock);
+        expect(determineAction(stock, 80, 'Breaking Out', plan)).toBe('BUY');
     });
 });
 

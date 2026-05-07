@@ -19,6 +19,9 @@ import {
     detectEarningsGap,
     calculateAVWAP,
     calculateDaysSinceLastHigh,
+    calculateBollingerBands,
+    calculateEMA,
+    countAccumulationDistributionDays,
 } from '../utils/technicalAnalysis.js';
 import { marketSessionMinutesElapsed, projectedRvol as computeProjectedRvol } from './rvolCalculator.js';
 
@@ -154,6 +157,19 @@ export async function parseYahooChartResult(
     const minutesElapsed = marketSessionMinutesElapsed();
     const projected = computeProjectedRvol(currentVolume, avgVolume, minutesElapsed);
 
+    // ─── Phase 2 indicators (ChampionScan-inspired) ──────────────────────
+    const bb = calculateBollingerBands(closes, 20, 2);
+    const ema10 = calculateEMA(closes, 10);
+    const ema21Ema = calculateEMA(closes, 21);
+    const adDays = countAccumulationDistributionDays(closes, alignedVolumes, 25);
+    // 63-day total return — input for the RS percentile rank computed at pipeline
+    // level (rsPercentile.ts). 63 trading days ≈ 3 months — IBD's 3-month RS standard.
+    let return63d: number | undefined = undefined;
+    if (closes.length >= 64) {
+        const past = closes[closes.length - 64]!;
+        if (past > 0) return63d = ((lastPrice - past) / past) * 100;
+    }
+
     return {
         ticker,
         currentVolume,
@@ -178,6 +194,15 @@ export async function parseYahooChartResult(
         gapDay,
         avwapFromGap,
         projectedRvol: projected,
+        // Phase 2 (ChampionScan):
+        bbUpper: bb?.upper,
+        bbMid: bb?.mid,
+        bbLower: bb?.lower,
+        ema10,
+        ema21Ema,
+        accumulationDays: adDays.accumulationDays,
+        distributionDays: adDays.distributionDays,
+        return63d,
     };
 }
 
@@ -259,6 +284,22 @@ export async function fetchMarketRegime(asOfDate?: string): Promise<'bull' | 'be
         return spy.lastPrice < spy.sma200 ? 'bear' : 'bull';
     } catch {
         return 'bull';
+    }
+}
+
+/**
+ * Fetch SPY's 63-day return — used as the baseline for RS percentile (alpha).
+ * Returns null on any failure (RS percentile then falls back to raw return).
+ */
+export async function fetchSpy63dReturn(asOfDate?: string): Promise<number | null> {
+    try {
+        const spy = asOfDate
+            ? await fetchYahooChartAsOfDate('SPY', asOfDate)
+            : await fetchFromYahooChart('SPY');
+        if (!spy || spy.return63d == null || !Number.isFinite(spy.return63d)) return null;
+        return spy.return63d;
+    } catch {
+        return null;
     }
 }
 

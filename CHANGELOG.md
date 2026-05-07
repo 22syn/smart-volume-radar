@@ -3,6 +3,21 @@
 ## Unreleased
 
 ### Added
+- **ChampionScan Phase 2 (2026-05-07):** Volume quality, trend bands, RS percentile.
+  - New indicators in `src/utils/technicalAnalysis.ts`: `calculateBollingerBands`,
+    `calculateEMA`, `countAccumulationDistributionDays` (25-day lookback,
+    above-avg-volume up/down days).
+  - Fields populated on every `StockData`: `bbUpper/Mid/Lower`, `ema10`,
+    `ema21Ema`, `accumulationDays`, `distributionDays`, `return63d`.
+  - **RS percentile** vs SPY: new `src/utils/rsPercentile.ts` — alpha = stock
+    return63d − SPY return63d, ranked 0-100 across the watchlist with tie
+    handling. Wired in `index.ts` after fetch.
+  - **Champion Score v2** weights: +5 accumDays≥3, **-10** distDays≥3, +5 RS≥80,
+    +3 BB squeeze (band-width / price < 5%).
+  - **New action `CAUTION_DISTRIBUTION`** — fires when distributionDays ≥ 4,
+    overrides BUY/WATCH (institutional selling > technical setup).
+  - Telegram block now shows: RS percentile next to score, A/D days line with
+    Accumulation / Mixed / Distribution verdict, BB squeeze flag with band-width %.
 - **Champion Score Layer (2026-05-06):** Continuous quality score 0-100 plus
   6-state action label (BUY / WATCH / CAUTION_EXTENDED / CAUTION_NO_VOL /
   PASS / PASS_TOO_LATE) and a per-stock trade plan (pivot, buy zone, stop loss,

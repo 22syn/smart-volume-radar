@@ -12,6 +12,9 @@ import {
     detectEarningsGap,
     calculateAVWAP,
     calculateDaysSinceLastHigh,
+    calculateBollingerBands,
+    calculateEMA,
+    countAccumulationDistributionDays,
 } from '../src/utils/technicalAnalysis.js';
 
 describe('calculateSMA', () => {
@@ -288,5 +291,110 @@ describe('calculateAVWAP', () => {
     it('returns undefined when all volumes are zero from anchor', () => {
         const v = calculateAVWAP([10, 20], [10, 20], [10, 20], [0, 0], 0);
         expect(v).toBeUndefined();
+    });
+});
+
+// ─── Phase 2 Indicators ──────────────────────────────────────────────────
+
+describe('calculateBollingerBands', () => {
+    it('returns undefined when not enough data', () => {
+        expect(calculateBollingerBands([1, 2, 3], 20)).toBeUndefined();
+    });
+
+    it('mid equals SMA of the last `period` closes', () => {
+        const closes = Array.from({ length: 25 }, (_, i) => i + 1); // 1..25
+        const bb = calculateBollingerBands(closes, 20, 2);
+        expect(bb).toBeDefined();
+        // Last 20 closes are 6..25, sum = 310, avg = 15.5
+        expect(bb!.mid).toBeCloseTo(15.5, 5);
+        // Standard deviation of 6..25 (population) ≈ 5.766
+        expect(bb!.upper).toBeGreaterThan(bb!.mid);
+        expect(bb!.lower).toBeLessThan(bb!.mid);
+        // Upper - Mid should equal Mid - Lower (symmetric)
+        expect(bb!.upper - bb!.mid).toBeCloseTo(bb!.mid - bb!.lower, 5);
+    });
+
+    it('zero stdDev (constant series) → all three values equal', () => {
+        const closes = Array(20).fill(50);
+        const bb = calculateBollingerBands(closes, 20, 2);
+        expect(bb!.upper).toBe(50);
+        expect(bb!.mid).toBe(50);
+        expect(bb!.lower).toBe(50);
+    });
+});
+
+describe('calculateEMA', () => {
+    it('returns undefined when not enough data', () => {
+        expect(calculateEMA([1, 2, 3], 10)).toBeUndefined();
+    });
+
+    it('seeds with SMA, then iterates with k = 2/(N+1)', () => {
+        const closes = Array.from({ length: 20 }, (_, i) => i + 1); // 1..20
+        // EMA10 of 1..20: seed = SMA of 1..10 = 5.5; then iterate.
+        // Expected after iterating with closes 11..20 (k = 2/11 ≈ 0.1818):
+        const ema = calculateEMA(closes, 10);
+        expect(ema).toBeDefined();
+        // After 10 iterations of strictly increasing prices, EMA should be in the range
+        // (seed=5.5, latest=20). Easy bound check + a known-value tolerance:
+        expect(ema!).toBeGreaterThan(13);
+        expect(ema!).toBeLessThan(18);
+    });
+
+    it('on a constant series returns that constant', () => {
+        const closes = Array(15).fill(42);
+        expect(calculateEMA(closes, 10)).toBeCloseTo(42, 5);
+    });
+});
+
+describe('countAccumulationDistributionDays', () => {
+    it('zero counts when not enough data (need ≥ 21 bars)', () => {
+        const closes = [1, 2, 3, 4, 5];
+        const volumes = [1000, 1000, 1000, 1000, 1000];
+        const r = countAccumulationDistributionDays(closes, volumes);
+        expect(r.accumulationDays).toBe(0);
+        expect(r.distributionDays).toBe(0);
+    });
+
+    it('counts above-average volume up-days as accumulation', () => {
+        // 21 baseline bars (close steady, volume 1000) + 5 up-days with high volume
+        const closes = [
+            ...Array(21).fill(100),
+            101, 102, 103, 104, 105, // 5 up-days
+        ];
+        const volumes = [
+            ...Array(21).fill(1000),
+            5000, 5000, 5000, 5000, 5000, // high volume
+        ];
+        const r = countAccumulationDistributionDays(closes, volumes, 25);
+        expect(r.accumulationDays).toBe(5);
+        expect(r.distributionDays).toBe(0);
+    });
+
+    it('counts above-average volume down-days as distribution', () => {
+        const closes = [
+            ...Array(21).fill(100),
+            99, 98, 97, // 3 down-days
+        ];
+        const volumes = [
+            ...Array(21).fill(1000),
+            5000, 5000, 5000, // high volume
+        ];
+        const r = countAccumulationDistributionDays(closes, volumes, 25);
+        expect(r.accumulationDays).toBe(0);
+        expect(r.distributionDays).toBe(3);
+    });
+
+    it('ignores days with normal/below-average volume', () => {
+        const closes = [
+            ...Array(21).fill(100),
+            105, 104, 103, // big price moves
+        ];
+        const volumes = [
+            ...Array(21).fill(5000),
+            500, 500, 500, // tiny volume on the moves
+        ];
+        const r = countAccumulationDistributionDays(closes, volumes, 25);
+        expect(r.accumulationDays).toBe(0);
+        expect(r.distributionDays).toBe(0);
     });
 });

@@ -5,9 +5,10 @@
 
 import { loadWatchlist, validateConfig, config, getSectorForTicker, fetchAndCacheWatchlist, getInvalidTickersFromWatchlist, getIndexSkippedFromWatchlist } from './config/index.js';
 import { classifyTickersWithGroq } from './services/llmSummary.js';
-import { fetchAllStocksAsOfDate, fetchMarketRegime } from './services/marketData.js';
+import { fetchAllStocksAsOfDate, fetchMarketRegime, fetchSpy63dReturn } from './services/marketData.js';
 import { evaluateMomentumSetup } from './utils/setup.js';
 import { applyChampionScore } from './utils/championScore.js';
+import { applyRSPercentile } from './utils/rsPercentile.js';
 import { calculateRVOL } from './services/rvolCalculator.js';
 import { enrichWithNews } from './services/newsService.js';
 import { sendDailyReport, sendTelegramMessage, formatMonitorTelegramMessage, GraduationInfo, MonitorMeta } from './services/telegramBot.js';
@@ -122,6 +123,21 @@ async function main(): Promise<void> {
         const marketRegime = await fetchMarketRegime(scanDate);
         logger.info(`🧭 Market regime: ${marketRegime.toUpperCase()} (SPY vs SMA200)`);
         const { stocks, failedTickers } = await fetchAllStocksAsOfDate(tickers, scanDate);
+        // Compute RS percentile across the watchlist using SPY's 63-day return as
+        // the alpha baseline. Fail-soft: passes null → falls back to raw return.
+        const spyReturn63d = await fetchSpy63dReturn(scanDate);
+        applyRSPercentile(stocks, spyReturn63d);
+        const populated = stocks.filter((s) => s.rsPercentile != null).length;
+        if (populated > 0) {
+            const top = [...stocks]
+                .filter((s) => s.rsPercentile != null)
+                .sort((a, b) => (b.rsPercentile ?? 0) - (a.rsPercentile ?? 0))
+                .slice(0, 5)
+                .map((s) => `${s.ticker}=${s.rsPercentile}`)
+                .join(', ');
+            logger.info(`📊 RS percentile (${populated} stocks, SPY 63d=${spyReturn63d?.toFixed(1) ?? 'n/a'}%): ${top}`);
+        }
+
         // Tag every stock with the regime + run momentum evaluator (additive — does not affect existing pipeline).
         // Then apply the Champion Score layer (continuous score + action label + trade plan).
         for (const s of stocks) {
@@ -154,12 +170,14 @@ async function main(): Promise<void> {
                 s.action === 'BUY' ||
                 s.action === 'WATCH' ||
                 s.action === 'CAUTION_EXTENDED' ||
-                s.action === 'CAUTION_NO_VOL'
+                s.action === 'CAUTION_NO_VOL' ||
+                s.action === 'CAUTION_DISTRIBUTION'
         );
         const actionRank: Record<string, number> = {
             BUY: 0,
             CAUTION_EXTENDED: 1,
             CAUTION_NO_VOL: 1,
+            CAUTION_DISTRIBUTION: 1,
             WATCH: 2,
         };
         actionableStocks.sort((a, b) => {

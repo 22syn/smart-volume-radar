@@ -235,10 +235,13 @@ function formatSingleStockBlock(stock: RVOLResult, monitorMeta?: MonitorMeta): s
     const { tvUrl, yahooUrl } = buildStockUrls(stock);
     const persistenceMarker = formatPersistenceMarker(monitorMeta);
 
-    // Header: ticker + persistence + Champion Score + sector
+    // Header: ticker + persistence + Champion Score + RS percentile + sector
     let block = `${statusEmoji} <b><a href="${tvUrl}">${escapeHtml(stock.ticker)}</a></b>${persistenceMarker}`;
     if (stock.championScore != null) {
         block += `  <b>${stock.championScore.toFixed(0)}</b><i>/100</i>`;
+    }
+    if (stock.rsPercentile != null) {
+        block += `  ·  <b>RS</b> ${stock.rsPercentile}`;
     }
     if (stock.sector) {
         block += ` <i>(${escapeHtml(stock.sector)})</i>`;
@@ -246,7 +249,9 @@ function formatSingleStockBlock(stock: RVOLResult, monitorMeta?: MonitorMeta): s
     block += '\n';
 
     // Action-specific narrative line: tells the user WHY this action.
-    if (stock.action === 'CAUTION_EXTENDED' && stock.tradePlan) {
+    if (stock.action === 'CAUTION_DISTRIBUTION') {
+        block += `├ 🔻 <i>${stock.distributionDays ?? 0} distribution days — לחץ מכירה מוסדי</i>\n`;
+    } else if (stock.action === 'CAUTION_EXTENDED' && stock.tradePlan) {
         block += `├ ⚠️ <i>extended ${stock.tradePlan.extensionPct.toFixed(1)}% מעבר ל-pivot — סטופ הדוק</i>\n`;
     } else if (stock.action === 'CAUTION_NO_VOL') {
         block += `├ ⚠️ <i>על ה-pivot אבל RVOL ${formatRVOL(stock.rvol)} — נפח לא מאשר</i>\n`;
@@ -322,6 +327,31 @@ function formatSingleStockBlock(stock: RVOLResult, monitorMeta?: MonitorMeta): s
     if (stock.daysSinceAth != null) distBits.push(`${stock.daysSinceAth}d since ATH`);
     if (distBits.length > 0) {
         block += `├ 📐 ${escapeHtml(distBits.join(' | '))}\n`;
+    }
+
+    // Phase 2: Accumulation/Distribution day counts (institutional volume signature)
+    if (
+        (stock.accumulationDays ?? 0) >= 3 ||
+        (stock.distributionDays ?? 0) >= 3
+    ) {
+        const acc = stock.accumulationDays ?? 0;
+        const dist = stock.distributionDays ?? 0;
+        const verdict =
+            dist >= 4 ? '🔻 Distribution (institutional selling)'
+                : acc >= dist ? '✅ Accumulation'
+                    : '⚠️ Mixed';
+        block += `├ 📊 <b>A/D:</b> ${acc}↑ / ${dist}↓ <i>(${verdict})</i>\n`;
+    }
+
+    // Phase 2: Bollinger Band squeeze flag (volatility contraction = pre-breakout coil)
+    if (
+        stock.bbUpper != null &&
+        stock.bbLower != null &&
+        stock.lastPrice > 0 &&
+        (stock.bbUpper - stock.bbLower) / stock.lastPrice < 0.05
+    ) {
+        const widthPct = ((stock.bbUpper - stock.bbLower) / stock.lastPrice) * 100;
+        block += `├ 🔒 <b>BB squeeze</b> <i>(width ${widthPct.toFixed(1)}% — coil before breakout)</i>\n`;
     }
 
     // Quality flags
@@ -407,7 +437,11 @@ export function formatDailyReport(
     };
     for (const stock of topSignals) {
         if (stock.action === 'BUY') actionBuckets.BUY.push(stock);
-        else if (stock.action === 'CAUTION_EXTENDED' || stock.action === 'CAUTION_NO_VOL')
+        else if (
+            stock.action === 'CAUTION_EXTENDED' ||
+            stock.action === 'CAUTION_NO_VOL' ||
+            stock.action === 'CAUTION_DISTRIBUTION'
+        )
             actionBuckets.CAUTION.push(stock);
         else if (stock.action === 'WATCH') actionBuckets.WATCH.push(stock);
     }
