@@ -7,6 +7,8 @@
   "scripts": {
     "build": "tsc",
     "start": "tsx src/index.ts",
+    "start:lean": "tsx src/lean.ts",
+    "preview:lean": "DRY_RUN=1 tsx src/lean.ts",
     "dev": "tsx watch src/index.ts",
     "test": "jest",
     "test:watch": "jest --watch",
