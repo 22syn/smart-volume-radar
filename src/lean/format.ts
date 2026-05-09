@@ -1,7 +1,7 @@
 /**
- * Smart Volume Radar — Lean Scanner Telegram formatter (stable branch).
+ * Smart Volume Radar — Lean Radar Telegram formatter (stable branch).
  *
- * One line per stock. Header `🪶 LEAN SCANNER` distinguishes from main scan.
+ * One line per stock. Header `🪶 LEAN RADAR` distinguishes from main Radar.
  * Sections (only rendered when non-empty):
  *   📈 Consolidation Breakout
  *   🔥 High Volume (3x+)
@@ -57,7 +57,7 @@ export function formatLeanReport(date: string, result: LeanScanResult): string {
 
     // Header
     parts.push(
-        `🪶 <b>LEAN SCANNER</b>\n` +
+        `🪶 <b>LEAN RADAR</b>\n` +
             `📅 <code>${date}</code>\n` +
             `<i>3 signals: 📈 breakout · 🔥 RVOL 3x+ · 📉 -15% pullback</i>\n` +
             `━━━━━━━━━━━━━━━━━━━━━━`

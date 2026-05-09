@@ -1,5 +1,5 @@
 /**
- * Tests for the Lean Scanner signal detectors.
+ * Tests for the Lean Radar signal detectors.
  */
 import {
     detectConsolidationBreakout,

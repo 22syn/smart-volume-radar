@@ -1,5 +1,5 @@
 /**
- * Smart Volume Radar — Lean Scanner signal detectors (stable branch).
+ * Smart Volume Radar — Lean Radar signal detectors (stable branch).
  *
  * Three crisp, research-backed signals:
  *

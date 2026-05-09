@@ -1,5 +1,5 @@
 /**
- * Tests for the Lean Scanner Telegram formatter.
+ * Tests for the Lean Radar Telegram formatter.
  */
 
 jest.mock('../src/config/index.js', () => ({
@@ -38,9 +38,9 @@ const empty = (): LeanScanResult => ({
 });
 
 describe('formatLeanReport', () => {
-    it('renders the LEAN SCANNER header always', () => {
+    it('renders the LEAN RADAR header always', () => {
         const out = formatLeanReport('2026-05-09', empty());
-        expect(out).toContain('LEAN SCANNER');
+        expect(out).toContain('LEAN RADAR');
         expect(out).toContain('2026-05-09');
     });
 

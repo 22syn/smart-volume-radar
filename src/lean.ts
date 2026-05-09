@@ -1,13 +1,13 @@
 /**
- * Smart Volume Radar — Lean Scanner entrypoint (stable branch).
+ * Smart Volume Radar — Lean Radar entrypoint (stable branch).
  *
  * Stripped-down pipeline: load watchlist → fetch → run 3 detectors →
  * format → send to Telegram. No Champion Score, no momentum tiers, no
  * monitor follow-up, no fundamentals, no graduation alerts. Just the
  * three crisp signals defined in `src/lean/signals.ts`.
  *
- * Runs on the same schedule as the experimental main scanner, in the
- * SAME Telegram chat — the `🪶 LEAN SCANNER` header makes it visually
+ * Runs on the same schedule as the experimental Radar (main), in the
+ * SAME Telegram chat — the `🪶 LEAN RADAR` header makes it visually
  * distinct so the user can A/B-compare.
  */
 import {
@@ -85,7 +85,7 @@ async function fetchOHLCSeries(
 }
 
 async function main(): Promise<void> {
-    logger.info('🪶 Smart Volume Radar — LEAN SCANNER starting...');
+    logger.info('🪶 Smart Volume Radar — LEAN RADAR starting...');
     const startTime = Date.now();
 
     try {
@@ -195,7 +195,7 @@ async function main(): Promise<void> {
     } catch (error) {
         logger.error('❌ Fatal error in lean scanner:', error);
         try {
-            await sendTelegramMessage(`❌ <b>Lean Scanner failed</b>\n\n${formatErrorForTelegram(error)}`);
+            await sendTelegramMessage(`❌ <b>Lean Radar failed</b>\n\n${formatErrorForTelegram(error)}`);
         } catch {
             // ignore
         }
