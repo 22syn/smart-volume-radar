@@ -64,7 +64,7 @@ jobs:
         with:
           name: ${{ steps.artifact.outputs.name }}
           path: results/
-          retention-days: 90
+          retention-days: 365
 
       # Persist the monitor-list.json across runs so the follow-up state survives.
       # Artifacts aren't loaded back automatically; committing to the repo is the

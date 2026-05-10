@@ -20,6 +20,7 @@ import { RVOLResult, MarketStatus, StockData } from './types/index.js';
 import logger from './utils/logger.js';
 import { formatErrorForTelegram } from './utils/errorHandler.js';
 import { buildStoredScanResult, writeScanResults, writeScanDebug } from './utils/writeScanResults.js';
+import { writeRadarSnapshot, computeActionDistribution } from './utils/snapshotWriter.js';
 import { getLastTradingDay } from './utils/tradingDate.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -371,6 +372,42 @@ async function main(): Promise<void> {
         );
         logger.info(`📁 Saved results to ${resultsDir}/scan-${scanDate}.json`);
         logger.info(`📋 Saved scan-debug to ${resultsDir}/scan-debug-${scanDate}.json (greenSortedFull, failedTickers, for investigation)`);
+
+        // 8.4 Full debug snapshot (every fetched stock with all computed fields).
+        // Persists per-day for retrospective debugging via GitHub Actions artifact.
+        try {
+            const snapshotPath = writeRadarSnapshot(
+                {
+                    scanDate,
+                    runStartedAt: new Date(startTime).toISOString(),
+                    version: process.env.npm_package_version ?? 'dev',
+                    marketRegime,
+                    watchlist: {
+                        total: tickers.length,
+                        fetched: stocks.length,
+                        failed: failedTickers,
+                    },
+                    topSectors: Array.from(sectorRanks.entries())
+                        .sort((a, b) => a[1].rank - b[1].rank)
+                        .slice(0, 5)
+                        .map(([sec, info]) => ({
+                            sector: sec,
+                            rank: info.rank,
+                            median63d: info.median63d,
+                            count: info.count,
+                        })),
+                    actionDistribution: computeActionDistribution(stocks),
+                    telegramSentCount: finalSignals.length,
+                    stocks,
+                },
+                resultsDir
+            );
+            if (snapshotPath) {
+                logger.info(`📸 Saved radar snapshot to ${snapshotPath} (${stocks.length} stocks)`);
+            }
+        } catch (snapErr) {
+            logger.error('⚠️ Failed to write radar snapshot (non-fatal):', (snapErr as Error).message);
+        }
 
         // 8.5 Send the monitor follow-up message (separate from daily report).
         try {
