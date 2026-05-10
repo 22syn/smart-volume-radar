@@ -219,9 +219,10 @@ export function computeTradePlan(stock: StockData): TradePlan | undefined {
  *   6. If stage in {Fresh, Aging} AND price near pivot:
  *        rvolPass → BUY
  *        else     → CAUTION_NO_VOL
- *   7. If stage == Pre-Pivot AND score ≥ 60 → WATCH
- *   8. If stage == Setup AND score ≥ 65 → WATCH
- *   9. Otherwise → PASS
+ *   7. If RVOL < 1.2 → PASS (stock isn't waking up — anti-noise gate)
+ *   8. If stage == Pre-Pivot AND score ≥ 65 → WATCH
+ *   9. If stage == Setup AND score ≥ 70 → WATCH
+ *  10. Otherwise → PASS
  */
 export function determineAction(
     stock: StockData,
@@ -249,8 +250,15 @@ export function determineAction(
     if (stage === 'Fresh' || stage === 'Aging') {
         return rvolConfirmed ? 'BUY' : 'CAUTION_NO_VOL';
     }
-    if (stage === 'Pre-Pivot' && score >= 60) return 'WATCH';
-    if (stage === 'Setup' && score >= 65) return 'WATCH';
+    // WATCH gates (tightened 2026-05-10):
+    // - Score thresholds raised (Pre-Pivot 60→65, Setup 65→70) to cut noise.
+    // - Minimum RVOL ≥ 1.2 — anything below = the stock isn't waking up.
+    //   Without this, dead-quiet bases were flooding the report.
+    const rvol = effectiveRvol(stock);
+    const MIN_WATCH_RVOL = 1.2;
+    if (rvol < MIN_WATCH_RVOL) return 'PASS';
+    if (stage === 'Pre-Pivot' && score >= 65) return 'WATCH';
+    if (stage === 'Setup' && score >= 70) return 'WATCH';
     return 'PASS';
 }
 

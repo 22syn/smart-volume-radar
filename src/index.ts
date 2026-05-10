@@ -195,6 +195,12 @@ async function main(): Promise<void> {
         // 6.5. Action-based signal list — THIS is what Telegram sends.
         //      Built directly from `stocks`, filtered by Champion-Score action label.
         //      PASS and PASS_TOO_LATE are excluded (not actionable).
+        // Telegram filter (2026-05-10 two-tier redesign):
+        //   Tier 1 (full blocks): BUY / WATCH / CAUTION_EXTENDED — actionable.
+        //   Tier 2 (compact one-liners): CAUTION_NO_VOL / CAUTION_DISTRIBUTION —
+        //     informational warnings, shown so the user doesn't miss relevant
+        //     setups currently lacking volume confirmation or under distribution.
+        // The split is rendered inside formatDailyReport / formatNotableSection.
         const actionableStocks = stocks.filter(
             (s) =>
                 s.action === 'BUY' ||

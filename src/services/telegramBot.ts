@@ -463,26 +463,28 @@ export function formatDailyReport(
     const bearish = topSignals.filter((s) => s.priceChange < 0).length;
     const regime = topSignals.find((s) => s.marketRegime)?.marketRegime;
 
-    // Group by action label (BUY → CAUTION → WATCH).
-    const actionBuckets: Record<'BUY' | 'CAUTION' | 'WATCH', RVOLResult[]> = {
+    // Two-tier split (2026-05-10):
+    //   PRIMARY → full per-stock blocks: BUY, WATCH, CAUTION_EXTENDED
+    //   NOTABLE → compact one-liners: CAUTION_NO_VOL, CAUTION_DISTRIBUTION
+    // This lets the report surface ~50+ relevant stocks without flooding.
+    const actionBuckets: Record<'BUY' | 'CAUTION_EXT' | 'WATCH', RVOLResult[]> = {
         BUY: [],
-        CAUTION: [],
+        CAUTION_EXT: [],
         WATCH: [],
     };
+    const notableNoVol: RVOLResult[] = [];
+    const notableDistribution: RVOLResult[] = [];
     for (const stock of topSignals) {
         if (stock.action === 'BUY') actionBuckets.BUY.push(stock);
-        else if (
-            stock.action === 'CAUTION_EXTENDED' ||
-            stock.action === 'CAUTION_NO_VOL' ||
-            stock.action === 'CAUTION_DISTRIBUTION'
-        )
-            actionBuckets.CAUTION.push(stock);
+        else if (stock.action === 'CAUTION_EXTENDED') actionBuckets.CAUTION_EXT.push(stock);
         else if (stock.action === 'WATCH') actionBuckets.WATCH.push(stock);
+        else if (stock.action === 'CAUTION_NO_VOL') notableNoVol.push(stock);
+        else if (stock.action === 'CAUTION_DISTRIBUTION') notableDistribution.push(stock);
     }
     const actionCounts = {
         buy: actionBuckets.BUY.length,
         watch: actionBuckets.WATCH.length,
-        caution: actionBuckets.CAUTION.length,
+        caution: actionBuckets.CAUTION_EXT.length + notableNoVol.length + notableDistribution.length,
     };
 
     // Top sectors line — derived from stocks that have sectorRank populated.
@@ -513,10 +515,10 @@ export function formatDailyReport(
 
     const actionHeaders = {
         BUY: '🟢 <b>BUY</b> <i>(at pivot + volume confirmed)</i>',
-        CAUTION: '⚠️ <b>CAUTION</b> <i>(extended or no volume — risky entry)</i>',
+        CAUTION_EXT: '⚠️ <b>CAUTION — EXTENDED</b> <i>(past pivot — risky entry)</i>',
         WATCH: '👀 <b>WATCH</b> <i>(setup forming — pre-pivot)</i>',
     } as const;
-    for (const action of ['BUY', 'CAUTION', 'WATCH'] as const) {
+    for (const action of ['BUY', 'CAUTION_EXT', 'WATCH'] as const) {
         const bucket = actionBuckets[action];
         if (bucket.length === 0) continue;
         message += `${actionHeaders[action]}  ·  ${bucket.length}\n━━━━━━━━━━━━━━━━━━━━━━\n`;
@@ -526,8 +528,52 @@ export function formatDailyReport(
         }
     }
 
+    // Tier 2 — notable but cautious (one line per stock).
+    message += formatNotableSection(notableDistribution, notableNoVol);
+
     // Silent activity / PASS / TOO LATE intentionally omitted — Telegram is action-only.
     return message;
+}
+
+/**
+ * Render the "Notable but Cautious" tier — compact one-liners for high-score
+ * stocks that don't qualify as actionable today (under distribution or lacking
+ * volume confirmation). Two sub-sections, sorted by score descending.
+ */
+function formatNotableSection(
+    distributionStocks: RVOLResult[],
+    noVolStocks: RVOLResult[]
+): string {
+    if (distributionStocks.length === 0 && noVolStocks.length === 0) return '';
+
+    const byScore = (a: RVOLResult, b: RVOLResult): number =>
+        (b.championScore ?? 0) - (a.championScore ?? 0) || (b.rvol ?? 0) - (a.rvol ?? 0);
+    const sortedDist = [...distributionStocks].sort(byScore);
+    const sortedNoVol = [...noVolStocks].sort(byScore);
+
+    const fmtLine = (s: RVOLResult): string => {
+        const score = (s.championScore ?? 0).toFixed(0);
+        const stage = s.breakoutStage ?? '?';
+        const rvol = (s.rvol ?? 0).toFixed(2);
+        const sector = s.sector ? ` · ${escapeHtml(s.sector.slice(0, 20))}` : '';
+        const { tvUrl } = buildStockUrls(s);
+        return `  • <a href="${tvUrl}"><b>${escapeHtml(s.ticker)}</b></a> ${score}/100 · ${escapeHtml(stage)} · RVOL ${rvol}x${sector}`;
+    };
+
+    const totalCount = distributionStocks.length + noVolStocks.length;
+    let section = `\n⚠️ <b>NOTABLE BUT CAUTIOUS</b>  ·  ${totalCount}\n`;
+    section += `<i>ציון גבוה אבל עם אזהרה — לא בדיווח מלא, מוצג חד-שורתי</i>\n`;
+    section += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+
+    if (sortedDist.length > 0) {
+        section += `\n🔴 <b>Distribution pressure</b> <i>(מוסדיים מוכרים)</i> · ${sortedDist.length}\n`;
+        for (const s of sortedDist) section += fmtLine(s) + '\n';
+    }
+    if (sortedNoVol.length > 0) {
+        section += `\n📊 <b>No-Volume confirmation</b> <i>(על פיבוט אבל נפח חלש)</i> · ${sortedNoVol.length}\n`;
+        for (const s of sortedNoVol) section += fmtLine(s) + '\n';
+    }
+    return section;
 }
 
 /**
