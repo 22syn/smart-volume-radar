@@ -38,6 +38,35 @@ export interface LeanScanResult {
     nearConsolidation: Array<{ stock: StockData; signal: ConsolidationNearMiss }>;
     nearVolume: Array<{ stock: StockData; signal: VolumeNearMiss }>;
     nearPullback: Array<{ stock: StockData; signal: PullbackNearMiss }>;
+    /**
+     * Stocks that were in yesterday's Silent Watchlist (any near-*) and
+     * fired a REAL signal today. Highest-quality cohort empirically:
+     * SNDK, MXL, LITE all came through this path in 2025-2026 (per
+     * scripts/analyze-silent-watchlist-conversion.ts).
+     * Populated by lean.ts if a yesterday snapshot exists; empty otherwise.
+     */
+    graduated?: Array<{
+        stock: StockData;
+        primary: 'breakout' | 'highVol' | 'pullback';
+        primaryDetail: string;
+        wasNear: Array<'nearBreakout' | 'nearVol' | 'nearPullback'>;
+        daysOnWatchlist: number;
+    }>;
+}
+
+/**
+ * Direction tag for a high-volume day — accumulation vs distribution.
+ * Empirical: UPWK 6.5x RVOL on −16.9% day = selling climax (drag).
+ * SNDK 3.5x RVOL on +8% day → +1523% over 11 months (accumulation).
+ * Same `RVOL ≥ 3x` signal, opposite outcomes — direction matters.
+ *
+ * Returns the emoji + label, or null when the day is ambiguous (|change| < 1.5%).
+ */
+function volumeDirection(stock: StockData): { emoji: string; label: string } {
+    const pc = stock.priceChange ?? 0;
+    if (pc >= 1.5) return { emoji: '🔥↑', label: 'accumulation' };
+    if (pc <= -1.5) return { emoji: '🔥↓', label: 'distribution — climax risk' };
+    return { emoji: '🔥➡️', label: 'mixed day' };
 }
 
 function tickerLink(stock: StockData): string {
@@ -126,12 +155,14 @@ export function formatLeanReport(date: string, result: LeanScanResult): string {
     parts.push(
         `🪶 <b>LEAN RADAR</b>\n` +
             `📅 <code>${date}</code>\n` +
-            `<i>3 signals: 📈 breakout · 🔥 RVOL 3x+ · 📉 -15% pullback</i>\n` +
-            `<i>כל מנייה: 📊 RVOL · 📉 ATH% · 🪜 Stage2 · אם תואם כמה — מסומן עם +</i>\n` +
+            `<i>סדר: 🎓 graduated → 📉 pullback → 📈 breakout → 🔥 volume</i>\n` +
+            `<i>כל מנייה: 📊 RVOL · 📉 ATH% · 🪜 Stage2 · + badge אם תואם כמה</i>\n` +
             `━━━━━━━━━━━━━━━━━━━━━━`
     );
 
+    const graduated = result.graduated ?? [];
     const totalReal =
+        graduated.length +
         result.consolidationBreakouts.length +
         result.highVolume.length +
         result.pullbacks.length;
@@ -145,26 +176,28 @@ export function formatLeanReport(date: string, result: LeanScanResult): string {
         return parts.join('\n');
     }
 
-    // ─── Dedup: track which tickers we've already rendered in a real section
-    // so a stock that matches breakout+pullback+volume only shows ONCE under
-    // its highest-priority section. Also suppresses near-miss for tickers
-    // that already fired a real signal.
+    // ─── Dedup: track which tickers we've already rendered. A graduated
+    // stock appears in section #1 only (the primary signal that fired
+    // today); we suppress its later appearance in pullback/breakout/vol
+    // sections AND in Silent Watchlist.
     const renderedTickers = new Set<string>();
 
-    // 1. Consolidation Breakouts (PRIMARY — strongest action)
-    if (result.consolidationBreakouts.length > 0) {
-        const items = result.consolidationBreakouts.filter((r) => !renderedTickers.has(r.stock.ticker));
-        parts.push(`\n📈 <b>פריצת קונסולידציה</b>  ·  ${items.length}\n━━━━━━━━━━━━━━━━━━━━━━`);
-        for (const { stock, signal } of items) {
+    // ─── 1. GRADUATED — yesterday's Silent Watchlist → today's real signal.
+    // Empirically the highest-quality cohort. Lead with it.
+    if (graduated.length > 0) {
+        parts.push(`\n🎓 <b>Graduated מ-Silent Watchlist</b>  ·  ${graduated.length}\n━━━━━━━━━━━━━━━━━━━━━━`);
+        for (const g of graduated) {
+            const wasNearLabels = g.wasNear.map((n) =>
+                n === 'nearBreakout' ? '📈 near-pivot' : n === 'nearVol' ? '🔥 near-3x' : '📉 near-pullback'
+            ).join(', ');
             const reason =
-                `📈 שובר בסיס ${signal.window} (טווח ${signal.baseRangePct.toFixed(1)}%, פיבוט $${fmtPrice(signal.windowHigh)})` +
-                buildSecondaryBadges(stock.ticker, 'breakout', result);
-            parts.push(stockBlock(stock, reason));
-            renderedTickers.add(stock.ticker);
+                `🎓 אתמול ב-watchlist (${wasNearLabels}, ${g.daysOnWatchlist}d) → היום ${g.primaryDetail}`;
+            parts.push(stockBlock(g.stock, reason));
+            renderedTickers.add(g.stock.ticker);
         }
     }
 
-    // 2. Healthy Pullback (PRIMARY — entry opportunity)
+    // ─── 2. PULLBACK — best base rate (73% hit, +7.7% median, mdd −2%).
     if (result.pullbacks.length > 0) {
         const items = result.pullbacks.filter((r) => !renderedTickers.has(r.stock.ticker));
         if (items.length > 0) {
@@ -179,14 +212,32 @@ export function formatLeanReport(date: string, result: LeanScanResult): string {
         }
     }
 
-    // 3. High Volume (PRIMARY when alone — otherwise badge under another section)
+    // ─── 3. BREAKOUT — rarest (211/yr) but signature setup.
+    if (result.consolidationBreakouts.length > 0) {
+        const items = result.consolidationBreakouts.filter((r) => !renderedTickers.has(r.stock.ticker));
+        if (items.length > 0) {
+            parts.push(`\n📈 <b>פריצת קונסולידציה</b>  ·  ${items.length}\n━━━━━━━━━━━━━━━━━━━━━━`);
+            for (const { stock, signal } of items) {
+                const reason =
+                    `📈 שובר בסיס ${signal.window} (טווח ${signal.baseRangePct.toFixed(1)}%, פיבוט $${fmtPrice(signal.windowHigh)})` +
+                    buildSecondaryBadges(stock.ticker, 'breakout', result);
+                parts.push(stockBlock(stock, reason));
+                renderedTickers.add(stock.ticker);
+            }
+        }
+    }
+
+    // ─── 4. HIGH VOLUME — context with direction tag (accumulation vs distribution).
     if (result.highVolume.length > 0) {
         const items = result.highVolume.filter((r) => !renderedTickers.has(r.stock.ticker));
         if (items.length > 0) {
             parts.push(`\n🔥 <b>נפח גבוה — 3x+</b>  ·  ${items.length}\n━━━━━━━━━━━━━━━━━━━━━━`);
             for (const { stock, signal } of items) {
-                const tag = signal.level === 'extreme' ? '⚡ EXTREME volume' : '🔥 נפח גבוה';
-                const reason = `${tag} (${fmtRvol(stock.rvol)})` + buildSecondaryBadges(stock.ticker, 'volume', result);
+                const dir = volumeDirection(stock);
+                const extreme = signal.level === 'extreme' ? '⚡ EXTREME ' : '';
+                const reason =
+                    `${extreme}${dir.emoji} ${dir.label} (${fmtRvol(stock.rvol)})` +
+                    buildSecondaryBadges(stock.ticker, 'volume', result);
                 parts.push(stockBlock(stock, reason));
                 renderedTickers.add(stock.ticker);
             }

@@ -30,6 +30,7 @@ import {
     qualifiesAsPullbackNearMiss,
 } from './lean/signals.js';
 import { formatLeanReport, type LeanScanResult } from './lean/format.js';
+import { attachGraduated } from './lean/graduates.js';
 import { writeLeanSnapshot } from './utils/snapshotWriter.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -179,6 +180,12 @@ async function main(): Promise<void> {
                 `${result.highVolume.length} high-volume, ${result.pullbacks.length} pullbacks ` +
                 `+ ${result.nearConsolidation.length + result.nearVolume.length + result.nearPullback.length} near-misses`
         );
+
+        // Attach Graduated cohort — stocks that were in yesterday's Silent
+        // Watchlist (any near-*) and fired a real signal today. Empirically
+        // the highest-quality cohort per 2026-05-13 conversion analysis.
+        // Degrades to empty if no prior snapshot is available.
+        attachGraduated(result, scanDate, path.join(__moduleDir, '..', 'results'));
 
         // Format + send (chunked — Telegram's hard limit is 4096 chars per message)
         const message = formatLeanReport(scanDate, result);
