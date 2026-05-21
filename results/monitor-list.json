@@ -1,5 +1,5 @@
 {
-  "lastUpdated": "2026-05-20",
+  "lastUpdated": "2026-05-21",
   "entries": [
     {
       "ticker": "6531.TW",
@@ -7,7 +7,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 479,
       "firstAlertRvol": 1.7070998264290282,
-      "lastChecked": "2026-05-15",
+      "lastChecked": "2026-05-21",
       "status": "manual-entry",
       "sector": "Semiconductor",
       "events": [
@@ -138,6 +138,12 @@
           "type": "re-alert-close",
           "price": 1080,
           "rvol": 1.643356669563052
+        },
+        {
+          "date": "2026-05-21",
+          "type": "re-alert-close",
+          "price": 876,
+          "rvol": 2.8136775889399046
         }
       ],
       "resolvedDate": "2026-01-09",
@@ -1830,7 +1836,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 37830,
       "firstAlertRvol": 1.5058206469058502,
-      "lastChecked": "2026-05-08",
+      "lastChecked": "2026-05-21",
       "status": "graduated",
       "sector": "real estate",
       "events": [
@@ -1925,6 +1931,12 @@
           "type": "re-alert-full",
           "price": 50220,
           "rvol": 4.03177480776755
+        },
+        {
+          "date": "2026-05-21",
+          "type": "re-alert-close",
+          "price": 44850,
+          "rvol": 2.6259212910804353
         }
       ],
       "resolvedDate": "2026-01-07",
@@ -4200,7 +4212,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 11300,
       "firstAlertRvol": 3.807466905758427,
-      "lastChecked": "2026-05-20",
+      "lastChecked": "2026-05-21",
       "status": "expired",
       "sector": "OIL",
       "events": [
@@ -4285,6 +4297,12 @@
         },
         {
           "date": "2026-05-20",
+          "type": "re-alert-close",
+          "price": 13500,
+          "rvol": 1.5609825291550392
+        },
+        {
+          "date": "2026-05-21",
           "type": "re-alert-close",
           "price": 13500,
           "rvol": 1.5609825291550392
@@ -5803,7 +5821,7 @@
       "firstAlertLevel": "full",
       "firstAlertPrice": 1845,
       "firstAlertRvol": 2.407756407760367,
-      "lastChecked": "2026-05-08",
+      "lastChecked": "2026-05-21",
       "status": "graduated",
       "sector": "residence",
       "events": [
@@ -5898,6 +5916,12 @@
           "type": "re-alert-close",
           "price": 2516,
           "rvol": 2.858351355516763
+        },
+        {
+          "date": "2026-05-21",
+          "type": "re-alert-close",
+          "price": 2124,
+          "rvol": 1.9301171134834296
         }
       ],
       "resolvedDate": "2026-01-06",
@@ -8614,7 +8638,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 8040,
       "firstAlertRvol": 1.5808548424883702,
-      "lastChecked": "2026-05-08",
+      "lastChecked": "2026-05-21",
       "status": "manual-entry",
       "sector": "Cleantech",
       "events": [
@@ -8661,6 +8685,12 @@
           "type": "re-alert-close",
           "price": 12120,
           "rvol": 3.1296851745213266
+        },
+        {
+          "date": "2026-05-21",
+          "type": "re-alert-close",
+          "price": 12030,
+          "rvol": 1.5160389616860346
         }
       ],
       "resolvedDate": "2026-02-03",
@@ -9555,7 +9585,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 32990,
       "firstAlertRvol": 1.7542035373410234,
-      "lastChecked": "2026-05-12",
+      "lastChecked": "2026-05-21",
       "status": "sma21-pullback",
       "sector": "residence",
       "events": [
@@ -9650,6 +9680,12 @@
           "type": "re-alert-close",
           "price": 23070,
           "rvol": 1.568246607755553
+        },
+        {
+          "date": "2026-05-21",
+          "type": "re-alert-close",
+          "price": 21680,
+          "rvol": 1.9130852425407248
         }
       ],
       "resolvedDate": "2026-01-22",
@@ -14004,7 +14040,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 26.829999923706055,
       "firstAlertRvol": 1.8845332815835436,
-      "lastChecked": "2026-05-15",
+      "lastChecked": "2026-05-21",
       "status": "sma21-pullback",
       "sector": "Cleantech",
       "events": [
@@ -14081,6 +14117,12 @@
           "type": "re-alert-close",
           "price": 24.600000381469727,
           "rvol": 2.1623996468246647
+        },
+        {
+          "date": "2026-05-21",
+          "type": "re-alert-close",
+          "price": 22.43000030517578,
+          "rvol": 2.7448452246947785
         }
       ],
       "resolvedDate": "2026-01-09",
@@ -16223,7 +16265,7 @@
       "firstAlertLevel": "full",
       "firstAlertPrice": 117.97000122070312,
       "firstAlertRvol": 2.5802523531845356,
-      "lastChecked": "2026-03-20",
+      "lastChecked": "2026-05-21",
       "status": "graduated",
       "sector": "Retail & Consumer",
       "events": [
@@ -16282,6 +16324,12 @@
           "type": "re-alert-close",
           "price": 119.0199966430664,
           "rvol": 1.9037035119429226
+        },
+        {
+          "date": "2026-05-21",
+          "type": "re-alert-close",
+          "price": 121.33999633789062,
+          "rvol": 2.8035010754446668
         }
       ],
       "resolvedDate": "2026-01-16",
@@ -16398,7 +16446,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 107.83999633789062,
       "firstAlertRvol": 1.6986782859574452,
-      "lastChecked": "2026-05-20",
+      "lastChecked": "2026-05-21",
       "status": "expired",
       "sector": "Semiconductor",
       "events": [
@@ -16492,6 +16540,12 @@
           "type": "re-alert-full",
           "price": 256.7300109863281,
           "rvol": 2.195048318465737
+        },
+        {
+          "date": "2026-05-21",
+          "type": "re-alert-full",
+          "price": 298.2300109863281,
+          "rvol": 2.552262278802744
         }
       ],
       "resolvedDate": "2026-02-24",
@@ -17794,7 +17848,7 @@
       "firstAlertLevel": "full",
       "firstAlertPrice": 11220,
       "firstAlertRvol": 2.586653698516075,
-      "lastChecked": "2026-05-20",
+      "lastChecked": "2026-05-21",
       "status": "graduated",
       "sector": "Finance",
       "events": [
@@ -17865,6 +17919,12 @@
           "type": "re-alert-close",
           "price": 12420,
           "rvol": 1.550509615107695
+        },
+        {
+          "date": "2026-05-21",
+          "type": "re-alert-close",
+          "price": 12470,
+          "rvol": 3.5617943869240416
         }
       ],
       "resolvedDate": "2026-01-15",
@@ -18030,7 +18090,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 25.360000610351562,
       "firstAlertRvol": 1.5171168617233726,
-      "lastChecked": "2026-05-20",
+      "lastChecked": "2026-05-21",
       "status": "graduated",
       "sector": "OIL",
       "events": [
@@ -18200,6 +18260,12 @@
         },
         {
           "date": "2026-05-20",
+          "type": "re-alert-close",
+          "price": 32.560001373291016,
+          "rvol": 7.880501690985191
+        },
+        {
+          "date": "2026-05-21",
           "type": "re-alert-close",
           "price": 32.560001373291016,
           "rvol": 7.880501690985191
@@ -18910,7 +18976,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 64.41000366210938,
       "firstAlertRvol": 1.7022035864037826,
-      "lastChecked": "2026-03-10",
+      "lastChecked": "2026-05-21",
       "status": "graduated",
       "sector": "Banks",
       "events": [
@@ -19095,6 +19161,12 @@
           "type": "re-alert-close",
           "price": 69.08000183105469,
           "rvol": 1.9008326056967486
+        },
+        {
+          "date": "2026-05-21",
+          "type": "re-alert-close",
+          "price": 72.58000183105469,
+          "rvol": 1.8852188730513275
         }
       ],
       "resolvedDate": "2026-01-22",
@@ -21782,7 +21854,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 45.88999938964844,
       "firstAlertRvol": 1.7296368557722461,
-      "lastChecked": "2026-04-20",
+      "lastChecked": "2026-05-21",
       "status": "sma21-pullback",
       "sector": "Semiconductor",
       "events": [
@@ -21829,6 +21901,12 @@
           "type": "re-alert-full",
           "price": 58.7599983215332,
           "rvol": 2.2245305888619757
+        },
+        {
+          "date": "2026-05-21",
+          "type": "re-alert-full",
+          "price": 81.3499984741211,
+          "rvol": 2.6422515812470957
         }
       ],
       "resolvedDate": "2026-02-06",
@@ -24050,7 +24128,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 70.54000091552734,
       "firstAlertRvol": 1.5894872621734923,
-      "lastChecked": "2026-05-19",
+      "lastChecked": "2026-05-21",
       "status": "manual-entry",
       "sector": "Aerospace & Defense",
       "events": [
@@ -24163,6 +24241,12 @@
           "type": "re-alert-close",
           "price": 92.94999694824219,
           "rvol": 1.731253100472291
+        },
+        {
+          "date": "2026-05-21",
+          "type": "re-alert-close",
+          "price": 92.62000274658203,
+          "rvol": 1.5846838446077298
         }
       ],
       "resolvedDate": "2026-02-06",
@@ -24328,7 +24412,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 102230,
       "firstAlertRvol": 2.92789300856264,
-      "lastChecked": "2026-05-08",
+      "lastChecked": "2026-05-21",
       "status": "sma21-pullback",
       "sector": "real estate",
       "events": [
@@ -24399,6 +24483,12 @@
           "type": "re-alert-close",
           "price": 88000,
           "rvol": 11.94808311433714
+        },
+        {
+          "date": "2026-05-21",
+          "type": "re-alert-close",
+          "price": 81650,
+          "rvol": 1.6941352424851666
         }
       ],
       "resolvedDate": "2026-02-03",
@@ -24523,7 +24613,7 @@
       "firstAlertLevel": "full",
       "firstAlertPrice": 119.97000122070312,
       "firstAlertRvol": 3.081140124942633,
-      "lastChecked": "2026-05-14",
+      "lastChecked": "2026-05-21",
       "status": "expired",
       "sector": "Cleantech",
       "events": [
@@ -24575,6 +24665,12 @@
           "type": "re-alert-close",
           "price": 142.75,
           "rvol": 1.5974797180842024
+        },
+        {
+          "date": "2026-05-21",
+          "type": "re-alert-close",
+          "price": 121.0199966430664,
+          "rvol": 1.6246857750608314
         }
       ],
       "resolvedDate": "2026-03-11",
@@ -25415,7 +25511,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 75700,
       "firstAlertRvol": 2.134326090634203,
-      "lastChecked": "2026-05-08",
+      "lastChecked": "2026-05-21",
       "status": "sma21-pullback",
       "sector": "consumer basic",
       "events": [
@@ -25462,6 +25558,12 @@
           "type": "re-alert-full",
           "price": 85240,
           "rvol": 5.2436499705623705
+        },
+        {
+          "date": "2026-05-21",
+          "type": "re-alert-close",
+          "price": 86000,
+          "rvol": 1.5944753285284026
         }
       ],
       "resolvedDate": "2026-01-30",
@@ -25999,7 +26101,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 37.279998779296875,
       "firstAlertRvol": 1.731887753996246,
-      "lastChecked": "2026-05-20",
+      "lastChecked": "2026-05-21",
       "status": "sma21-pullback",
       "sector": "Cleantech",
       "events": [
@@ -26034,6 +26136,12 @@
           "type": "re-alert-close",
           "price": 53.150001525878906,
           "rvol": 1.6574340648207972
+        },
+        {
+          "date": "2026-05-21",
+          "type": "re-alert-full",
+          "price": 62.34000015258789,
+          "rvol": 2.658286163683163
         }
       ],
       "resolvedDate": "2026-03-02",
@@ -26784,7 +26892,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 3853,
       "firstAlertRvol": 1.718146877896229,
-      "lastChecked": "2026-05-20",
+      "lastChecked": "2026-05-21",
       "status": "graduated",
       "sector": "Banks",
       "events": [
@@ -26897,6 +27005,12 @@
           "type": "re-alert-close",
           "price": 3155,
           "rvol": 2.0240232552661506
+        },
+        {
+          "date": "2026-05-21",
+          "type": "re-alert-close",
+          "price": 3248,
+          "rvol": 1.923885660473694
         }
       ],
       "resolvedDate": "2026-02-05",
@@ -26909,7 +27023,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 35.040000915527344,
       "firstAlertRvol": 2.203623822924812,
-      "lastChecked": "2026-05-15",
+      "lastChecked": "2026-05-21",
       "status": "sma21-pullback",
       "sector": "Cleantech",
       "events": [
@@ -26962,6 +27076,12 @@
           "type": "re-alert-full",
           "price": 61.7599983215332,
           "rvol": 3.7500067130688493
+        },
+        {
+          "date": "2026-05-21",
+          "type": "re-alert-close",
+          "price": 63,
+          "rvol": 1.6745694980382464
         }
       ],
       "resolvedDate": "2026-03-13",
@@ -27813,7 +27933,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 1775,
       "firstAlertRvol": 3.1759358207044674,
-      "lastChecked": "2026-05-08",
+      "lastChecked": "2026-05-21",
       "status": "sma21-pullback",
       "sector": "Others",
       "events": [
@@ -27884,6 +28004,12 @@
           "type": "re-alert-close",
           "price": 1364,
           "rvol": 4.753308366781735
+        },
+        {
+          "date": "2026-05-21",
+          "type": "re-alert-close",
+          "price": 1314,
+          "rvol": 1.5178115670685128
         }
       ],
       "resolvedDate": "2026-02-12",
@@ -27936,7 +28062,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 34490,
       "firstAlertRvol": 3.303559611595326,
-      "lastChecked": "2026-05-08",
+      "lastChecked": "2026-05-21",
       "status": "expired",
       "sector": "Software",
       "events": [
@@ -27988,6 +28114,12 @@
           "type": "re-alert-close",
           "price": 28700,
           "rvol": 2.6772800214550263
+        },
+        {
+          "date": "2026-05-21",
+          "type": "re-alert-close",
+          "price": 26730,
+          "rvol": 1.5036008870413324
         }
       ],
       "resolvedDate": "2026-03-19",
@@ -30426,7 +30558,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 7.630000114440918,
       "firstAlertRvol": 1.5399523983975478,
-      "lastChecked": "2026-05-20",
+      "lastChecked": "2026-05-21",
       "status": "monitoring",
       "sector": "Cleantech",
       "events": [
@@ -30445,7 +30577,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 391.95001220703125,
       "firstAlertRvol": 1.8514750409916518,
-      "lastChecked": "2026-05-20",
+      "lastChecked": "2026-05-21",
       "status": "monitoring",
       "sector": "Cleantech",
       "events": [
@@ -30464,7 +30596,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 18500,
       "firstAlertRvol": 1.9031845330173096,
-      "lastChecked": "2026-05-20",
+      "lastChecked": "2026-05-21",
       "status": "monitoring",
       "events": [
         {
@@ -30500,7 +30632,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 22.350000381469727,
       "firstAlertRvol": 1.7753238250289745,
-      "lastChecked": "2026-05-20",
+      "lastChecked": "2026-05-21",
       "status": "monitoring",
       "events": [
         {
@@ -30518,7 +30650,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 2.8499999046325684,
       "firstAlertRvol": 2.826202777930607,
-      "lastChecked": "2026-05-20",
+      "lastChecked": "2026-05-21",
       "status": "monitoring",
       "events": [
         {
@@ -30526,6 +30658,24 @@
           "type": "alert-close",
           "price": 2.8499999046325684,
           "rvol": 2.826202777930607,
+          "note": "First alert (close)"
+        }
+      ]
+    },
+    {
+      "ticker": "WOLF",
+      "firstAlertDate": "2026-05-21",
+      "firstAlertLevel": "close",
+      "firstAlertPrice": 69.5,
+      "firstAlertRvol": 2.031016425341357,
+      "lastChecked": "2026-05-21",
+      "status": "monitoring",
+      "events": [
+        {
+          "date": "2026-05-21",
+          "type": "alert-close",
+          "price": 69.5,
+          "rvol": 2.031016425341357,
           "note": "First alert (close)"
         }
       ]
