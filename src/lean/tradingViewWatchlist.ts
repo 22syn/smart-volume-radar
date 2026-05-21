@@ -1,37 +1,32 @@
 /**
- * Smart Volume Radar — Lean Radar TradingView watchlist writer.
+ * Smart Volume Radar — Lean Radar TradingView watchlist writer (two-list model).
  *
- * Emits a daily watchlist file covering the FULL Lean Radar opportunity set:
- *   - 🎓 Graduated (any primary signal) — empirically the strongest cohort
- *   - 📈 Real Consolidation Breakouts
- *   - 📈 Near-pivot (Silent Watchlist for breakouts)
- *   - 📉 Real Healthy Pullback — 73% hit, +7.7% median (best baseline)
- *   - 📉 Near-pullback (Silent Watchlist for pullbacks)
- *   - 🔥 Near-volume (Silent Watchlist for high-volume entries)
+ * Emits TWO separate watchlist files per scan, mirroring two TradingView
+ * watchlists kept distinct:
  *
- * Excluded: real High Volume (real and extreme). High-volume days have a
- * 50/50 distribution direction risk (UPWK-style climax sells); needs the
- * accumulation/distribution tag layer before being safely tradable.
+ *   1. "Lean Radar - Breakouts" — high-conviction ACTION list
+ *      Contents: 🎓 Graduated (breakout-primary) + 📈 Real Breakouts
+ *      Files:    tv-breakouts-{date}.txt + tv-breakouts-latest.txt
+ *      Use:     stocks to look at TODAY for a trade decision
  *
- * Three output files:
- *   1. tv-watchlist-{date}.txt   — one symbol per line, with category headers
- *   2. tv-watchlist-{date}.csv   — comma-separated single line, paste-ready
- *   3. tv-watchlist-latest.txt   — stable filename for browser automation
+ *   2. "Lean Radar - Near" — MONITOR list (approaching breakout)
+ *      Contents: 📈 Near Pivot (nearConsolidation) only
+ *      Files:    tv-near-{date}.txt + tv-near-latest.txt
+ *      Use:     stocks 1-2 days from breakout; daily check for transitions
  *
- * Exchange prefixes (TradingView convention):
- *   .TA  → TASE:        (Tel Aviv Stock Exchange)
- *   .DE  → XETR:        (Deutsche Börse Xetra)
- *   .PA  → EURONEXT:    (Euronext Paris)
- *   .AS  → EURONEXT:    (Euronext Amsterdam)
- *   .SW  → SIX:         (Swiss Exchange)
- *   .L   → LSE:         (London Stock Exchange)
- *   .MI  → MIL:         (Borsa Italiana)
- *   .VI  → VIE:         (Vienna Stock Exchange)
- *   .TW  → TWSE:        (Taiwan)
- *   .KS  → KRX:         (Korea)
- *   .SA  → BMFBOVESPA:  (Brazil)
- *   .MC  → BME:         (Spain)
- *   plain (no dot)      → no prefix (TradingView resolves NASDAQ/NYSE)
+ * Pullback and Volume signals are intentionally NOT included — those are
+ * different trade archetypes (buy-on-dip / volume-context), shown in the
+ * Telegram report but kept out of these breakout-focused watchlists.
+ *
+ * Back-compat: tv-watchlist-latest.txt is kept as a copy of the breakouts
+ * file (for callers that haven't migrated yet).
+ *
+ * Exchange prefixes for TV format:
+ *   .TA  → TASE:        .DE  → XETR:       .PA  → EURONEXT:
+ *   .AS  → EURONEXT:    .SW  → SIX:        .L   → LSE:
+ *   .MI  → MIL:         .VI  → VIE:        .TW  → TWSE:
+ *   .KS  → KRX:         .SA  → BMFBOVESPA: .MC  → BME:
+ *   plain (no dot)      → no prefix (TradingView resolves NYSE/NASDAQ)
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -61,160 +56,148 @@ export function toTradingViewSymbol(svrTicker: string): string {
             return `${prefix}:${base}`;
         }
     }
-    // US stocks — no prefix needed, TradingView resolves automatically.
     return svrTicker;
 }
 
-type SignalKind =
-    | 'graduated'
-    | 'breakout'
-    | 'nearBreakout'
-    | 'pullback'
-    | 'nearPullback'
-    | 'nearVolume';
+type BreakoutKind = 'graduated' | 'breakout';
+type NearKind = 'nearBreakout';
 
-interface WatchlistEntry {
+export interface BreakoutsEntry {
     svrTicker: string;
     tvSymbol: string;
-    kind: SignalKind;
+    kind: BreakoutKind;
+    detail: string;
+}
+export interface NearEntry {
+    svrTicker: string;
+    tvSymbol: string;
+    kind: NearKind;
     detail: string;
 }
 
-const SECTION_META: Record<SignalKind, { emoji: string; title: string; rationale: string }> = {
-    graduated:    { emoji: '🎓', title: 'Graduated',     rationale: 'was on watchlist yesterday, fired real today' },
-    breakout:     { emoji: '📈', title: 'Real Breakouts',rationale: 'close > pivot today' },
-    nearBreakout: { emoji: '📈', title: 'Near Pivot',    rationale: 'within 2% of base high (Stage 2, tight base)' },
-    pullback:     { emoji: '📉', title: 'Real Pullbacks',rationale: '−15% to −25% from ATH, above SMA200 (73% hit, +7.7% median)' },
-    nearPullback: { emoji: '📉', title: 'Near Pullback', rationale: '−12% to −15% from ATH (74% conversion)' },
-    nearVolume:   { emoji: '🔥', title: 'Near Volume',   rationale: 'RVOL 2.5–3.0x — building toward 3x (+10.7% median)' },
-};
-
-const SECTION_ORDER: SignalKind[] = [
-    'graduated',
-    'breakout',
-    'nearBreakout',
-    'pullback',
-    'nearPullback',
-    'nearVolume',
-];
-
-export function buildLeanWatchlist(result: LeanScanResult): WatchlistEntry[] {
+/** Build the BREAKOUTS list: graduated (breakout-primary) + real breakouts.
+ *  This is the high-conviction "act today" list. */
+export function buildBreakoutsList(result: LeanScanResult): BreakoutsEntry[] {
     const seen = new Set<string>();
-    const entries: WatchlistEntry[] = [];
+    const out: BreakoutsEntry[] = [];
 
-    const pushIfNew = (
-        ticker: string,
-        kind: SignalKind,
-        detail: string
-    ): void => {
-        if (seen.has(ticker)) return;
-        entries.push({
-            svrTicker: ticker,
-            tvSymbol: toTradingViewSymbol(ticker),
-            kind,
-            detail,
-        });
-        seen.add(ticker);
-    };
-
-    // 1. Graduated — ANY primary type (breakout, pullback, volume — all welcome)
+    // 1. Graduated — ONLY where today's signal is a real breakout
     for (const g of result.graduated ?? []) {
-        pushIfNew(g.stock.ticker, 'graduated', g.primaryDetail);
+        if (g.primary !== 'breakout') continue;
+        if (seen.has(g.stock.ticker)) continue;
+        out.push({
+            svrTicker: g.stock.ticker,
+            tvSymbol: toTradingViewSymbol(g.stock.ticker),
+            kind: 'graduated',
+            detail: g.primaryDetail,
+        });
+        seen.add(g.stock.ticker);
     }
 
-    // 2. Real Consolidation Breakouts — explicit close > pivot today
+    // 2. Real Consolidation Breakouts
     for (const r of result.consolidationBreakouts) {
-        pushIfNew(
-            r.stock.ticker,
-            'breakout',
-            `${r.signal.window} base ${r.signal.baseRangePct.toFixed(1)}%, pivot $${r.signal.windowHigh.toFixed(2)}`
-        );
+        if (seen.has(r.stock.ticker)) continue;
+        out.push({
+            svrTicker: r.stock.ticker,
+            tvSymbol: toTradingViewSymbol(r.stock.ticker),
+            kind: 'breakout',
+            detail: `${r.signal.window} base ${r.signal.baseRangePct.toFixed(1)}%, pivot $${r.signal.windowHigh.toFixed(2)}`,
+        });
+        seen.add(r.stock.ticker);
     }
 
-    // 3. Near-pivot — within 2% below pivot (50% convert within 30td)
-    for (const r of result.nearConsolidation) {
-        pushIfNew(
-            r.stock.ticker,
-            'nearBreakout',
-            `${r.signal.window} base, ${r.signal.distanceToPivotPct.toFixed(2)}% below pivot $${r.signal.windowHigh.toFixed(2)}`
-        );
-    }
-
-    // 4. Real Pullback — −15% to −25% from ATH, above SMA200 (best baseline)
-    for (const r of result.pullbacks) {
-        pushIfNew(
-            r.stock.ticker,
-            'pullback',
-            `${r.signal.pctFromAth.toFixed(1)}% from ATH $${r.stock.ath?.toFixed(2) ?? '?'} (above SMA200)`
-        );
-    }
-
-    // 5. Near-pullback — −12% to −15% (74% conversion rate — strongest)
-    for (const r of result.nearPullback) {
-        pushIfNew(
-            r.stock.ticker,
-            'nearPullback',
-            `${r.signal.pctFromAth.toFixed(1)}% from ATH (approaching pullback band)`
-        );
-    }
-
-    // 6. Near-volume — RVOL 2.5–3.0x (highest median return: +10.7%)
-    for (const r of result.nearVolume) {
-        pushIfNew(
-            r.stock.ticker,
-            'nearVolume',
-            `RVOL ${r.signal.rvol.toFixed(1)}x — approaching 3x threshold`
-        );
-    }
-
-    return entries;
+    return out;
 }
 
-/** Back-compat alias — old code may import this. Now returns ALL Lean
- *  entries, not just breakout-track. The "breakout" name is historical. */
-export const buildBreakoutWatchlist = buildLeanWatchlist;
+/** Build the NEAR list: stocks approaching breakout (within 2% of pivot). */
+export function buildNearList(result: LeanScanResult): NearEntry[] {
+    const seen = new Set<string>();
+    const out: NearEntry[] = [];
+
+    for (const r of result.nearConsolidation) {
+        if (seen.has(r.stock.ticker)) continue;
+        out.push({
+            svrTicker: r.stock.ticker,
+            tvSymbol: toTradingViewSymbol(r.stock.ticker),
+            kind: 'nearBreakout',
+            detail: `${r.signal.window} base, ${r.signal.distanceToPivotPct.toFixed(2)}% below pivot $${r.signal.windowHigh.toFixed(2)}`,
+        });
+        seen.add(r.stock.ticker);
+    }
+
+    return out;
+}
+
+function writeListFile(
+    dir: string,
+    dateStamp: string,
+    fileBaseName: string,
+    title: string,
+    sectionLabel: string,
+    entries: Array<{ tvSymbol: string; kind: string }>
+): { dated: string; latest: string; count: number } {
+    const lines: string[] = [];
+    lines.push(`###${title} — ${dateStamp}`);
+    lines.push(`###Generated: ${new Date().toISOString()}`);
+    lines.push(`###Total: ${entries.length} symbols`);
+    lines.push('');
+    if (entries.length > 0) {
+        lines.push(`###${sectionLabel}`);
+        for (const e of entries) lines.push(e.tvSymbol);
+    } else {
+        lines.push('###(none today)');
+    }
+    const content = lines.join('\n') + '\n';
+    const dated = path.join(dir, `${fileBaseName}-${dateStamp}.txt`);
+    const latest = path.join(dir, `${fileBaseName}-latest.txt`);
+    fs.writeFileSync(dated, content);
+    fs.writeFileSync(latest, content);
+    return { dated, latest, count: entries.length };
+}
+
+export interface WatchlistWriteResult {
+    breakouts: { dated: string; latest: string; count: number };
+    near: { dated: string; latest: string; count: number };
+    /** Back-compat: tv-watchlist-latest.txt = breakouts file. */
+    legacyLatestPath: string;
+}
 
 export function writeTradingViewWatchlist(
     scanDate: string,
     result: LeanScanResult,
     resultsDir: string
-): { txtPath: string; csvPath: string; latestPath: string; count: number } {
-    const entries = buildLeanWatchlist(result);
-    const dateStamp = scanDate;
+): WatchlistWriteResult {
+    const breakouts = buildBreakoutsList(result);
+    const near = buildNearList(result);
 
-    const byKind = (k: SignalKind) => entries.filter((e) => e.kind === k);
+    const bResult = writeListFile(
+        resultsDir,
+        scanDate,
+        'tv-breakouts',
+        'Lean Radar — Breakouts (ACTION)',
+        '🎓 Graduated + 📈 Real Breakouts',
+        breakouts
+    );
+    const nResult = writeListFile(
+        resultsDir,
+        scanDate,
+        'tv-near',
+        'Lean Radar — Near (MONITOR)',
+        '📈 Near Pivot — within 2% of base high',
+        near
+    );
 
-    // .txt — one symbol per line, grouped by section
-    const txtLines: string[] = [];
-    txtLines.push(`###Lean Radar — ${dateStamp}`);
-    txtLines.push(`###Generated: ${new Date().toISOString()}`);
-    txtLines.push(`###Total: ${entries.length} unique symbols across 6 categories`);
-    txtLines.push('');
+    // Back-compat: keep tv-watchlist-latest.txt = breakouts content
+    const legacyLatest = path.join(resultsDir, 'tv-watchlist-latest.txt');
+    fs.copyFileSync(bResult.latest, legacyLatest);
 
-    let sectionsPrinted = 0;
-    for (const kind of SECTION_ORDER) {
-        const items = byKind(kind);
-        if (items.length === 0) continue;
-        const meta = SECTION_META[kind];
-        txtLines.push(`###${meta.emoji} ${meta.title} (${items.length}) — ${meta.rationale}`);
-        for (const e of items) txtLines.push(e.tvSymbol);
-        txtLines.push('');
-        sectionsPrinted++;
-    }
-    if (sectionsPrinted === 0) {
-        txtLines.push('###(no signals today)');
-    }
-
-    const txtPath = path.join(resultsDir, `tv-watchlist-${dateStamp}.txt`);
-    const latestPath = path.join(resultsDir, 'tv-watchlist-latest.txt');
-    const txtContent = txtLines.join('\n') + '\n';
-    fs.writeFileSync(txtPath, txtContent);
-    fs.writeFileSync(latestPath, txtContent);
-
-    // .csv — comma-separated single line, paste-ready into TradingView
-    const csvPath = path.join(resultsDir, `tv-watchlist-${dateStamp}.csv`);
-    const csvLine = entries.map((e) => e.tvSymbol).join(',');
-    fs.writeFileSync(csvPath, csvLine + '\n');
-
-    return { txtPath, csvPath, latestPath, count: entries.length };
+    return {
+        breakouts: bResult,
+        near: nResult,
+        legacyLatestPath: legacyLatest,
+    };
 }
+
+/** Back-compat shim — old callers may still import buildBreakoutWatchlist
+ *  expecting the combined list. Now returns ONLY the action list (breakouts). */
+export const buildBreakoutWatchlist = buildBreakoutsList;

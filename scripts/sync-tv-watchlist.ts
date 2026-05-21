@@ -85,14 +85,29 @@ const LOGIN_MODE = has('login');
 const DRY_RUN = has('dry-run');
 const REPLACE = has('replace');
 const HEADED = has('headed') || LOGIN_MODE;
-const WATCHLIST_NAME = arg('watchlist', 'Lean Radar');
 const WATCHLIST_FILE_EXPLICIT = process.argv.includes('--file');
-const WATCHLIST_FILE = arg('file', path.join(PROJECT_ROOT, 'results', 'tv-watchlist-latest.txt'));
+
+// Default: two-watchlist mode (Breakouts + Near). User can override with --watchlist
+// and --file to drive a single arbitrary list.
+const SINGLE_LIST_MODE = process.argv.includes('--watchlist') || process.argv.includes('--file');
+const WATCHLIST_NAME = arg('watchlist', 'Lean Radar - Breakouts');
+const WATCHLIST_FILE = arg('file', path.join(PROJECT_ROOT, 'results', 'tv-breakouts-latest.txt'));
+
+// In default (two-list) mode, both files are synced sequentially.
+const BREAKOUTS_FILE = path.join(PROJECT_ROOT, 'results', 'tv-breakouts-latest.txt');
+const NEAR_FILE = path.join(PROJECT_ROOT, 'results', 'tv-near-latest.txt');
+const BREAKOUTS_WATCHLIST = 'Lean Radar - Breakouts';
+const NEAR_WATCHLIST = 'Lean Radar - Near';
+
 // Staleness pruning: remove tickers that haven't appeared in any tv-watchlist-*.txt
 // for this many days. Set to 0 to disable. Default = 14 days (~3 trading weeks).
 const PRUNE_AFTER_DAYS = parseInt(arg('prune-after-days', '14'), 10);
 // Persistent history of when each ticker last appeared in a tv-watchlist file.
-const HISTORY_PATH = path.join(os.homedir(), '.cache', 'svr-tv-sync', 'ticker-history.json');
+// One history per watchlist NAME so staleness is scoped correctly.
+function historyPathFor(watchlistName: string): string {
+    const safe = watchlistName.replace(/[^a-zA-Z0-9-]/g, '_');
+    return path.join(os.homedir(), '.cache', 'svr-tv-sync', `ticker-history-${safe}.json`);
+}
 
 // ─── Log helper ─────────────────────────────────────────────────────
 const logPath = path.join(LOG_DIR, 'tv-sync.log');
@@ -104,33 +119,36 @@ function log(msg: string): void {
 
 // ─── Step 1: Get the latest watchlist file ───────────────────────────
 function downloadLatestArtifact(): string | null {
+    const dir = downloadLatestArtifactDir();
+    if (!dir) return null;
+    const found = findFile(dir, 'tv-watchlist-latest.txt');
+    if (!found) {
+        log('⚠️ Artifact downloaded but tv-watchlist-latest.txt not found in it.');
+        return null;
+    }
+    log(`✓ Downloaded artifact watchlist: ${found}`);
+    return found;
+}
+
+/** Download the latest Lean Radar artifact and return the directory path
+ *  it was extracted into. Caller is responsible for finding specific files. */
+function downloadLatestArtifactDir(): string | null {
     log('🔎 Looking for the latest Lean Radar artifact via gh CLI...');
     try {
-        // Find the latest successful run ID
         const runId = execSync(
             `gh run list --workflow="Lean Radar - Daily Scan" --status=success --limit 1 --json databaseId -q '.[0].databaseId' --repo ${REPO}`,
             { encoding: 'utf8' }
         ).trim();
         if (!runId) {
-            log('⚠️ No successful runs found via gh CLI; falling back to local file.');
+            log('⚠️ No successful runs found via gh CLI');
             return null;
         }
         log(`  ↳ latest run: ${runId}`);
-
-        // Download to a temp dir
         const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'svr-tv-'));
         execSync(`gh run download ${runId} --repo ${REPO} --dir "${tmpDir}"`, { encoding: 'utf8', stdio: 'pipe' });
-
-        // Walk the temp dir for tv-watchlist-latest.txt
-        const found = findFile(tmpDir, 'tv-watchlist-latest.txt');
-        if (!found) {
-            log('⚠️ Artifact downloaded but tv-watchlist-latest.txt not found in it.');
-            return null;
-        }
-        log(`✓ Downloaded artifact watchlist: ${found}`);
-        return found;
+        return tmpDir;
     } catch (e) {
-        log(`⚠️ gh download failed: ${(e as Error).message}. Falling back to local file.`);
+        log(`⚠️ gh download failed: ${(e as Error).message}`);
         return null;
     }
 }
@@ -157,33 +175,33 @@ function parseWatchlist(filePath: string): string[] {
 // ─── Ticker history (for staleness pruning) ─────────────────────────
 interface TickerHistory { [normalizedTicker: string]: string /* ISO date YYYY-MM-DD */; }
 
-function loadHistory(): TickerHistory {
-    if (!fs.existsSync(HISTORY_PATH)) return {};
-    try { return JSON.parse(fs.readFileSync(HISTORY_PATH, 'utf8')); }
+function loadHistory(historyPath: string): TickerHistory {
+    if (!fs.existsSync(historyPath)) return {};
+    try { return JSON.parse(fs.readFileSync(historyPath, 'utf8')); }
     catch { return {}; }
 }
 
-function saveHistory(h: TickerHistory): void {
-    fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
-    fs.writeFileSync(HISTORY_PATH, JSON.stringify(h, null, 2));
+function saveHistory(historyPath: string, h: TickerHistory): void {
+    fs.mkdirSync(path.dirname(historyPath), { recursive: true });
+    fs.writeFileSync(historyPath, JSON.stringify(h, null, 2));
 }
 
 /** Update history: mark each ticker as seen today. */
-function recordSeenTickers(symbols: string[]): void {
-    const h = loadHistory();
+function recordSeenTickers(historyPath: string, symbols: string[]): void {
+    const h = loadHistory(historyPath);
     const today = new Date().toISOString().slice(0, 10);
     for (const s of symbols) {
         // Strip exchange prefix for stable history key
         const key = s.split(':').pop()!.toUpperCase();
         h[key] = today;
     }
-    saveHistory(h);
+    saveHistory(historyPath, h);
 }
 
 /** Compute tickers that haven't been seen in the last `days` days. */
-function findStaleTickers(currentInTv: string[], days: number): string[] {
+function findStaleTickers(historyPath: string, currentInTv: string[], days: number): string[] {
     if (days <= 0) return [];
-    const h = loadHistory();
+    const h = loadHistory(historyPath);
     const cutoff = new Date();
     cutoff.setUTCDate(cutoff.getUTCDate() - days);
     const cutoffStr = cutoff.toISOString().slice(0, 10);
@@ -523,17 +541,22 @@ async function removeSymbol(page: Page, symbol: string): Promise<boolean> {
     return true;
 }
 
-async function syncWatchlist(page: Page, target: string[]): Promise<void> {
-    log(`📋 Target watchlist (${target.length}): ${target.join(', ')}`);
+async function syncWatchlist(
+    page: Page,
+    target: string[],
+    watchlistName: string
+): Promise<void> {
+    log(`\n═══ SYNCING "${watchlistName}" ═══`);
+    log(`📋 Target (${target.length}): ${target.join(', ') || '—'}`);
 
-    await openWatchlist(page, WATCHLIST_NAME);
+    await openWatchlist(page, watchlistName);
 
     const current = await readCurrentSymbols(page);
-    log(`📋 Current in TV (${current.length}): ${current.join(', ')}`);
+    log(`📋 Current in TV (${current.length}): ${current.join(', ') || '—'}`);
 
-    // Update ticker-history with everything in today's target (for future
-    // staleness pruning — record TODAY as their last-seen date).
-    recordSeenTickers(target);
+    // Per-watchlist history for staleness scoping
+    const historyPath = historyPathFor(watchlistName);
+    recordSeenTickers(historyPath, target);
 
     // Normalize for diff. TV displays without exchange prefix, our file has it.
     const normalize = (s: string) => s.split(':').pop()!.toUpperCase();
@@ -541,11 +564,7 @@ async function syncWatchlist(page: Page, target: string[]): Promise<void> {
     const currentSet = new Set(current.map(normalize));
 
     const toAdd = target.filter((s) => !currentSet.has(normalize(s)));
-
-    // Staleness pruning: of symbols CURRENTLY in TV, find those not seen in
-    // any tv-watchlist file for the last PRUNE_AFTER_DAYS days.
-    const staleInTv = findStaleTickers(current, PRUNE_AFTER_DAYS);
-    // Plus: with --replace, also remove things explicitly missing from today's target.
+    const staleInTv = findStaleTickers(historyPath, current, PRUNE_AFTER_DAYS);
     const toRemove = REPLACE
         ? current.filter((s) => !targetSet.has(normalize(s)))
         : staleInTv;
@@ -563,11 +582,11 @@ async function syncWatchlist(page: Page, target: string[]): Promise<void> {
         return;
     }
 
-    // 1. Add new symbols
-    const { added, failed } = await addSymbolsBulk(page, toAdd);
-    log(`✓ added ${added.length}/${toAdd.length} symbols${failed.length ? ` (failed: ${failed.join(', ')})` : ''}`);
+    if (toAdd.length > 0) {
+        const { added, failed } = await addSymbolsBulk(page, toAdd);
+        log(`✓ added ${added.length}/${toAdd.length} symbols${failed.length ? ` (failed: ${failed.join(', ')})` : ''}`);
+    }
 
-    // 2. Remove stale (and --replace) symbols
     if (toRemove.length > 0) {
         log(`🗑️  removing ${toRemove.length} stale/replace symbol(s)...`);
         let removed = 0;
@@ -582,10 +601,9 @@ async function syncWatchlist(page: Page, target: string[]): Promise<void> {
 
 // ─── Main ───────────────────────────────────────────────────────────
 async function main() {
-    log(`═══ TV Sync — ${LOGIN_MODE ? 'LOGIN MODE' : DRY_RUN ? 'DRY-RUN' : 'sync'} ═══`);
+    const mode = SINGLE_LIST_MODE ? `single-list (${WATCHLIST_NAME})` : 'two-list (Breakouts + Near)';
+    log(`═══ TV Sync — ${LOGIN_MODE ? 'LOGIN MODE' : DRY_RUN ? 'DRY-RUN' : mode} ═══`);
     log(`Profile dir: ${PROFILE_DIR}`);
-    log(`Watchlist:   ${WATCHLIST_NAME}`);
-    log(`File:        ${WATCHLIST_FILE}`);
 
     let context: BrowserContext | null = null;
     try {
@@ -601,7 +619,6 @@ async function main() {
             await page.goto('https://www.tradingview.com/#signin', { waitUntil: 'domcontentloaded' });
             log('⌛ Browser is now open. Log into TradingView, then close the browser window when done.');
             log('   (The session will persist in the profile dir for future runs.)');
-            // Wait until the user closes the context (close all pages) or up to 10 min.
             await new Promise<void>((resolve) => {
                 const timeout = setTimeout(() => resolve(), 10 * 60 * 1000);
                 context!.on('close', () => { clearTimeout(timeout); resolve(); });
@@ -610,29 +627,9 @@ async function main() {
             return;
         }
 
-        // Determine watchlist source: --file overrides GH artifact (user-specified
-        // wins). Otherwise prefer the latest artifact, fall back to local file.
-        let watchlistPath: string;
-        if (WATCHLIST_FILE_EXPLICIT) {
-            log(`📂 Using user-specified watchlist file (skipping artifact download)`);
-            watchlistPath = WATCHLIST_FILE;
-        } else {
-            watchlistPath = downloadLatestArtifact() ?? WATCHLIST_FILE;
-        }
-        if (!fs.existsSync(watchlistPath)) {
-            throw new Error(`Watchlist file not found: ${watchlistPath}. Run preview:lean to generate one.`);
-        }
-        const target = parseWatchlist(watchlistPath);
-        if (target.length === 0) {
-            log('📭 Target watchlist is empty — nothing to sync.');
-            return;
-        }
-
-        // Navigate to TradingView chart page (which has the watchlist panel).
+        // Navigate to TradingView (one page, used for both watchlists)
         await page.goto('https://www.tradingview.com/chart/', { waitUntil: 'domcontentloaded' });
-        await page.waitForTimeout(5000); // let SPA hydrate
-
-        // Dismiss any upgrade/signup popups that overlay the chart
+        await page.waitForTimeout(5000);
         await dismissPopups(page);
 
         if (!(await isLoggedIn(page))) {
@@ -642,7 +639,47 @@ async function main() {
             );
         }
 
-        await syncWatchlist(page, target);
+        // Pair-mode: build the (file, watchlist-name) tuples
+        interface SyncTarget { file: string; name: string; allowArtifact: boolean; }
+        const tasks: SyncTarget[] = SINGLE_LIST_MODE
+            ? [{ file: WATCHLIST_FILE, name: WATCHLIST_NAME, allowArtifact: !WATCHLIST_FILE_EXPLICIT }]
+            : [
+                { file: BREAKOUTS_FILE, name: BREAKOUTS_WATCHLIST, allowArtifact: true },
+                { file: NEAR_FILE,      name: NEAR_WATCHLIST,      allowArtifact: true },
+            ];
+
+        // For the multi-list case, download the artifact ONCE up front so each
+        // sub-list reads the same scan date's outputs.
+        let artifactDir: string | null = null;
+        if (!SINGLE_LIST_MODE) {
+            artifactDir = downloadLatestArtifactDir();
+            if (artifactDir) {
+                log(`📂 Using artifact dir: ${artifactDir}`);
+            }
+        }
+
+        for (const t of tasks) {
+            // Resolve effective file path: artifact (if downloaded) else local
+            let resolvedFile = t.file;
+            if (t.allowArtifact && artifactDir) {
+                const baseName = path.basename(t.file);
+                const inArtifact = findFile(artifactDir, baseName);
+                if (inArtifact) resolvedFile = inArtifact;
+            } else if (t.allowArtifact && !SINGLE_LIST_MODE) {
+                // No artifact dir available — fall back silently to local file
+            }
+
+            if (!fs.existsSync(resolvedFile)) {
+                log(`⚠️ Watchlist file missing for "${t.name}" (looked in ${resolvedFile}) — skipping`);
+                continue;
+            }
+            const target = parseWatchlist(resolvedFile);
+            if (target.length === 0) {
+                log(`📭 "${t.name}" target is empty — clearing TV list via staleness only`);
+            }
+            log(`📂 ${t.name} ← ${resolvedFile}`);
+            await syncWatchlist(page, target, t.name);
+        }
 
         // Screenshot for audit
         const screenshotPath = path.join(LOG_DIR, `tv-sync-${new Date().toISOString().slice(0, 10)}.png`);

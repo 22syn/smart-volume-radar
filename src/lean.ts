@@ -210,7 +210,9 @@ async function main(): Promise<void> {
             const tvResultsDir = path.join(__moduleDir, '..', 'results');
             const tvOut = writeTradingViewWatchlist(scanDate, result, tvResultsDir);
             logger.info(
-                `📋 TradingView watchlist: ${tvOut.count} symbols → ${path.relative(process.cwd(), tvOut.txtPath)} (+ .csv, latest.txt)`
+                `📋 TradingView watchlists: ` +
+                    `${tvOut.breakouts.count} breakouts → ${path.relative(process.cwd(), tvOut.breakouts.latest)} ` +
+                    `| ${tvOut.near.count} near → ${path.relative(process.cwd(), tvOut.near.latest)}`
             );
         } catch (tvErr) {
             logger.error('⚠️ Failed to write TradingView watchlist (non-fatal):', (tvErr as Error).message);
