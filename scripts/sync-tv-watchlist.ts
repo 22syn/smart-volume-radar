@@ -88,6 +88,11 @@ const HEADED = has('headed') || LOGIN_MODE;
 const WATCHLIST_NAME = arg('watchlist', 'Lean Radar');
 const WATCHLIST_FILE_EXPLICIT = process.argv.includes('--file');
 const WATCHLIST_FILE = arg('file', path.join(PROJECT_ROOT, 'results', 'tv-watchlist-latest.txt'));
+// Staleness pruning: remove tickers that haven't appeared in any tv-watchlist-*.txt
+// for this many days. Set to 0 to disable. Default = 14 days (~3 trading weeks).
+const PRUNE_AFTER_DAYS = parseInt(arg('prune-after-days', '14'), 10);
+// Persistent history of when each ticker last appeared in a tv-watchlist file.
+const HISTORY_PATH = path.join(os.homedir(), '.cache', 'svr-tv-sync', 'ticker-history.json');
 
 // ─── Log helper ─────────────────────────────────────────────────────
 const logPath = path.join(LOG_DIR, 'tv-sync.log');
@@ -147,6 +152,49 @@ function parseWatchlist(filePath: string): string[] {
     const content = fs.readFileSync(filePath, 'utf8');
     const lines = content.split('\n').map((l) => l.trim());
     return lines.filter((l) => l && !l.startsWith('#'));
+}
+
+// ─── Ticker history (for staleness pruning) ─────────────────────────
+interface TickerHistory { [normalizedTicker: string]: string /* ISO date YYYY-MM-DD */; }
+
+function loadHistory(): TickerHistory {
+    if (!fs.existsSync(HISTORY_PATH)) return {};
+    try { return JSON.parse(fs.readFileSync(HISTORY_PATH, 'utf8')); }
+    catch { return {}; }
+}
+
+function saveHistory(h: TickerHistory): void {
+    fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
+    fs.writeFileSync(HISTORY_PATH, JSON.stringify(h, null, 2));
+}
+
+/** Update history: mark each ticker as seen today. */
+function recordSeenTickers(symbols: string[]): void {
+    const h = loadHistory();
+    const today = new Date().toISOString().slice(0, 10);
+    for (const s of symbols) {
+        // Strip exchange prefix for stable history key
+        const key = s.split(':').pop()!.toUpperCase();
+        h[key] = today;
+    }
+    saveHistory(h);
+}
+
+/** Compute tickers that haven't been seen in the last `days` days. */
+function findStaleTickers(currentInTv: string[], days: number): string[] {
+    if (days <= 0) return [];
+    const h = loadHistory();
+    const cutoff = new Date();
+    cutoff.setUTCDate(cutoff.getUTCDate() - days);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    return currentInTv.filter((s) => {
+        const key = s.split(':').pop()!.toUpperCase();
+        const lastSeen = h[key];
+        // If we've never seen this ticker before, treat it as not-stale (don't
+        // remove things added before history existed — too aggressive).
+        if (!lastSeen) return false;
+        return lastSeen < cutoffStr;
+    });
 }
 
 // ─── Step 2-4: Drive TradingView via Playwright ──────────────────────
@@ -399,6 +447,36 @@ async function addSymbolsBulk(page: Page, symbols: string[]): Promise<{ added: s
     return { added, failed };
 }
 
+/** Remove a symbol from the currently-open TradingView watchlist via right-click → Remove. */
+async function removeSymbol(page: Page, symbol: string): Promise<boolean> {
+    // Find the row for this ticker — uses normalized comparison
+    const normalized = symbol.split(':').pop()!.toUpperCase();
+    const row = await page.evaluateHandle((norm) => {
+        const els = document.querySelectorAll('[data-symbol-short]');
+        for (const el of els) {
+            const v = (el.getAttribute('data-symbol-short') || '').toUpperCase();
+            if (v === norm) return el as HTMLElement;
+        }
+        return null;
+    }, normalized);
+    const el = row.asElement();
+    if (!el) return false;
+
+    // Right-click → "Remove" menu item
+    await el.click({ button: 'right' });
+    await page.waitForTimeout(700);
+    const removeBtn = await tryWithin(2500, async () => {
+        return page.getByText('Remove', { exact: false }).first().elementHandle();
+    });
+    if (!removeBtn) {
+        await page.keyboard.press('Escape').catch(() => undefined);
+        return false;
+    }
+    await removeBtn.click({ force: true });
+    await page.waitForTimeout(500);
+    return true;
+}
+
 async function syncWatchlist(page: Page, target: string[]): Promise<void> {
     log(`📋 Target watchlist (${target.length}): ${target.join(', ')}`);
 
@@ -407,28 +485,52 @@ async function syncWatchlist(page: Page, target: string[]): Promise<void> {
     const current = await readCurrentSymbols(page);
     log(`📋 Current in TV (${current.length}): ${current.join(', ')}`);
 
+    // Update ticker-history with everything in today's target (for future
+    // staleness pruning — record TODAY as their last-seen date).
+    recordSeenTickers(target);
+
     // Normalize for diff. TV displays without exchange prefix, our file has it.
-    // For comparison, strip the exchange prefix from target.
     const normalize = (s: string) => s.split(':').pop()!.toUpperCase();
     const targetSet = new Set(target.map(normalize));
     const currentSet = new Set(current.map(normalize));
 
     const toAdd = target.filter((s) => !currentSet.has(normalize(s)));
-    const toRemove = current.filter((s) => !targetSet.has(normalize(s)));
 
-    log(`→ to add: ${toAdd.length} (${toAdd.join(', ') || '—'})`);
-    if (REPLACE) log(`→ to remove: ${toRemove.length} (${toRemove.join(', ') || '—'})`);
+    // Staleness pruning: of symbols CURRENTLY in TV, find those not seen in
+    // any tv-watchlist file for the last PRUNE_AFTER_DAYS days.
+    const staleInTv = findStaleTickers(current, PRUNE_AFTER_DAYS);
+    // Plus: with --replace, also remove things explicitly missing from today's target.
+    const toRemove = REPLACE
+        ? current.filter((s) => !targetSet.has(normalize(s)))
+        : staleInTv;
+
+    log(`→ to add:    ${toAdd.length} (${toAdd.join(', ') || '—'})`);
+    if (PRUNE_AFTER_DAYS > 0 && staleInTv.length > 0) {
+        log(`→ stale (>${PRUNE_AFTER_DAYS}d unseen): ${staleInTv.length} (${staleInTv.join(', ')})`);
+    }
+    if (REPLACE) {
+        log(`→ to remove (--replace): ${toRemove.length} (${toRemove.join(', ') || '—'})`);
+    }
 
     if (DRY_RUN) {
         log('(dry-run — no changes made)');
         return;
     }
 
+    // 1. Add new symbols
     const { added, failed } = await addSymbolsBulk(page, toAdd);
     log(`✓ added ${added.length}/${toAdd.length} symbols${failed.length ? ` (failed: ${failed.join(', ')})` : ''}`);
 
-    if (REPLACE) {
-        log('(NOTE: --replace removal not yet implemented — manual review for now)');
+    // 2. Remove stale (and --replace) symbols
+    if (toRemove.length > 0) {
+        log(`🗑️  removing ${toRemove.length} stale/replace symbol(s)...`);
+        let removed = 0;
+        for (const s of toRemove) {
+            const ok = await removeSymbol(page, s);
+            if (ok) { removed++; log(`  − ${s}`); }
+            else { log(`  ⚠️ could not remove ${s} (selector/menu issue)`); }
+        }
+        log(`✓ removed ${removed}/${toRemove.length} symbols`);
     }
 }
 
