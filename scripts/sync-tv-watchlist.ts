@@ -155,47 +155,247 @@ async function isLoggedIn(page: Page): Promise<boolean> {
     return !signInBtn;
 }
 
-async function openWatchlist(page: Page, name: string): Promise<void> {
-    log(`↳ Switching to watchlist "${name}"...`);
-    // Click the watchlist title dropdown
-    const titleBtn = await page.waitForSelector(TV_SELECTORS.watchlistTitleButton, { timeout: 10000 });
-    await titleBtn.click();
-    await page.waitForTimeout(500);
-    // Click the named watchlist item
-    const item = await page.$(TV_SELECTORS.watchlistItem(name));
-    if (!item) {
-        throw new Error(
-            `Watchlist "${name}" not found in TradingView. Please create it manually (right panel → list dropdown → Create new list).`
-        );
+/** Dismiss any popups/modals TradingView shows on first load (upgrade
+ *  banner, signup nudge, cookie consent, etc.). Best-effort; ignores failures. */
+async function dismissPopups(page: Page): Promise<void> {
+    const closeSelectors = [
+        'button[data-name="close"]',
+        'button[aria-label="Close"]',
+        'button[aria-label="close"]',
+        '[data-dialog-name] [data-name="close"]',
+        'div[role="dialog"] button[aria-label*="lose"]',
+        // The TV-specific "Plans for every level" upgrade popup
+        'div[class*="dialogClose"]',
+        'span[class*="closeButton"]',
+    ];
+    for (let attempt = 0; attempt < 3; attempt++) {
+        let closed = false;
+        for (const sel of closeSelectors) {
+            const els = await page.$$(sel);
+            for (const el of els) {
+                try {
+                    if (await el.isVisible()) {
+                        await el.click({ timeout: 1500 });
+                        log(`  ✕ dismissed popup via ${sel}`);
+                        closed = true;
+                        await page.waitForTimeout(400);
+                    }
+                } catch { /* ignore */ }
+            }
+        }
+        if (!closed) {
+            // Final fallback — press Escape to close any modal
+            await page.keyboard.press('Escape');
+            await page.waitForTimeout(300);
+            break;
+        }
     }
-    await item.click();
-    await page.waitForTimeout(800);
+}
+
+/** Try to do `op` and return result or null if it doesn't complete within `timeout` ms. */
+async function tryWithin<T>(timeout: number, op: () => Promise<T>): Promise<T | null> {
+    try {
+        return await Promise.race([
+            op(),
+            new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), timeout)),
+        ]);
+    } catch {
+        return null;
+    }
+}
+
+async function openWatchlist(page: Page, name: string): Promise<void> {
+    log(`↳ Looking for watchlist "${name}"...`);
+    await dismissPopups(page);
+
+    // Click the watchlist dropdown (opens the "actions" menu — not the list browser)
+    const titleBtn = await page.waitForSelector(TV_SELECTORS.watchlistTitleButton, { timeout: 15000 });
+    await titleBtn.click();
+    await page.waitForTimeout(700);
+
+    // Click "Open list..." to get the list browser
+    const openListBtn = await tryWithin(3000, async () => {
+        const el = await page.getByText('Open list', { exact: false }).first().elementHandle();
+        return el;
+    });
+    if (openListBtn) {
+        log('  ↳ clicking "Open list…"');
+        await openListBtn.click();
+        await page.waitForTimeout(1500);
+
+        // In the list-browser modal, look for our watchlist name (short timeout)
+        const item = await tryWithin(3000, async () => {
+            return page.getByText(name, { exact: true }).first().elementHandle();
+        });
+        if (item) {
+            log(`✓ Found "${name}" — clicking`);
+            // Force-click bypasses TradingView's backdrop overlay intercept
+            await item.click({ force: true });
+            await page.waitForTimeout(1500);
+            await page.keyboard.press('Escape').catch(() => undefined);
+            return;
+        }
+        log(`  "${name}" not in list browser, closing modal`);
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(500);
+    }
+
+    // Create it via "Create new list"
+    log(`⚠️ "${name}" not found; creating new list...`);
+    // Reopen the action dropdown if closed
+    const stillOpen = await tryWithin(1500, async () => {
+        return page.getByText('Create new list', { exact: false }).first().elementHandle();
+    });
+    if (!stillOpen) {
+        await titleBtn.click();
+        await page.waitForTimeout(700);
+    }
+    const createBtn = await tryWithin(3000, async () => {
+        return page.getByText('Create new list', { exact: false }).first().elementHandle();
+    });
+    if (!createBtn) {
+        throw new Error('Could not find "Create new list" option in TradingView menu.');
+    }
+    await createBtn.click();
+    await page.waitForTimeout(1200);
+
+    // The "Create new list" dialog has an input for the name. Try common selectors.
+    let nameInput =
+        (await tryWithin(2000, () => page.$('input[type="text"]:visible'))) ??
+        (await tryWithin(2000, () => page.$('input:visible')));
+    if (!nameInput) {
+        // Fallback: any focused input
+        nameInput = await page.evaluate(() => {
+            const el = document.activeElement;
+            return el && el.tagName === 'INPUT' ? (el as HTMLInputElement) : null;
+        }).then((res) => (res ? page.$('input:focus') : null));
+    }
+    if (!nameInput) {
+        throw new Error('Could not find name input for new watchlist.');
+    }
+    await nameInput.fill(name);
+    await page.waitForTimeout(400);
+    // Enter typically confirms; also try Save/OK button as fallback
+    await nameInput.press('Enter');
+    await page.waitForTimeout(1500);
+    log(`✓ Created watchlist "${name}"`);
 }
 
 async function readCurrentSymbols(page: Page): Promise<string[]> {
-    const els = await page.$$(TV_SELECTORS.symbolRowText);
-    const symbols: string[] = [];
-    for (const el of els) {
-        const t = (await el.textContent())?.trim();
-        if (t) symbols.push(t);
-    }
-    return symbols;
+    // TradingView's watchlist DOM has changed over time. Grab symbols via
+    // multiple strategies, return the first non-empty list.
+    const strategies = await page.evaluate(() => {
+        const out: { strategy: string; symbols: string[] }[] = [];
+
+        // Strategy 1: anything with data-symbol-short attribute (current TV pattern)
+        const s1 = Array.from(document.querySelectorAll('[data-symbol-short]'))
+            .map((el) => el.getAttribute('data-symbol-short') || '')
+            .filter(Boolean);
+        if (s1.length) out.push({ strategy: 'data-symbol-short', symbols: s1 });
+
+        // Strategy 2: data-symbol-full (e.g. "NASDAQ:NVDA")
+        const s2 = Array.from(document.querySelectorAll('[data-symbol-full]'))
+            .map((el) => (el.getAttribute('data-symbol-full') || '').split(':').pop() || '')
+            .filter(Boolean);
+        if (s2.length) out.push({ strategy: 'data-symbol-full', symbols: s2 });
+
+        // Strategy 3: within data-name="symbol-list-wrap", look at child text
+        const wrap = document.querySelector('[data-name="symbol-list-wrap"]');
+        if (wrap) {
+            const rows = wrap.querySelectorAll('[class*="symbol"], [class*="row"]');
+            const s3: string[] = [];
+            rows.forEach((r) => {
+                const t = (r.textContent || '').trim().split(/\s+/)[0];
+                if (t && /^[A-Z0-9.:_-]{1,15}$/.test(t)) s3.push(t);
+            });
+            if (s3.length) out.push({ strategy: 'symbol-list-wrap rows', symbols: s3 });
+        }
+
+        // Strategy 4: data-rowkey attribute on watchlist rows
+        const s4 = Array.from(document.querySelectorAll('[data-rowkey]'))
+            .map((el) => el.getAttribute('data-rowkey') || '')
+            .filter(Boolean);
+        if (s4.length) out.push({ strategy: 'data-rowkey', symbols: s4 });
+
+        return out;
+    });
+
+    if (strategies.length === 0) return [];
+    // Use the FIRST non-empty strategy
+    const chosen = strategies[0]!;
+    log(`  (using selector strategy: ${chosen.strategy} → ${chosen.symbols.length} rows)`);
+    // Dedup
+    return [...new Set(chosen.symbols)];
 }
 
-async function addSymbol(page: Page, symbol: string): Promise<void> {
-    log(`  + ${symbol}`);
-    // Click "+ Add symbol"
-    const addBtn = await page.waitForSelector(TV_SELECTORS.addSymbolButton, { timeout: 5000 });
-    await addBtn.click();
-    // Type the symbol
-    const input = await page.waitForSelector(TV_SELECTORS.symbolInput, { timeout: 5000 });
-    await input.fill(symbol);
-    await page.waitForTimeout(600); // wait for autocomplete
-    await input.press('Enter');
-    await page.waitForTimeout(400);
-    // Close the dialog (Esc)
+/** Click via JavaScript dispatch — bypasses Playwright's backdrop-intercept checks. */
+async function jsClick(page: Page, selector: string): Promise<boolean> {
+    return page.evaluate((sel) => {
+        const el = document.querySelector(sel) as HTMLElement | null;
+        if (!el) return false;
+        el.click();
+        return true;
+    }, selector);
+}
+
+/** Bulk-add multiple symbols in one Add-Symbol dialog session.
+ *  TradingView's "Add symbol" input accepts a single ticker per Enter,
+ *  but the dialog stays open after each, so we can paste-Enter-paste-Enter
+ *  in rapid succession without re-opening it. */
+async function addSymbolsBulk(page: Page, symbols: string[]): Promise<{ added: string[]; failed: string[] }> {
+    const added: string[] = [];
+    const failed: string[] = [];
+    if (symbols.length === 0) return { added, failed };
+
+    log(`  📥 opening Add Symbol dialog for ${symbols.length} ticker(s)...`);
+
+    // Ensure no popups/dropdowns linger
+    await dismissPopups(page);
+    await page.keyboard.press('Escape').catch(() => undefined);
+    await page.waitForTimeout(500);
+    // Click somewhere neutral on the chart to ensure focus
+    await page.click('canvas[data-name="pane-canvas"]', { position: { x: 200, y: 300 }, force: true }).catch(() => undefined);
+    await page.waitForTimeout(300);
+
+    // Click "+ Add symbol" via JavaScript dispatch (bypasses backdrop checks)
+    const opened = await jsClick(page, TV_SELECTORS.addSymbolButton);
+    if (!opened) {
+        log('  ⚠️ Add Symbol button not found in DOM');
+        return { added, failed: symbols };
+    }
+    await page.waitForTimeout(1200);
+
+    // Find the symbol input — TV may use various selectors
+    let input =
+        (await tryWithin(2500, () => page.$(TV_SELECTORS.symbolInput))) ??
+        (await tryWithin(2500, () => page.$('input[placeholder*="ymbol" i]'))) ??
+        (await tryWithin(2500, () => page.$('input[role="combobox"]'))) ??
+        (await tryWithin(2500, () => page.$('input[type="text"]:focus')));
+    if (!input) {
+        log('  ⚠️ symbol input not visible after opening Add Symbol');
+        return { added, failed: symbols };
+    }
+
+    for (const symbol of symbols) {
+        try {
+            log(`    + ${symbol}`);
+            await input.fill('');
+            await page.waitForTimeout(150);
+            await input.type(symbol, { delay: 30 });
+            await page.waitForTimeout(900); // wait for autocomplete to resolve
+            await input.press('Enter');
+            await page.waitForTimeout(700);
+            added.push(symbol);
+        } catch (e) {
+            log(`    ⚠️ ${symbol} failed: ${(e as Error).message}`);
+            failed.push(symbol);
+        }
+    }
+
+    // Close the dialog
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(400);
+    return { added, failed };
 }
 
 async function syncWatchlist(page: Page, target: string[]): Promise<void> {
@@ -223,13 +423,8 @@ async function syncWatchlist(page: Page, target: string[]): Promise<void> {
         return;
     }
 
-    for (const s of toAdd) {
-        try {
-            await addSymbol(page, s);
-        } catch (e) {
-            log(`  ⚠️ Failed to add ${s}: ${(e as Error).message}`);
-        }
-    }
+    const { added, failed } = await addSymbolsBulk(page, toAdd);
+    log(`✓ added ${added.length}/${toAdd.length} symbols${failed.length ? ` (failed: ${failed.join(', ')})` : ''}`);
 
     if (REPLACE) {
         log('(NOTE: --replace removal not yet implemented — manual review for now)');
@@ -279,7 +474,10 @@ async function main() {
 
         // Navigate to TradingView chart page (which has the watchlist panel).
         await page.goto('https://www.tradingview.com/chart/', { waitUntil: 'domcontentloaded' });
-        await page.waitForTimeout(3000); // let SPA hydrate
+        await page.waitForTimeout(5000); // let SPA hydrate
+
+        // Dismiss any upgrade/signup popups that overlay the chart
+        await dismissPopups(page);
 
         if (!(await isLoggedIn(page))) {
             throw new Error(
