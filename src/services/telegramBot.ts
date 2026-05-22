@@ -540,6 +540,20 @@ export function formatDailyReport(
  * stocks that don't qualify as actionable today (under distribution or lacking
  * volume confirmation). Two sub-sections, sorted by score descending.
  */
+// Spam-fix thresholds (2026-05-22) — see decisions-log.
+// Empirical context: cabinet/knowledge/reference/smart-volume-radar-criteria-empirical.md
+const NOTABLE_MAX_PER_BUCKET = 5;        // Cap each sub-section to its top-N by score.
+const NOTABLE_MIN_SCORE = 60;            // Drop low-quality candidates entirely.
+const NOTABLE_SKIP_NEGATIVE_SECTOR = true; // Skip stocks whose sector is in 63d-negative.
+
+/** Empirically (60d study) stocks in negative-sector cohorts have:
+ *  - 24% hit rate (vs 65% overall)
+ *  - −9.8% median return (Aerospace & Defense baseline)
+ *  Excluding them is more truthful than warning about them. */
+function isNegativeSector(s: RVOLResult): boolean {
+    return s.sectorMedianReturn63d != null && s.sectorMedianReturn63d < 0;
+}
+
 function formatNotableSection(
     distributionStocks: RVOLResult[],
     noVolStocks: RVOLResult[]
@@ -548,8 +562,20 @@ function formatNotableSection(
 
     const byScore = (a: RVOLResult, b: RVOLResult): number =>
         (b.championScore ?? 0) - (a.championScore ?? 0) || (b.rvol ?? 0) - (a.rvol ?? 0);
-    const sortedDist = [...distributionStocks].sort(byScore);
-    const sortedNoVol = [...noVolStocks].sort(byScore);
+
+    /** Quality filter: drop low-score and (optionally) negative-sector candidates,
+     *  then cap to top-N by score. Returns the survivors. */
+    const filterBucket = (stocks: RVOLResult[]): RVOLResult[] =>
+        stocks
+            .filter((s) => (s.championScore ?? 0) >= NOTABLE_MIN_SCORE)
+            .filter((s) => !(NOTABLE_SKIP_NEGATIVE_SECTOR && isNegativeSector(s)))
+            .sort(byScore)
+            .slice(0, NOTABLE_MAX_PER_BUCKET);
+
+    const filteredDist = filterBucket(distributionStocks);
+    const filteredNoVol = filterBucket(noVolStocks);
+
+    if (filteredDist.length === 0 && filteredNoVol.length === 0) return '';
 
     const fmtLine = (s: RVOLResult): string => {
         const score = (s.championScore ?? 0).toFixed(0);
@@ -560,18 +586,24 @@ function formatNotableSection(
         return `  • <a href="${tvUrl}"><b>${escapeHtml(s.ticker)}</b></a> ${score}/100 · ${escapeHtml(stage)} · RVOL ${rvol}x${sector}`;
     };
 
-    const totalCount = distributionStocks.length + noVolStocks.length;
-    let section = `\n⚠️ <b>NOTABLE BUT CAUTIOUS</b>  ·  ${totalCount}\n`;
-    section += `<i>ציון גבוה אבל עם אזהרה — לא בדיווח מלא, מוצג חד-שורתי</i>\n`;
+    // Headline counts reflect what was DROPPED to give honest sense of the broader set.
+    const distDropped = distributionStocks.length - filteredDist.length;
+    const noVolDropped = noVolStocks.length - filteredNoVol.length;
+    const totalShown = filteredDist.length + filteredNoVol.length;
+    const totalDropped = distDropped + noVolDropped;
+
+    let section = `\n⚠️ <b>NOTABLE BUT CAUTIOUS</b>  ·  ${totalShown} shown`;
+    if (totalDropped > 0) section += ` <i>(${totalDropped} filtered out)</i>`;
+    section += `\n<i>top score ≥${NOTABLE_MIN_SCORE}, max ${NOTABLE_MAX_PER_BUCKET} per bucket, neg-sector skipped</i>\n`;
     section += `━━━━━━━━━━━━━━━━━━━━━━\n`;
 
-    if (sortedDist.length > 0) {
-        section += `\n🔴 <b>Distribution pressure</b> <i>(מוסדיים מוכרים)</i> · ${sortedDist.length}\n`;
-        for (const s of sortedDist) section += fmtLine(s) + '\n';
+    if (filteredDist.length > 0) {
+        section += `\n🔴 <b>Distribution pressure</b> <i>(מוסדיים מוכרים)</i> · ${filteredDist.length}\n`;
+        for (const s of filteredDist) section += fmtLine(s) + '\n';
     }
-    if (sortedNoVol.length > 0) {
-        section += `\n📊 <b>No-Volume confirmation</b> <i>(על פיבוט אבל נפח חלש)</i> · ${sortedNoVol.length}\n`;
-        for (const s of sortedNoVol) section += fmtLine(s) + '\n';
+    if (filteredNoVol.length > 0) {
+        section += `\n📊 <b>No-Volume confirmation</b> <i>(על פיבוט אבל נפח חלש)</i> · ${filteredNoVol.length}\n`;
+        for (const s of filteredNoVol) section += fmtLine(s) + '\n';
     }
     return section;
 }
