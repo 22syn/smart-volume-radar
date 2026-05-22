@@ -15,7 +15,11 @@ dist/
 *.swp
 *.swo
 .cursor/
-.claude/
+# .claude/ — selectively ignored. We commit project subagents (.claude/agents/*.md)
+# but exclude user-specific settings and the local cache.
+.claude/settings.local.json
+.claude/cache/
+.claude/skills/
 *.code-workspace
 
 # OS files
