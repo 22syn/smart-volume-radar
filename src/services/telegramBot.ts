@@ -633,12 +633,10 @@ export function formatLegend(): string {
 <b>Tags:</b> SMA21 Touch, Pullback 15%, 1M Breakout`;
 }
 
-/** Shared row format: TICKER | RVOL X.XXx | Price ±X.XX% | RSI XX | Setup (code + LLM use same structure) */
-const STOCK_ROW_FORMAT = 'TICKER | RVOL X.XXx | Price ±X.XX% | RSI XX | Tags';
-
-// formatStockRow, getStocksForLlm, getAllSignalRows, getSetupRowsFromData,
-// formatSetupReference — removed 2026-05-22 with the LLM cleanup. They were
-// only consumed by buildLlmSummaryMessage which itself was removed.
+// STOCK_ROW_FORMAT, formatStockRow, getStocksForLlm, getAllSignalRows,
+// getSetupRowsFromData, formatSetupReference — all removed 2026-05-22 with
+// the LLM cleanup. They were only consumed by buildLlmSummaryMessage which
+// itself was removed.
 
 /**
  * Format a data header line for every Telegram message (date, stats, part).
