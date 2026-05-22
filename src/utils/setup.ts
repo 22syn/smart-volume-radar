@@ -149,8 +149,16 @@ export function evaluateMomentumSetup(
         'pivotBreakout',
         'aboveGapAvwap',
     ];
+    // QUALITY bucket — at least ONE must pass to qualify Full.
+    // `lowRiskEntry` REMOVED 2026-05-22 (TD-9) — empirically the strongest
+    // anti-predictor: −25.6% lift (60d), −65.3% lift (1y bull). Validated by
+    // radar-criteria-tester subagent: removing it cuts 8 alerts (all outside
+    // Semi/AI engines, all below cohort median), bumps median +1.8pp, hit-rate
+    // (>10%) +5.9pp. See ~/cabinet/outputs/2026-05-22-svr-criteria-test-drop-lowRiskEntry.md
+    // and decisions-log. The boolean is still computed and used in:
+    //   - Close tier gate (line ~177): `pivotBreakout || lowRiskEntry`
+    //   - highConvictionBypass flag (line ~175): "extended entry" diagnostic
     const QUALITY: Array<keyof MomentumCriteria> = [
-        'lowRiskEntry',
         'tightness',
         'antsAccumulation',
         'bigMoveToday',
@@ -162,7 +170,10 @@ export function evaluateMomentumSetup(
     const hasQualityMarker = qualityFromCriteria || qualityFromHighRvol;
 
     // Failures list: every criterion currently NOT met (informational, for UI/debug).
-    const allKeys: Array<keyof MomentumCriteria> = [...MANDATORY, ...QUALITY];
+    // `lowRiskEntry` is included here even though it's not in the QUALITY gate
+    // anymore (TD-9, 2026-05-22) — it remains a useful diagnostic and is still
+    // consumed by the Close tier + highConvictionBypass flag.
+    const allKeys: Array<keyof MomentumCriteria> = [...MANDATORY, ...QUALITY, 'lowRiskEntry'];
     const failures = allKeys.filter((k) => !criteria[k]);
 
     let level: MomentumLevel;
