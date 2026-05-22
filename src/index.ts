@@ -12,7 +12,8 @@ import { applyRSPercentile } from './utils/rsPercentile.js';
 import { applySectorRanks } from './utils/sectorRank.js';
 import { enrichWithFundamentals } from './services/finnhubFundamentals.js';
 import { calculateRVOL } from './services/rvolCalculator.js';
-import { enrichWithNews } from './services/newsService.js';
+// News enrichment removed 2026-05-22 (Finnhub news feature deprecated).
+// `enrichWithFundamentals` (separate concern — earnings + EPS) still imported above.
 import { sendDailyReport, sendTelegramMessage, formatMonitorTelegramMessage, GraduationInfo, MonitorMeta } from './services/telegramBot.js';
 import { loadMonitorState, saveMonitorState } from './utils/monitorStore.js';
 import { updateMonitorState } from './services/monitorTracker.js';
@@ -225,12 +226,9 @@ async function main(): Promise<void> {
         ).length;
         logger.info(`🎯 Telegram signals: ${buyCount} BUY + ${watchCount} WATCH + ${cautionCount} CAUTION`);
 
-        // 7. Enrich with news — only actionable stocks (what Telegram sends)
-        logger.info('📰 Enriching with news...');
-        const enrichedMomentum = await enrichWithNews(actionableStocks);
-
+        // 7. (News enrichment removed 2026-05-22 — see decisions-log.)
         // Build RVOLResult shape (with sector). isVolumeWithoutPrice always false for momentum.
-        const finalSignals: RVOLResult[] = enrichedMomentum.map((s) => ({
+        const finalSignals: RVOLResult[] = actionableStocks.map((s) => ({
             ...s,
             sector: getSectorForTicker(s.ticker),
             isVolumeWithoutPrice: false,

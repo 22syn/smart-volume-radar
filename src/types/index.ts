@@ -212,20 +212,14 @@ export interface TradePlan {
 }
 
 /**
- * News article from Finnhub
- */
-export interface NewsItem {
-    headline: string;
-    url: string;
-    source: string;
-    publishedAt: Date;
-}
-
-/**
- * RVOL result with news enrichment
+ * RVOL result for top signals.
+ *
+ * Originally extended StockData with `news: NewsItem[]` (Finnhub headlines)
+ * — removed 2026-05-22 with the news feature cleanup. The `RVOLResult` name
+ * is retained for backwards compat; consider collapsing into `StockData`
+ * with an optional `isVolumeWithoutPrice` field in a future refactor.
  */
 export interface RVOLResult extends StockData {
-    news: NewsItem[];
     isVolumeWithoutPrice: boolean;
 }
 
@@ -401,20 +395,9 @@ export interface MonitorState {
     entries: MonitorEntry[];
 }
 
-/**
- * API response from Finnhub news endpoint
- */
-export interface FinnhubNewsResponse {
-    category: string;
-    datetime: number;
-    headline: string;
-    id: number;
-    image: string;
-    related: string;
-    source: string;
-    summary: string;
-    url: string;
-}
+// FinnhubNewsResponse — removed 2026-05-22 with news feature cleanup.
+// `finnhubFundamentals.ts` (separate from news) still uses Finnhub for
+// earnings/EPS — it defines its own response types inline.
 
 /**
  * Market status for checking if market is open

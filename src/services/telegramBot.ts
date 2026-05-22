@@ -202,24 +202,9 @@ function formatPersistenceMarker(meta: MonitorMeta | undefined): string {
     return ` ${heat}${meta.reAlertCount}`;
 }
 
-/**
- * Format up to 2 most recent news headlines, dimmed and compact.
- * Empty string when news is missing or empty.
- */
-function formatNewsLines(stock: RVOLResult): string {
-    if (!stock.news || stock.news.length === 0) return '';
-    const recent = [...stock.news]
-        .sort((a, b) => b.publishedAt.getTime() - a.publishedAt.getTime())
-        .slice(0, 2);
-    const now = Date.now();
-    const lines = recent.map((n) => {
-        const ageHours = (now - n.publishedAt.getTime()) / 3_600_000;
-        const ageStr = ageHours < 24 ? `${ageHours.toFixed(0)}h` : `${(ageHours / 24).toFixed(0)}d`;
-        const headline = n.headline.length > 80 ? n.headline.slice(0, 77) + '…' : n.headline;
-        return `├ 📰 <a href="${escapeHtml(n.url)}">${escapeHtml(headline)}</a> · <i>${ageStr} · ${escapeHtml(n.source)}</i>`;
-    });
-    return lines.join('\n') + '\n';
-}
+// formatNewsLines removed 2026-05-22 — Finnhub news enrichment feature
+// deprecated. The 📰 headlines block under each stock is gone; the
+// fundamentals block (next earnings, EPS/Rev acceleration) is kept.
 
 /** Hebrew descriptor for breakout stage. */
 function breakoutStageLabel(stage: NonNullable<RVOLResult['breakoutStage']>): string {
@@ -405,9 +390,6 @@ function formatSingleStockBlock(stock: RVOLResult, monitorMeta?: MonitorMeta): s
     if (tagStr) {
         block += `├ 🏷 ${escapeHtml(tagStr)}\n`;
     }
-
-    // News — render the 2 most recent Finnhub headlines if enriched
-    block += formatNewsLines(stock);
 
     block += `└ ⛓ <a href="${tvUrl}">TV</a>  <a href="${yahooUrl}">YF</a>\n\n`;
     return block;

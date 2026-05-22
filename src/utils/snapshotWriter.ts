@@ -65,14 +65,12 @@ function ensureDir(dir: string): void {
 
 /**
  * Strip large/redundant fields from a StockData before serializing.
- * - `news` array (~10-30 entries) is omitted (we have it elsewhere if needed).
+ * - `isVolumeWithoutPrice` flag is stripped (always false in current code paths).
+ * - News field stripping removed 2026-05-22 with news feature cleanup.
  * - Other fields kept intact for full debug fidelity.
  */
 function sanitizeStock(s: StockData): Record<string, unknown> {
-    const { ...rest } = s;
-    // RVOLResult has `news` and `isVolumeWithoutPrice`; both noisy for debug.
-    const out: Record<string, unknown> = { ...rest };
-    delete out.news;
+    const out: Record<string, unknown> = { ...s };
     delete out.isVolumeWithoutPrice;
     return out;
 }

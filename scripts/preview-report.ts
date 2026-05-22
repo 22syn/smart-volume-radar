@@ -6,7 +6,7 @@
 import { loadWatchlist, fetchAndCacheWatchlist, getSectorForTicker, validateConfig } from '../src/config/index.js';
 import { fetchAllStocksAsOfDate, fetchMarketRegime } from '../src/services/marketData.js';
 import { evaluateMomentumSetup } from '../src/utils/setup.js';
-import { enrichWithNews } from '../src/services/newsService.js';
+// enrichWithNews removed 2026-05-22 with news feature cleanup.
 import { formatDailyReport } from '../src/services/telegramBot.js';
 import { getLastTradingDay } from '../src/utils/tradingDate.js';
 import type { RVOLResult } from '../src/types/index.js';
@@ -35,8 +35,7 @@ async function main(): Promise<void> {
         const t = tierRank(a.momentum?.level) - tierRank(b.momentum?.level);
         return t !== 0 ? t : (b.rvol ?? 0) - (a.rvol ?? 0);
     });
-    const enriched = await enrichWithNews(momentumStocks);
-    const finalSignals: RVOLResult[] = enriched.map((s) => ({
+    const finalSignals: RVOLResult[] = momentumStocks.map((s) => ({
         ...s,
         sector: getSectorForTicker(s.ticker),
         isVolumeWithoutPrice: false,
