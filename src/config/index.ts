@@ -43,22 +43,10 @@ export const config = {
     // API Keys
     finnhubApiKey: process.env.FINNHUB_API_KEY || '',
     twelveDataApiKey: process.env.TWELVE_DATA_API_KEY || '',
-    openaiApiKey: process.env.OPENAI_API_KEY || '',
-    perplexityApiKey: process.env.PERPLEXITY_API_KEY || '',
-    geminiApiKey: process.env.GEMINI_API_KEY || '',
     groqApiKey: process.env.GROQ_API_KEY || '',
-
-    // LLM summary: on when API key exists for chosen provider (set ENABLE_LLM_SUMMARY=false to disable)
-    llmProvider: (process.env.LLM_PROVIDER || 'openai').toLowerCase() as 'openai' | 'perplexity' | 'gemini' | 'groq',
-    enableLlmSummary: process.env.ENABLE_LLM_SUMMARY !== 'false',
-    /** Min RVOL for LLM analysis – only stocks with RVOL > this get sent (default 2). Set 0 to include all signals. */
-    llmMinRvol: parseFloatEnv('LLM_MIN_RVOL', 2),
-    /** Per-stock LLM: send each signal to LLM separately (parallel). If false, use single batch summary. */
-    llmPerStock: process.env.LLM_PER_STOCK !== 'false',
-    /** LLM model override. Empty = provider default (gpt-4o-mini, sonar, gemini-2.0-flash). */
-    llmModel: process.env.LLM_MODEL?.trim() || '',
-    /** If true, LLM analyzes only topSignals (main signals). Else include silent-activity setups. */
-    llmSignalsOnly: process.env.LLM_SIGNALS_ONLY === 'true',
+    // OpenAI / Perplexity / Gemini keys removed 2026-05-22 with the LLM summary
+    // cleanup. Groq is retained — it powers `classifyTickersWithGroq` (ticker
+    // type utility, not the dead daily commentary feature).
 
     // Telegram
     telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',

@@ -102,17 +102,9 @@ async function main(): Promise<void> {
             logger.info('Continuing with available configuration...');
         }
 
-        // 3. Log LLM summary config (helps debug when summary doesn't appear)
-        const llmProvider = config.llmProvider;
-        const llmKey =
-            llmProvider === 'gemini'
-                ? config.geminiApiKey
-                : llmProvider === 'perplexity'
-                  ? config.perplexityApiKey
-                  : llmProvider === 'groq'
-                    ? config.groqApiKey
-                    : config.openaiApiKey;
-        logger.info(`LLM Summary: ${config.enableLlmSummary ? 'enabled' : 'DISABLED'} | provider=${llmProvider} | key=${llmKey ? '✓ set' : '✗ missing'}`);
+        // (LLM summary feature removed 2026-05-22 — see decisions-log.)
+        // The Groq key is still used for ticker classification by classifyTickersWithGroq.
+        logger.info(`Ticker classification (Groq): key=${config.groqApiKey ? '✓ set' : '✗ missing — will skip'}`);
 
         // 4. Fetch watchlist from Google Sheet and load symbols
         await fetchAndCacheWatchlist();

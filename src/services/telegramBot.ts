@@ -9,7 +9,9 @@ import logger from '../utils/logger.js';
 import { escapeHtml } from '../utils/escapeHtml.js';
 import { formatTagsForDisplay } from '../utils/tags.js';
 import { formatRVOL, formatPriceChange } from '../utils/formatters.js';
-import { getReportSummary, getPerStockAnalyses, parseLlmReply, formatCodeVsLlmLine } from './llmSummary.js';
+// LLM summary feature removed 2026-05-22 — Gemini API key was missing in production
+// so the daily LLM commentary block never actually got sent. See decisions-log.md.
+// `classifyTickersWithGroq` (the ticker-type utility) is still imported separately in index.ts.
 import type { MonitorUpdateSummary } from './monitorTracker.js';
 
 const TELEGRAM_MAX_LENGTH = 4096;
@@ -634,59 +636,9 @@ export function formatLegend(): string {
 /** Shared row format: TICKER | RVOL X.XXx | Price ±X.XX% | RSI XX | Setup (code + LLM use same structure) */
 const STOCK_ROW_FORMAT = 'TICKER | RVOL X.XXx | Price ±X.XX% | RSI XX | Tags';
 
-/**
- * Format one stock row in the shared structure (used by both code and LLM).
- */
-function formatStockRow(stock: StockData, tagsDisplay: string): string {
-    const rsi = stock.rsi != null ? stock.rsi.toFixed(0) : '—';
-    return `${stock.ticker} | RVOL ${formatRVOL(stock.rvol)} | Price ${formatPriceChange(stock.priceChange)} | RSI ${rsi} | ${tagsDisplay || '—'}`;
-}
-
-/**
- * Get the StockData[] list for LLM (same stocks as getAllSignalRows).
- */
-export function getStocksForLlm(topSignals: RVOLResult[], volumeWithoutPrice: StockData[]): StockData[] {
-    const hasTags = (s: StockData): boolean => (s.tags?.length ?? 0) > 0;
-    const taggedFromSilent = volumeWithoutPrice.filter(hasTags);
-    const topSilent = [...volumeWithoutPrice].sort((a, b) => b.rvol - a.rvol).slice(0, 10);
-    return [...topSignals, ...taggedFromSilent, ...topSilent]
-        .filter((s, i, arr) => arr.findIndex((x) => x.ticker === s.ticker) === i)
-        .sort((a, b) => b.rvol - a.rvol);
-}
-
-/**
- * Get ALL high-RVOL signal rows for LLM (every stock we report on).
- */
-export function getAllSignalRows(topSignals: RVOLResult[], volumeWithoutPrice: StockData[]): string[] {
-    const stocks = getStocksForLlm(topSignals, volumeWithoutPrice);
-    return stocks.map((s) => formatStockRow(s, formatTagsForDisplay(s)));
-}
-
-/**
- * Get tagged stock rows from code (stocks with at least one tag).
- */
-export function getSetupRowsFromData(topSignals: RVOLResult[], volumeWithoutPrice: StockData[]): string[] {
-    const seen = new Set<string>();
-    const rows: string[] = [];
-    for (const s of [...topSignals, ...volumeWithoutPrice]) {
-        if (seen.has(s.ticker)) continue;
-        const tags = formatTagsForDisplay(s);
-        if (tags) {
-            seen.add(s.ticker);
-            rows.push(formatStockRow(s, tags));
-        }
-    }
-    return rows;
-}
-
-/**
- * Format tagged stocks from code data – for comparison with LLM.
- */
-function formatSetupReference(topSignals: RVOLResult[], volumeWithoutPrice: StockData[]): string {
-    const rows = getSetupRowsFromData(topSignals, volumeWithoutPrice);
-    if (rows.length === 0) return '';
-    return `📋 <b>Data (code):</b>\n<code>${STOCK_ROW_FORMAT}</code>\n${rows.map((r) => `<code>${r}</code>`).join('\n')}\n\n`;
-}
+// formatStockRow, getStocksForLlm, getAllSignalRows, getSetupRowsFromData,
+// formatSetupReference — removed 2026-05-22 with the LLM cleanup. They were
+// only consumed by buildLlmSummaryMessage which itself was removed.
 
 /**
  * Format a data header line for every Telegram message (date, stats, part).
@@ -811,80 +763,13 @@ function formatRunIssuesSection(
     return `━━━━━━━━━━━━━━━━━━━━━━\n${summary}${body}\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 }
 
-async function buildLlmSummaryMessage(
-    date: string,
-    topSignals: RVOLResult[],
-    volumeWithoutPrice: StockData[],
-    scope?: ReportScope
-): Promise<string | null> {
-    if (topSignals.length === 0) return null;
-
-    const llmMinRvol = config.llmMinRvol;
-    const forLlm =
-        llmMinRvol > 0
-            ? {
-                  topSignals: topSignals.filter((s) => s.rvol > llmMinRvol),
-                  volumeWithoutPrice: volumeWithoutPrice.filter((s) => s.rvol > llmMinRvol),
-              }
-            : { topSignals, volumeWithoutPrice };
-    const allSignalRows = getAllSignalRows(forLlm.topSignals, forLlm.volumeWithoutPrice);
-    const setupRows = getSetupRowsFromData(topSignals, volumeWithoutPrice);
-
-    if (allSignalRows.length === 0) return null;
-
-    const stocksForLlm = config.llmSignalsOnly
-        ? forLlm.topSignals
-        : getStocksForLlm(forLlm.topSignals, forLlm.volumeWithoutPrice);
-
-    let summary: string | null = null;
-    if (config.llmPerStock) {
-        const analyses = await getPerStockAnalyses(stocksForLlm, date);
-        const withParsed = analyses
-            .filter((a) => a.analysis)
-            .map((a) => ({ a, parsed: parseLlmReply(a.analysis ?? '') }));
-        const mismatches = withParsed.filter(({ parsed }) => parsed && !parsed.match);
-        const lines =
-            mismatches.length > 0
-                ? mismatches.map(({ a, parsed }) =>
-                      formatCodeVsLlmLine(a.ticker, a.codeTags, parsed, a.analysis)
-                  )
-                : [];
-        summary =
-            lines.length > 0
-                ? lines.join('\n')
-                : withParsed.length > 0
-                  ? '<i>✓ כל התוצאות תואמות לקוד</i>'
-                  : null;
-    } else {
-        summary = await getReportSummary(stocksForLlm, date, {
-            watchlistCount: scope?.watchlistCount,
-            setupCount: setupRows.length,
-        });
-    }
-
-    if (!summary) return null;
-
-    // Per-stock: summary is HTML from formatCodeVsLlmLine (already escaped). Batch: plain text from LLM.
-    const safeSummary = config.llmPerStock ? summary : escapeHtml(summary);
-    const llmDataHeader = formatMessageDataHeader(date, topSignals.length, volumeWithoutPrice.length, 'LLM Summary');
-    const setupRef = formatSetupReference(topSignals, volumeWithoutPrice);
-    const tickersSent = allSignalRows.map((r) => r.split('|')[0].trim()).join(', ');
-    const rvolNote = llmMinRvol > 0 ? ` (RVOL>${llmMinRvol})` : '';
-    const scopeLine =
-        scope?.watchlistCount != null
-            ? `\n<i>✅ נסרקו ${scope.watchlistCount} מניות מ-Sheets | ל-LLM נשלחו ${allSignalRows.length}${rvolNote}: ${tickersSent}</i>\n\n`
-            : `\n<i>✅ ל-LLM נשלחו ${allSignalRows.length}${rvolNote} מניות: ${tickersSent}</i>\n\n`;
-    const modeLabel = config.llmPerStock ? ' (כל מניה: LLM מחשב בעצמו, אותו תנאים)' : '';
-    const explanation =
-        '<i>מוצג רק כאשר יש חוסר התאמה בין קוד ל-LLM (אותם תנאים)</i>\n\n';
-
-    return `${llmDataHeader}${explanation}${scopeLine}${setupRef}🤖 <b>ניתוח LLM${modeLabel}:</b>\n\n${safeSummary}\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-}
-
 /**
  * Send the daily report, splitting if necessary.
- * If LLM summary is enabled and succeeds, it is prepended to the first message.
  * Every message includes a data header (date, stats, part).
+ *
+ * Note: the LLM summary block was removed 2026-05-22 (Gemini API key was
+ * missing in production, so the feature never actually shipped commentary).
+ * Issues section now goes in the first chunk.
  */
 export async function sendDailyReport(
     date: string,
@@ -910,50 +795,15 @@ export async function sendDailyReport(
         scope?.watchlistStats,
         scope?.sma21TouchSkippedTickers ?? []
     );
-    const llmMessage = await buildLlmSummaryMessage(date, topSignals, volumeWithoutPrice, scope);
-    if (llmMessage) {
-        const firstPayload = (issuesSection ? issuesSection : '') + llmMessage;
-        const firstChunks = chunkMessage(firstPayload);
-        for (let i = 0; i < firstChunks.length; i++) {
-            if (i > 0) await sleep(TELEGRAM_SEND_DELAY_MS);
-            await sendTelegramMessage(firstChunks[i]!);
-        }
-        logger.info(`LLM summary sent as first Telegram message(s) (${firstChunks.length} chunk(s))`);
-        if (config.debug) {
-            logger.info('--- LLM MESSAGE PREVIEW ---\n' + llmMessage.replace(/<[^>]*>/g, '') + '\n--- END LLM PREVIEW ---');
-        }
-    } else if (topSignals.length > 0) {
-        const forLlm =
-            config.llmMinRvol > 0
-                ? {
-                      topSignals: topSignals.filter((s) => s.rvol > config.llmMinRvol),
-                      volumeWithoutPrice: volumeWithoutPrice.filter((s) => s.rvol > config.llmMinRvol),
-                  }
-                : { topSignals, volumeWithoutPrice };
-        const allSignalRows = getAllSignalRows(forLlm.topSignals, forLlm.volumeWithoutPrice);
-        if (allSignalRows.length === 0) {
-            logger.info(
-                `LLM summary skipped: no stocks with RVOL > ${config.llmMinRvol}. Set LLM_MIN_RVOL=0 to include all signals.`
-            );
-        } else {
-            logger.warn(
-                'LLM summary not sent. Check: ENABLE_LLM_SUMMARY=true, correct LLM_PROVIDER, and API key set for that provider.'
-            );
-        }
-    } else {
-        logger.info('LLM summary skipped (no high-RVOL signals to summarize)');
-    }
 
     logger.info(`Sending report (${chunks.length} part(s)) to Telegram`);
 
-    // Issues section goes in first message only (LLM or first report chunk). Each sent message must be ≤ max length.
-    const issuesInFirstReport = !llmMessage && issuesSection;
     for (let i = 0; i < chunks.length; i++) {
         if (i > 0) await sleep(TELEGRAM_SEND_DELAY_MS);
         const partLabel = chunks.length > 1 ? `Part ${i + 1}/${chunks.length}` : undefined;
         const msgDataHeader = formatMessageDataHeader(date, topSignals.length, volumeWithoutPrice.length, partLabel);
-        const content =
-            i === 0 && issuesInFirstReport ? issuesSection + msgDataHeader + chunks[i] : msgDataHeader + chunks[i];
+        const prefix = i === 0 && issuesSection ? issuesSection + msgDataHeader : msgDataHeader;
+        const content = prefix + chunks[i];
         const toSend = chunkMessage(content);
         for (let j = 0; j < toSend.length; j++) {
             if (j > 0) await sleep(TELEGRAM_SEND_DELAY_MS);
