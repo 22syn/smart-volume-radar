@@ -7,8 +7,13 @@
  * Output: results/radar-reconstructed-{date}.json
  * Schema: {
  *   generatedAt, daysComputed, tickersComputed,
- *   flaggedByDate: { 'YYYY-MM-DD': { ticker: action, ... } }
+ *   flaggedByDate: { 'YYYY-MM-DD': { ticker: {action, championScore, ...}, ... } }
  * }
+ *
+ * Per-flag record includes: action, championScore, momentumLevel, rvol, barGain,
+ * sector, sectorMedianReturn63d, breakoutStage, pctFromAth, failedCriteria,
+ * extensionPct, distributionDays — enough for downstream precision analysis
+ * without needing to re-compute.
  *
  * Only stocks with action != 'PASS' && action != 'PASS_TOO_LATE' are recorded
  * (i.e. anything that would have appeared in the daily Telegram report).
@@ -45,6 +50,23 @@ import { applySectorRanks } from '../src/utils/sectorRank.js';
 import type { StockData } from '../src/types/index.js';
 
 process.env.BACKTEST_MODE = '1';
+
+/** Per-flag record saved in flaggedByDate. Rich enough for precision analysis. */
+interface FlagRecord {
+    action: string;
+    championScore: number;
+    momentumLevel: string;
+    rvol: number;
+    barGain: number;
+    sector: string;
+    sectorMedianReturn63d: number | null;
+    breakoutStage: string | null;
+    pctFromAth: number | null;
+    extensionPct: number | null;
+    distributionDays: number;
+    failedCriteria: string[];
+    lastPrice: number;
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..');
@@ -157,7 +179,7 @@ async function main() {
 
     // ─── Step 3: For each date, compute action for every ticker ──
     console.log('⚙️  Computing per-day actions...');
-    const flaggedByDate: Record<string, Record<string, string>> = {};
+    const flaggedByDate: Record<string, Record<string, FlagRecord>> = {};
     const actionDistByDate: Record<string, Record<string, number>> = {};
 
     // Pre-compute SPY closes for 63d return → regime
@@ -195,7 +217,7 @@ async function main() {
         applySectorRanks(stocks);
 
         // Momentum + Champion Score per stock
-        const dayFlagged: Record<string, string> = {};
+        const dayFlagged: Record<string, FlagRecord> = {};
         const dayDist: Record<string, number> = {};
         for (const s of stocks) {
             s.momentum = evaluateMomentumSetup(s, { regime });
@@ -203,7 +225,21 @@ async function main() {
             const a = s.action ?? 'PASS';
             dayDist[a] = (dayDist[a] ?? 0) + 1;
             if (a !== 'PASS' && a !== 'PASS_TOO_LATE') {
-                dayFlagged[s.ticker.toUpperCase()] = a;
+                dayFlagged[s.ticker.toUpperCase()] = {
+                    action: a,
+                    championScore: s.championScore ?? 0,
+                    momentumLevel: s.momentum?.level ?? 'none',
+                    rvol: s.projectedRvol ?? s.rvol ?? 0,
+                    barGain: s.priceChange ?? 0,
+                    sector: s.sector ?? 'Unknown',
+                    sectorMedianReturn63d: s.sectorMedianReturn63d ?? null,
+                    breakoutStage: s.breakoutStage ?? null,
+                    pctFromAth: s.pctFromAth ?? null,
+                    extensionPct: s.tradePlan?.extensionPct ?? null,
+                    distributionDays: s.distributionDays ?? 0,
+                    failedCriteria: s.momentum?.failures ?? [],
+                    lastPrice: s.lastPrice ?? 0,
+                };
             }
         }
         flaggedByDate[asOf] = dayFlagged;
