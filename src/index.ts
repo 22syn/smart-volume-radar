@@ -8,6 +8,7 @@ import { classifyTickersWithGroq } from './services/llmSummary.js';
 import { fetchAllStocksAsOfDate, fetchMarketRegime, fetchSpy63dReturn } from './services/marketData.js';
 import { evaluateMomentumSetup } from './utils/setup.js';
 import { applyChampionScore } from './utils/championScore.js';
+import { buildTickerStats, getTickerStats } from './utils/tickerStats.js';
 import { applyRSPercentile } from './utils/rsPercentile.js';
 import { applySectorRanks } from './utils/sectorRank.js';
 import { enrichWithFundamentals } from './services/finnhubFundamentals.js';
@@ -116,6 +117,7 @@ async function main(): Promise<void> {
         // 5. Determine scan date (last US trading day) and fetch market data
         const scanDate = getLastTradingDay();
         logger.info(`📅 Scan date: ${scanDate} (last US trading day)`);
+        const resultsDir = path.join(__dirname, '..', 'results');
         // Market regime (bull/bear) from SPY vs SMA200 — scoped to scanDate so backtests stay honest.
         const marketRegime = await fetchMarketRegime(scanDate);
         logger.info(`🧭 Market regime: ${marketRegime.toUpperCase()} (SPY vs SMA200)`);
@@ -174,12 +176,21 @@ async function main(): Promise<void> {
             logger.info(`📊 RS percentile (${populated} stocks, SPY 63d=${spyReturn63d?.toFixed(1) ?? 'n/a'}%): ${top}`);
         }
 
+        // Build per-ticker history stats once (drives TD-19/20/21/22/23
+        // gates inside determineAction — Double BUY, ticker fatigue, sector
+        // override, hot streak, auto blacklist). Falls back to empty Map if
+        // no scan history yet — pipeline still works on a fresh repo.
+        const tickerStatsMap = buildTickerStats(resultsDir, scanDate);
+        if (tickerStatsMap.size > 0) {
+            logger.info(`📊 Ticker history: ${tickerStatsMap.size} tickers in 20-td window`);
+        }
+
         // Tag every stock with the regime + run momentum evaluator (additive — does not affect existing pipeline).
         // Then apply the Champion Score layer (continuous score + action label + trade plan).
         for (const s of stocks) {
             s.marketRegime = marketRegime;
             s.momentum = evaluateMomentumSetup(s, { regime: marketRegime });
-            applyChampionScore(s);
+            applyChampionScore(s, getTickerStats(tickerStatsMap, s.ticker));
         }
         logger.info(`✅ Fetched data for ${stocks.length}/${tickers.length} stocks`);
 
@@ -278,7 +289,6 @@ async function main(): Promise<void> {
         // signal per 2026-05-05 criteria analysis: median +24% vs +2-7% for other tiers).
         const stocksByTicker = new Map<string, StockData>();
         for (const s of stocks) stocksByTicker.set(s.ticker.toUpperCase(), s);
-        const resultsDir = path.join(__dirname, '..', 'results');
         const monitorState = loadMonitorState(resultsDir);
         let monitorSummary: ReturnType<typeof updateMonitorState> | null = null;
         let graduations: GraduationInfo[] = [];

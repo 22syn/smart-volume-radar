@@ -27,11 +27,68 @@ import type {
     StockData,
     TradePlan,
 } from '../types/index.js';
+import type { TickerStats } from './tickerStats.js';
+
+// ─── TD-15 (2026-05-23) — Persistent-Loser Sector Blacklist ─────────────
+// Sectors that the 3-month precision analysis showed are PERSISTENTLY noisy
+// (win rate ≤ 22% across 27-274 alerts even when their daily 63d median is
+// positive — TD-10 lets them through on short-term sector blips). These get
+// a hard PASS regardless of daily sector recompute. List can be tuned via
+// quarterly re-runs of scripts/precision-analysis.ts.
+const PERSISTENT_LOSER_SECTORS = new Set<string>([
+    'Banks',                // 0% win across 62 alerts
+    'Telco',                // 4% win across 27
+    'Defense',              // 5% win across 37 (distinct from "Aerospace & Defense")
+    'Finance',              // 6% win across 62
+    'real estate',          // 9% win across 35
+    'residence',            // 12% win across 41
+    'consumer basic',       // 15% win across 171 (mostly .TA names)
+    'Aerospace & Defense',  // 22% win across 274
+]);
+
+// ─── TD-18 (2026-05-23) — Cleantech Utility Soft-Action Blacklist ───────
+// US regulated utilities + sector ETFs that constantly trigger CAUTION_NO_VOL
+// in Cleantech but never break out (regulated business, no catalyst). Suppresses
+// ONLY CAUTION_NO_VOL and WATCH — genuine BUY setups still surface.
+// Reduces Cleantech alerts 673→353 (-47.5%), lifts win rate 30%→54%.
+const CLEANTECH_UTILITY_BLACKLIST = new Set<string>([
+    'SUN', 'AEP', 'SRE', 'NEE', 'PPL', 'GNRC', 'NRG', 'ENLT', 'ENLT.TA',
+    'TAN', 'ENRG.TA', 'ORA', 'ORA.TA', 'RUN', 'ARRY',
+]);
+
+// ─── TD-16 (2026-05-23) — Sector-Too-Hot Demotion Threshold ─────────────
+// Sectors with median 63d ≥ this fraction → BUY demoted to WATCH (don't chase
+// already-extended sectors). Precision analysis: ≥30% median → only 31% win
+// vs 61% in the 20-30% sweet spot.
+const SECTOR_TOO_HOT_THRESHOLD = 35;
+
+// ─── TD-20 (2026-05-23) — Ticker-Fatigue Threshold ──────────────────────
+// After N alerts on the same ticker in the last 20 trading days → demote to
+// PASS. Multi-event analysis: 52% of alerts were 11th+ on same ticker, with
+// median forward-now return only +7% vs +20% on first alert.
+const FATIGUE_THRESHOLD = 10;
+
+// ─── TD-22 (2026-05-23) — Sector-Override Promotion Threshold ───────────
+// In a top-3 sector, ≥N BUY/WATCH flags in last 10 td → promote CAUTION_NO_VOL
+// to WATCH (label was hiding good signals on DELL/AIXA.DE/NOKI.VI — 89-100% win
+// rates as C_NO_VOL).
+const IN_TREND_THRESHOLD = 2;
+
+// ─── TD-14 (2026-05-23) — CAUTION_NO_VOL minimum RVOL ───────────────────
+// RVOL below this → suppress CAUTION_NO_VOL entirely. Precision analysis:
+// RVOL<1.0 bucket (1,772 alerts) had only 36% win. Stocks with sub-average
+// volume don't deserve a Telegram line.
+const MIN_RVOL_FOR_NO_VOL_WARNING = 1.0;
 
 /** Weights — derived from train+test stable lifts in the 86-day analysis. */
 const WEIGHTS = {
-    /** pivotBreakout: lift 1.75x train → 10x test, the strongest single predictor */
-    pivotBreakout: 25,
+    /** pivotBreakout: REDUCED 25 → 12 (TD-17, 2026-05-23). The +25 weight was
+     *  mechanically stuffing post-breakout, distribution-heavy stocks into the
+     *  80-89 score band, producing a non-monotonic win-rate curve (90-100=48%,
+     *  80-89=31%, 70-79=45%). Simulation showed cutting to +12 restores
+     *  monotonicity (52% → 36% → 30% → 23%). pivotBreakout still has lift but
+     *  shouldn't dominate other criteria. */
+    pivotBreakout: 12,
     /** stage2: lift 1.37x train → 3.29x test */
     stage2: 15,
     /** rvolPass (≥2 in bull / ≥3 in bear): mild positive at +3-10td, mild anti at +20td.
@@ -221,45 +278,110 @@ export function determineAction(
     stock: StockData,
     score: number,
     stage: BreakoutStage | undefined,
-    plan: TradePlan | undefined
+    plan: TradePlan | undefined,
+    stats?: TickerStats
 ): ActionLabel {
     if (score < 40) return 'PASS';
 
-    // Negative-sector guard (TD-10, 2026-05-22): sectors with 63d median return < 0
-    // were a coherent loser cohort in the 60-day study (Aerospace & Defense: 55
-    // alerts, 24% hit rate, −9.8% median). Hiding these from the action tier is
-    // more truthful than warning about them. The NOTABLE filter has belt-and-
-    // suspenders for the same condition. Stocks are still TRACKED (their signal
-    // level + criteria are computed) but they don't propagate to the Telegram
-    // action list.
+    // ─── TD-10: Negative-sector daily guard ───────────────────────────
+    // Sectors with 63d median return < 0 are demoted to PASS. The 60-day
+    // study showed these were coherent loser cohorts (e.g. Aerospace & Defense:
+    // 24% hit rate, -9.8% median).
     if (stock.sectorMedianReturn63d != null && stock.sectorMedianReturn63d < 0) {
         return 'PASS';
     }
 
-    // ─── Base action from the stage/extension/RVOL cascade ────────────
-    const baseAction = computeBaseAction(stock, score, stage, plan);
-
-    // Distribution-pressure demotion (TD-13, 2026-05-23): institutional
-    // selling pressure only matters when there's a setup to protect.
-    //
-    // Old design (2026-05-22 spam-fix predecessor): distributionDays ≥ 4
-    // returned CAUTION_DISTRIBUTION unconditionally, BEFORE the stage/plan
-    // checks. Result on 2026-05-22: 93 CAUTION_DISTRIBUTION alerts, of which
-    // 86 had momentum=none (no setup at all) and 78 had RVOL<1.2 (stock not
-    // waking up). The warning fired on dead stocks just because the
-    // market-wide pullback racked up down-days-with-volume across the board.
-    //
-    // New design: only demote BUY/WATCH base actions to CAUTION_DISTRIBUTION.
-    // A stock that would otherwise be PASS stays PASS — no false-positive
-    // "watch out" warning on stocks the trader wasn't going to act on anyway.
-    if (
-        (baseAction === 'BUY' || baseAction === 'WATCH') &&
-        (stock.distributionDays ?? 0) >= 4
-    ) {
-        return 'CAUTION_DISTRIBUTION';
+    // ─── TD-15: Persistent-loser sector blacklist ─────────────────────
+    // Even when the daily sector median flips positive on a one-day blip,
+    // these sectors have been persistently noisy across 3 months. Hard-block.
+    if (stock.sector && PERSISTENT_LOSER_SECTORS.has(stock.sector)) {
+        return 'PASS';
     }
 
-    return baseAction;
+    // ─── TD-21: Per-ticker auto-blacklist ─────────────────────────────
+    // Tickers whose trailing-30-alert win rate dropped below 10% with n≥8.
+    // Populated by scripts/bootstrap-ticker-outcomes.ts.
+    if (stats?.isBlacklisted) {
+        stock.isBlacklisted = true;
+        return 'PASS';
+    }
+
+    // ─── TD-20: Ticker fatigue ────────────────────────────────────────
+    // After 10+ alerts in the last 20 td on the same ticker, demote. Keeps
+    // the watchlist visible but suppresses the daily Telegram line.
+    if (stats && stats.alertCount20td >= FATIGUE_THRESHOLD) {
+        stock.isFatigued = true;
+        return 'PASS';
+    }
+
+    // ─── TD-18: Cleantech utility blacklist (suppresses soft actions) ─
+    // Compute base FIRST so we can check what action would have fired.
+    const baseAction = computeBaseAction(stock, score, stage, plan);
+
+    if (
+        stock.sector === 'Cleantech' &&
+        CLEANTECH_UTILITY_BLACKLIST.has(stock.ticker.toUpperCase()) &&
+        (baseAction === 'CAUTION_NO_VOL' || baseAction === 'WATCH')
+    ) {
+        return 'PASS';
+    }
+
+    // ─── TD-14: Minimum RVOL for CAUTION_NO_VOL ───────────────────────
+    // Below 1.0 RVOL = sub-average volume = not waking up. Suppress.
+    if (baseAction === 'CAUTION_NO_VOL' && effectiveRvol(stock) < MIN_RVOL_FOR_NO_VOL_WARNING) {
+        return 'PASS';
+    }
+
+    // ─── TD-16: Sector-too-hot demotion ───────────────────────────────
+    // Sectors that already ran ≥35% in 63d have only 31% win on BUYs. Demote
+    // BUY → WATCH (force user to confirm not chasing).
+    let action: ActionLabel = baseAction;
+    if (
+        action === 'BUY' &&
+        stock.sectorMedianReturn63d != null &&
+        stock.sectorMedianReturn63d >= SECTOR_TOO_HOT_THRESHOLD
+    ) {
+        action = 'WATCH';
+    }
+
+    // ─── TD-22: Sector-override promotion ─────────────────────────────
+    // In a top-3 sector, when a ticker is in an established uptrend (≥2
+    // BUY/WATCH flags in last 10 td), promote its CAUTION_NO_VOL to WATCH.
+    // Catches sustained AI-Chain / Semis trends where the label was hiding good
+    // signals (DELL/AIXA.DE/NOKI.VI win 89-100% as C_NO_VOL).
+    if (
+        action === 'CAUTION_NO_VOL' &&
+        stock.sectorRank != null &&
+        stock.sectorRank <= 3 &&
+        stats &&
+        stats.inTrendCount10td >= IN_TREND_THRESHOLD
+    ) {
+        action = 'WATCH';
+        stock.sectorOverrideApplied = true;
+    }
+
+    // ─── TD-13: Distribution-pressure demotion (only on actionable) ───
+    // distributionDays ≥ 4 demotes BUY/WATCH to CAUTION_DISTRIBUTION only.
+    if (
+        (action === 'BUY' || action === 'WATCH') &&
+        (stock.distributionDays ?? 0) >= 4
+    ) {
+        action = 'CAUTION_DISTRIBUTION';
+    }
+
+    // ─── TD-19: Double-BUY flag (no demotion; flag only) ──────────────
+    // BUY today AND BUY on the prior scan = 82% win rate, +49% peak. Tag for
+    // formatter to highlight with 🔥.
+    if (action === 'BUY' && stats?.previousDayAction === 'BUY') {
+        stock.isDoubleBuy = true;
+    }
+
+    // ─── TD-23: Hot-streak flag (no demotion; flag only) ──────────────
+    if (stats?.isHotStreak) {
+        stock.isHotStreak = true;
+    }
+
+    return action;
 }
 
 /**
@@ -304,7 +426,10 @@ function computeBaseAction(
  * (in line with how evaluateMomentumSetup is wired). Returns a summary
  * for logging convenience.
  */
-export function applyChampionScore(stock: StockData): {
+export function applyChampionScore(
+    stock: StockData,
+    stats?: TickerStats
+): {
     score: number;
     action: ActionLabel;
     stage: BreakoutStage | undefined;
@@ -312,7 +437,7 @@ export function applyChampionScore(stock: StockData): {
     const score = computeChampionScore(stock);
     const stage = computeBreakoutStage(stock);
     const plan = computeTradePlan(stock);
-    const action = determineAction(stock, score, stage, plan);
+    const action = determineAction(stock, score, stage, plan, stats);
 
     stock.championScore = score;
     stock.breakoutStage = stage;

@@ -233,8 +233,17 @@ function formatSingleStockBlock(stock: RVOLResult, monitorMeta?: MonitorMeta): s
     const { tvUrl, yahooUrl } = buildStockUrls(stock);
     const persistenceMarker = formatPersistenceMarker(monitorMeta);
 
-    // Header: ticker + persistence + Champion Score + RS percentile + sector
+    // Header: ticker + persistence + history badges (TD-19/23) + Champion Score + RS percentile + sector
     let block = `${statusEmoji} <b><a href="${tvUrl}">${escapeHtml(stock.ticker)}</a></b>${persistenceMarker}`;
+    // TD-19: Double BUY badge — strongest signal in our 3-month backtest
+    // (82% win, +49% avg peak). Visually unmissable: 🔥 prefix.
+    if (stock.isDoubleBuy) {
+        block += ` 🔥 <b>STRONG BUY (יום 2)</b>`;
+    }
+    // TD-23: Hot streak badge — trailing-30 win rate ≥ 80% on this ticker.
+    if (stock.isHotStreak) {
+        block += ` 🏆 <i>Hot Streak</i>`;
+    }
     if (stock.championScore != null) {
         block += `  <b>${stock.championScore.toFixed(0)}</b><i>/100</i>`;
     }
@@ -259,6 +268,8 @@ function formatSingleStockBlock(stock: RVOLResult, monitorMeta?: MonitorMeta): s
         block += `├ ⚠️ <i>extended ${stock.tradePlan.extensionPct.toFixed(1)}% מעבר ל-pivot — סטופ הדוק</i>\n`;
     } else if (stock.action === 'CAUTION_NO_VOL') {
         block += `├ ⚠️ <i>על ה-pivot אבל RVOL ${formatRVOL(stock.rvol)} — נפח לא מאשר</i>\n`;
+    } else if (stock.action === 'WATCH' && stock.sectorOverrideApplied) {
+        block += `├ 🚀 <i>סקטור מוביל + מגמה מבוססת — קודם מ-CAUTION ל-WATCH</i>\n`;
     } else if (stock.action === 'WATCH' && stock.tradePlan) {
         block += `├ 👀 <i>צריך עוד ${stock.tradePlan.distanceToEntryPct.toFixed(1)}% עד ה-pivot</i>\n`;
     }

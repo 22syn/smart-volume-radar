@@ -52,13 +52,13 @@ describe('computeChampionScore', () => {
         expect(computeChampionScore(stock)).toBe(50);
     });
 
-    it('rewards stable predictors heavily (pivotBreakout + stage2 = +40)', () => {
+    it('rewards stable predictors (pivotBreakout + stage2 = +27 after TD-17 rebalance)', () => {
         const stock = makeStock({
             momentum: makeMomentum(makeCriteria({ pivotBreakout: true, stage2: true })),
         });
         const score = computeChampionScore(stock);
-        // 50 base + 25 pivot + 15 stage2 + 5 aboveGapAvwap = 95
-        expect(score).toBe(95);
+        // 50 base + 12 pivot (TD-17 reduced from 25) + 15 stage2 + 5 aboveGapAvwap = 82
+        expect(score).toBe(82);
     });
 
     it('penalizes lowRiskEntry in bull (anti-predictor in our 86-day analysis)', () => {

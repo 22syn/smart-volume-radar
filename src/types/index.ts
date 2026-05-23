@@ -153,6 +153,18 @@ export interface StockData {
     tradePlan?: TradePlan;
     /** Where the stock sits in its breakout cycle (Setup → Fresh → Aging → ...) */
     breakoutStage?: BreakoutStage;
+
+    // ─── Ticker-history flags (TD-19/20/22/23 — populated from tickerStats) ─
+    /** TD-19: action=BUY today AND action=BUY on the prior scan → "double BUY". */
+    isDoubleBuy?: boolean;
+    /** TD-23: trailing-30-alert win rate ≥ 80% on this ticker. */
+    isHotStreak?: boolean;
+    /** TD-21: trailing-30-alert win rate <10% AND n≥8 → suppressed from action tier. */
+    isBlacklisted?: boolean;
+    /** TD-20: was demoted to PASS because of ≥10 alerts in last 20 td. */
+    isFatigued?: boolean;
+    /** TD-22: action was promoted from CAUTION_NO_VOL → WATCH via sector-override. */
+    sectorOverrideApplied?: boolean;
 }
 
 /**

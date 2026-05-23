@@ -49,5 +49,8 @@ retro-*.txt
 results/*
 # Exception: monitor-list.json IS committed daily so follow-up state survives CI runs.
 !results/monitor-list.json
+# Exception: ticker-outcomes.json drives TD-21 (auto blacklist) + TD-23 (hot streak)
+# at scan time. Refreshed quarterly via `npx tsx scripts/bootstrap-ticker-outcomes.ts`.
+!results/ticker-outcomes.json
 # Finnhub fundamentals cache (TTL 7d) — never committed, never shared across machines.
 results/finnhub-cache/
