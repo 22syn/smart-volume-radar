@@ -27,7 +27,8 @@
     "regenerate-results": "tsx scripts/regenerate-results.ts",
     "evaluate-retro-advanced": "tsx scripts/evaluate-retro-advanced.ts",
     "analyze-criteria-importance": "tsx scripts/analyze-criteria-importance.ts",
-    "preview-report": "tsx scripts/preview-report.ts"
+    "preview-report": "tsx scripts/preview-report.ts",
+    "tv-sync": "tsx scripts/sync-tv-watchlist.ts"
   },
   "keywords": [
     "stocks",
@@ -54,6 +55,7 @@
     "eslint": "^9.39.2",
     "globals": "^17.3.0",
     "jest": "^30.2.0",
+    "playwright": "^1.60.0",
     "prettier": "^3.8.1",
     "ts-jest": "^29.4.6",
     "tsx": "^4.21.0",

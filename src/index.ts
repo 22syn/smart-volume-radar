@@ -22,6 +22,7 @@ import logger from './utils/logger.js';
 import { formatErrorForTelegram } from './utils/errorHandler.js';
 import { buildStoredScanResult, writeScanResults, writeScanDebug } from './utils/writeScanResults.js';
 import { writeRadarSnapshot, computeActionDistribution } from './utils/snapshotWriter.js';
+import { writeSmartTradingViewWatchlists } from './services/tradingViewWatchlist.js';
 import { getLastTradingDay } from './utils/tradingDate.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -370,6 +371,18 @@ async function main(): Promise<void> {
             resultsDir
         );
         logger.info(`📁 Saved results to ${resultsDir}/scan-${scanDate}.json`);
+
+        // 8.1 Write TradingView watchlist files (BUY + WATCH) for nightly TV sync.
+        // Files land in results/ alongside scan-*.json so the daily-scan GHA
+        // upload-artifact step picks them up automatically.
+        try {
+            const tvOut = writeSmartTradingViewWatchlists(scanDate, stocks, resultsDir);
+            logger.info(
+                `📋 TV watchlists: BUY=${tvOut.buy.count} (${path.basename(tvOut.buy.latest)}), WATCH=${tvOut.watch.count} (${path.basename(tvOut.watch.latest)})`
+            );
+        } catch (tvErr) {
+            logger.error('⚠️ Failed to write TV watchlists (non-fatal):', (tvErr as Error).message);
+        }
         logger.info(`📋 Saved scan-debug to ${resultsDir}/scan-debug-${scanDate}.json (greenSortedFull, failedTickers, for investigation)`);
 
         // 8.4 Full debug snapshot (every fetched stock with all computed fields).
