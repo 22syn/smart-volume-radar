@@ -47,6 +47,7 @@ import { parseYahooChartResult } from '../src/services/marketData.js';
 import { evaluateMomentumSetup } from '../src/utils/setup.js';
 import { applyChampionScore } from '../src/utils/championScore.js';
 import { applySectorRanks } from '../src/utils/sectorRank.js';
+import { buildTickerStats, getTickerStats } from '../src/utils/tickerStats.js';
 import type { StockData } from '../src/types/index.js';
 
 process.env.BACKTEST_MODE = '1';
@@ -216,12 +217,18 @@ async function main() {
         // Sector ranks (computes sectorMedianReturn63d on every stock)
         applySectorRanks(stocks);
 
+        // Ticker stats for this as-of date (drives TD-19/20/21/22/23 gates).
+        // Reads scan-*.json files dated < asOf, plus results/ticker-outcomes.json
+        // if present. For early dates in the window, scan history may be empty;
+        // gates fall back to non-stats-aware behavior — matches production.
+        const tickerStatsMap = buildTickerStats(RESULTS_DIR, asOf);
+
         // Momentum + Champion Score per stock
         const dayFlagged: Record<string, FlagRecord> = {};
         const dayDist: Record<string, number> = {};
         for (const s of stocks) {
             s.momentum = evaluateMomentumSetup(s, { regime });
-            applyChampionScore(s);
+            applyChampionScore(s, getTickerStats(tickerStatsMap, s.ticker));
             const a = s.action ?? 'PASS';
             dayDist[a] = (dayDist[a] ?? 0) + 1;
             if (a !== 'PASS' && a !== 'PASS_TOO_LATE') {
