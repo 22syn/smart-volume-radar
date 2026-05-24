@@ -1,18 +1,21 @@
 #!/usr/bin/env npx tsx
 /**
- * Build results/ticker-outcomes.json from the precision-analysis output.
+ * Build TWO outcomes files from the precision-analysis output:
+ *   1. results/ticker-outcomes.json — per-ticker stats for TD-21/23
+ *   2. results/sector-outcomes.json — per-sector stats for TD-15 (dynamic)
  *
- * Consumed by src/utils/tickerStats.ts at scan time → drives:
- *   - TD-21 auto blacklist (recentWinRate < 10% AND alertsCounted ≥ 8)
- *   - TD-23 hot streak (recentWinRate ≥ 80% AND alertsCounted ≥ 10)
+ * Consumed at scan time → drives:
+ *   - TD-15 dynamic sector blacklist (sectorOutcomes.ts) — replaces the
+ *     hardcoded PERSISTENT_LOSER_SECTORS constant. Sectors flip in/out as
+ *     the data shifts.
+ *   - TD-21 auto ticker blacklist (recentWinRate < 10% AND no medNow drift)
+ *   - TD-23 hot streak (recentWinRate ≥ 80% AND ≥ 10 alerts)
  *
  * Run this:
- *   - After every full reconstruct-radar + precision-analysis pass
- *   - Quarterly (refresh the trailing-30 window)
- *   - Manually when you want to refresh ticker classifications
- *
- * Output format (consumed by tickerStats.ts):
- *   { generatedAt, perTicker: { TICKER: { recentWinRate, recentAlertsCounted, blacklisted, hotStreak } } }
+ *   - Via scripts/refresh-stats.ts (one command that does reconstruct →
+ *     precision → bootstrap, refresh ~6 min)
+ *   - Weekly via GHA workflow (.github/workflows/weekly-stats-refresh.yml)
+ *   - Manually when investigating a specific classification change
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -33,11 +36,24 @@ const TRAILING_N = 30;         // only count last N alerts per ticker
 interface FlagWithOutcome {
     date: string;
     ticker: string;
+    sector: string;
     isWin: boolean;
     outcome: string;
     peak21d: number | null;
     forwardNow: number | null;
 }
+
+// Sector-level criteria (TD-15 dynamic). Stricter than ticker-level because
+// sectors aggregate many tickers — blacklisting a sector blocks ALL its names.
+// TWO independent paths to blacklist:
+//   Path A (noisy AND slightly losing): low win rate + small peaks + non-positive drift
+//   Path B (heavy bleed): doesn't matter the win rate, sector is losing money fast
+// Both require n ≥ 25 to avoid blacklisting niche sectors on small samples.
+const SECTOR_BLACKLIST_MIN_N = 25;
+const SECTOR_BLACKLIST_RATE = 0.20;
+const SECTOR_BLACKLIST_MAX_MEDIAN_PEAK = 0.04;
+const SECTOR_BLACKLIST_MAX_MEDIAN_NOW = 0;
+const SECTOR_BLACKLIST_HEAVY_BLEED = -0.05;  // medNow ≤ -5% → blacklist regardless of win rate
 
 function median(nums: number[]): number {
     const sorted = [...nums].sort((a, b) => a - b);
@@ -121,6 +137,76 @@ if (blacklistedCount > 0) {
         .slice(0, 15)
         .forEach(([t, v]) => console.log(`   ${t.padEnd(12)} ${v.recentAlertsCounted} alerts, ${(v.recentWinRate*100).toFixed(0)}% win`));
 }
+// ─── Sector outcomes (TD-15 dynamic blacklist source) ──────────────
+console.log('\n📊 Computing per-sector outcomes...');
+const bySector = new Map<string, FlagWithOutcome[]>();
+for (const f of data.flags) {
+    if (f.outcome === 'no_data' || !f.sector) continue;
+    const arr = bySector.get(f.sector) ?? [];
+    arr.push(f);
+    bySector.set(f.sector, arr);
+}
+
+const perSector: Record<string, {
+    alerts: number;
+    winRate: number;
+    medianPeak21d: number;
+    medianForwardNow: number;
+    blacklisted: boolean;
+}> = {};
+let sectorBlacklistedCount = 0;
+
+for (const [sector, arr] of bySector) {
+    const wins = arr.filter((x) => x.isWin).length;
+    const rate = wins / arr.length;
+    const medPeak = median(arr.map((x) => x.peak21d ?? 0));
+    const medNow = median(arr.map((x) => x.forwardNow ?? 0));
+    const pathA =
+        rate < SECTOR_BLACKLIST_RATE &&
+        medPeak < SECTOR_BLACKLIST_MAX_MEDIAN_PEAK &&
+        medNow <= SECTOR_BLACKLIST_MAX_MEDIAN_NOW;
+    const pathB = medNow <= SECTOR_BLACKLIST_HEAVY_BLEED;
+    const blacklisted =
+        arr.length >= SECTOR_BLACKLIST_MIN_N && (pathA || pathB);
+    if (blacklisted) sectorBlacklistedCount++;
+    perSector[sector] = {
+        alerts: arr.length,
+        winRate: rate,
+        medianPeak21d: medPeak,
+        medianForwardNow: medNow,
+        blacklisted,
+    };
+}
+
+const sectorOut = {
+    generatedAt: new Date().toISOString(),
+    sourceFile: path.basename(latest),
+    config: {
+        SECTOR_BLACKLIST_RATE,
+        SECTOR_BLACKLIST_MIN_N,
+        SECTOR_BLACKLIST_MAX_MEDIAN_PEAK,
+        SECTOR_BLACKLIST_MAX_MEDIAN_NOW,
+        SECTOR_BLACKLIST_HEAVY_BLEED,
+    },
+    perSector,
+};
+const sectorPath = path.join(RESULTS_DIR, 'sector-outcomes.json');
+fs.writeFileSync(sectorPath, JSON.stringify(sectorOut, null, 2));
+
+console.log(`✓ Wrote ${sectorPath}`);
+console.log(`   ${Object.keys(perSector).length} sectors classified`);
+console.log(`   ${sectorBlacklistedCount} blacklisted (TD-15 dynamic)`);
+
+console.log('\nSector breakdown (sorted by win rate):');
+console.log(`${'Sector'.padEnd(25)} ${'n'.padStart(5)} ${'WIN%'.padStart(5)} ${'medPeak'.padStart(8)} ${'medNow'.padStart(7)}  ${'STATUS'}`);
+console.log('-'.repeat(75));
+Object.entries(perSector)
+    .sort((a, b) => b[1].winRate - a[1].winRate)
+    .forEach(([s, v]) => {
+        const status = v.blacklisted ? '🔴 BLACKLIST' : v.winRate >= 0.5 ? '✓ strong' : v.winRate >= 0.3 ? '· ok' : '⚠ weak';
+        console.log(`${s.padEnd(25)} ${String(v.alerts).padStart(5)} ${(v.winRate*100).toFixed(0).padStart(4)}% ${(v.medianPeak21d*100).toFixed(1).padStart(7)}% ${(v.medianForwardNow*100).toFixed(1).padStart(6)}%  ${status}`);
+    });
+
 if (hotStreakCount > 0) {
     console.log('\nTop 10 hot streak:');
     Object.entries(perTicker)

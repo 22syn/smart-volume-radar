@@ -50,7 +50,10 @@ results/*
 # Exception: monitor-list.json IS committed daily so follow-up state survives CI runs.
 !results/monitor-list.json
 # Exception: ticker-outcomes.json drives TD-21 (auto blacklist) + TD-23 (hot streak)
-# at scan time. Refreshed quarterly via `npx tsx scripts/bootstrap-ticker-outcomes.ts`.
+# at scan time. Refreshed weekly by .github/workflows/weekly-stats-refresh.yml.
 !results/ticker-outcomes.json
+# Exception: sector-outcomes.json drives TD-15 (dynamic sector blacklist).
+# Same weekly refresh cadence as ticker-outcomes.
+!results/sector-outcomes.json
 # Finnhub fundamentals cache (TTL 7d) — never committed, never shared across machines.
 results/finnhub-cache/

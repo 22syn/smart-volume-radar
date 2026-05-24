@@ -28,23 +28,21 @@ import type {
     TradePlan,
 } from '../types/index.js';
 import type { TickerStats } from './tickerStats.js';
+import { isSectorBlacklisted } from './sectorOutcomes.js';
+import path from 'node:path';
 
-// ─── TD-15 (2026-05-23) — Persistent-Loser Sector Blacklist ─────────────
-// Sectors that the 3-month precision analysis showed are PERSISTENTLY noisy
-// (win rate ≤ 22% across 27-274 alerts even when their daily 63d median is
-// positive — TD-10 lets them through on short-term sector blips). These get
-// a hard PASS regardless of daily sector recompute. List can be tuned via
-// quarterly re-runs of scripts/precision-analysis.ts.
-const PERSISTENT_LOSER_SECTORS = new Set<string>([
-    'Banks',                // 0% win across 62 alerts
-    'Telco',                // 4% win across 27
-    'Defense',              // 5% win across 37 (distinct from "Aerospace & Defense")
-    'Finance',              // 6% win across 62
-    'real estate',          // 9% win across 35
-    'residence',            // 12% win across 41
-    'consumer basic',       // 15% win across 171 (mostly .TA names)
-    'Aerospace & Defense',  // 22% win across 274
-]);
+// Project results dir — used to read results/sector-outcomes.json at runtime
+// for the dynamic TD-15 sector blacklist. process.cwd() is the project root
+// when running via npm/tsx; tests don't read this file (sectorOutcomes falls
+// back to its hardcoded list when the file is missing).
+const RESULTS_DIR_CS = path.join(process.cwd(), 'results');
+
+// ─── TD-15 (2026-05-23) — Persistent-Loser Sector Blacklist (DYNAMIC) ──
+// Originally a hardcoded constant. Now loaded from `results/sector-outcomes.json`
+// at runtime (see src/utils/sectorOutcomes.ts), which is refreshed weekly via
+// scripts/bootstrap-ticker-outcomes.ts → automated GHA workflow. Sectors flip
+// in/out of the blacklist as the data shifts. Hardcoded fallback in sectorOutcomes.ts
+// kicks in if the file is missing.
 
 // ─── TD-18 (2026-05-23) — Cleantech Utility Soft-Action Blacklist ───────
 // US regulated utilities + sector ETFs that constantly trigger CAUTION_NO_VOL
@@ -291,10 +289,10 @@ export function determineAction(
         return 'PASS';
     }
 
-    // ─── TD-15: Persistent-loser sector blacklist ─────────────────────
-    // Even when the daily sector median flips positive on a one-day blip,
-    // these sectors have been persistently noisy across 3 months. Hard-block.
-    if (stock.sector && PERSISTENT_LOSER_SECTORS.has(stock.sector)) {
+    // ─── TD-15: Persistent-loser sector blacklist (DYNAMIC) ───────────
+    // Reads results/sector-outcomes.json (auto-refreshed weekly). Fallback
+    // hardcoded list applies if the file is missing.
+    if (isSectorBlacklisted(RESULTS_DIR_CS, stock.sector)) {
         return 'PASS';
     }
 

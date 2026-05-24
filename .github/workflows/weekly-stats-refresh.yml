@@ -1,0 +1,78 @@
+name: Weekly Stats Refresh
+
+# Regenerates results/ticker-outcomes.json + results/sector-outcomes.json
+# every week from the latest 63 trading days of data, then commits + pushes.
+# These files drive:
+#   - TD-15 dynamic sector blacklist  (sectorOutcomes.ts → championScore.ts)
+#   - TD-21 per-ticker auto blacklist (tickerStats.ts → championScore.ts)
+#   - TD-23 hot-streak badge          (tickerStats.ts → telegramBot.ts)
+#
+# Without this, the lists drift stale — sectors that recovered would stay
+# blocked, and tickers that turned around wouldn't be re-included.
+#
+# Cadence: Saturday 10:00 UTC (= 13:00 IDT).
+#   - After all of Friday's market data has settled
+#   - Before Sunday/Monday so the new files are live for Monday's scan
+#   - Doesn't compete with the daily scan cron (20:15 UTC weekdays)
+
+concurrency:
+  group: weekly-stats-refresh
+  cancel-in-progress: false
+
+on:
+  schedule:
+    - cron: '0 10 * * 6'  # Saturday 10:00 UTC
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Refresh stats (reconstruct + precision + bootstrap)
+        env:
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+        run: npx tsx scripts/refresh-stats.ts --days 63
+
+      - name: Commit refreshed outcomes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add results/ticker-outcomes.json results/sector-outcomes.json
+          if git diff --staged --quiet; then
+            echo "No changes to commit — outcomes unchanged this week"
+          else
+            git commit -m "refresh: stats outcomes (weekly auto-refresh $(date -u +%Y-%m-%d))"
+            git pull --rebase origin main
+            git push origin main
+          fi
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_CHAT_ID}" \
+            -d "text=⚠️ Weekly stats refresh failed — see GHA logs. TD-15/21/23 lists may be stale."
