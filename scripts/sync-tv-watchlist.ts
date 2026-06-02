@@ -139,6 +139,32 @@ function saveExchangeRegistry(reg: Record<string, string>): void {
     fs.writeFileSync(EXCHANGE_REGISTRY_PATH, JSON.stringify(reg, null, 2));
 }
 
+// Prune queue — written by the watchlist health-check (telegram-mcp/
+// watchlist-health.js) with tickers that broke down (≥8% below signal entry).
+// We consume it here: any queued ticker that is currently in TV and is NOT in
+// today's fresh target (i.e. the radar did not re-flag it) gets removed.
+// Consumed entries are cleared so a ticker is only auto-removed once.
+const PRUNE_QUEUE_PATH = path.join(os.homedir(), '.cache', 'svr-tv-sync', 'prune-queue.json');
+interface PruneEntry { ticker: string; reason: string; queuedAt: string }
+function loadPruneQueue(): Record<string, PruneEntry[]> {
+    if (!fs.existsSync(PRUNE_QUEUE_PATH)) return {};
+    try {
+        return JSON.parse(fs.readFileSync(PRUNE_QUEUE_PATH, 'utf8'));
+    } catch {
+        return {};
+    }
+}
+function clearPruneEntries(watchlistName: string, removedKeys: string[]): void {
+    const q = loadPruneQueue();
+    if (!q[watchlistName]) return;
+    q[watchlistName] = q[watchlistName].filter(
+        (e) => !removedKeys.includes(e.ticker.split(':').pop()!.toUpperCase())
+    );
+    if (q[watchlistName].length === 0) delete q[watchlistName];
+    fs.mkdirSync(path.dirname(PRUNE_QUEUE_PATH), { recursive: true });
+    fs.writeFileSync(PRUNE_QUEUE_PATH, JSON.stringify(q, null, 2));
+}
+
 // ─── Sync targets (the default 4-list rotation) ─────────────────────
 interface SyncTarget {
     file: string;
@@ -629,13 +655,26 @@ async function syncWatchlist(
 
     const toAdd = target.filter((s) => !currentSet.has(normalize(s)));
     const staleInTv = findStaleTickers(historyPath, current, PRUNE_AFTER_DAYS);
+
+    // Health-check prune queue — broke-down tickers flagged by watchlist-health.js.
+    // Remove only those that are (a) currently in TV and (b) NOT re-flagged today
+    // (if the radar re-surfaced it as a fresh signal, keep it).
+    const pruneQueueForList = (loadPruneQueue()[watchlistName] ?? [])
+        .map((e) => e.ticker.split(':').pop()!.toUpperCase());
+    const healthPrune = current.filter(
+        (s) => pruneQueueForList.includes(normalize(s)) && !targetSet.has(normalize(s))
+    );
+
     const toRemove = REPLACE
         ? current.filter((s) => !targetSet.has(normalize(s)))
-        : staleInTv;
+        : [...new Set([...staleInTv, ...healthPrune])];
 
     log(`→ to add:    ${toAdd.length} (${toAdd.join(', ') || '—'})`);
     if (PRUNE_AFTER_DAYS > 0 && staleInTv.length > 0) {
         log(`→ stale (>${PRUNE_AFTER_DAYS}d unseen): ${staleInTv.length} (${staleInTv.join(', ')})`);
+    }
+    if (healthPrune.length > 0) {
+        log(`→ health-prune (broke down): ${healthPrune.length} (${healthPrune.join(', ')})`);
     }
     if (REPLACE) {
         log(`→ to remove (--replace): ${toRemove.length} (${toRemove.join(', ') || '—'})`);
@@ -656,18 +695,23 @@ async function syncWatchlist(
     }
 
     if (toRemove.length > 0) {
-        log(`🗑️  removing ${toRemove.length} stale/replace symbol(s)...`);
+        log(`🗑️  removing ${toRemove.length} stale/replace/broke-down symbol(s)...`);
         let removed = 0;
+        const removedKeys: string[] = [];
         for (const s of toRemove) {
             const ok = await removeSymbol(page, s);
             if (ok) {
                 removed++;
+                removedKeys.push(normalize(s));
                 log(`  − ${s}`);
             } else {
                 log(`  ⚠️ could not remove ${s} (selector/menu issue)`);
             }
         }
         log(`✓ removed ${removed}/${toRemove.length} symbols`);
+        // Clear consumed prune-queue entries so each broke-down ticker is
+        // auto-removed at most once.
+        if (healthPrune.length > 0) clearPruneEntries(watchlistName, removedKeys);
     }
 
     // Record the post-sync expected contents into the state snapshot.
