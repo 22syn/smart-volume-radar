@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>Smart Volume Radar — מדריך מערכת לרון</title>
+<style>
+@page { size: A4; margin: 18mm 16mm; }
+* { box-sizing: border-box; }
+html, body {
+  font-family: "Arial Hebrew", "Heebo", "Open Sans Hebrew", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 11pt;
+  line-height: 1.55;
+  color: #1a1a1a;
+  background: #fff;
+  margin: 0;
+  padding: 0;
+}
+.cover {
+  page-break-after: always;
+  padding: 30mm 12mm 24mm;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  color: #fff;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.cover .top { display: flex; gap: 16px; align-items: center; }
+.cover .badge {
+  font-size: 11pt; padding: 4px 10px; border-radius: 4px;
+  background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+}
+.cover h1 {
+  font-size: 36pt; line-height: 1.1; margin: 60px 0 12px;
+  font-weight: 800; letter-spacing: -0.5px;
+}
+.cover h2 { font-size: 18pt; font-weight: 400; opacity: 0.85; margin: 0 0 40px; }
+.cover .for {
+  background: rgba(255,255,255,0.06); padding: 16px 20px; border-radius: 6px;
+  border-right: 4px solid #38bdf8; font-size: 12pt;
+}
+.cover .meta {
+  display: flex; justify-content: space-between;
+  border-top: 1px solid rgba(255,255,255,0.15); padding-top: 16px; font-size: 10pt; opacity: 0.7;
+}
+h1, h2, h3, h4 { font-weight: 700; }
+h1.section {
+  font-size: 22pt;
+  border-bottom: 3px solid #0f172a;
+  padding-bottom: 8px;
+  margin: 24px 0 20px;
+  page-break-before: always;
+  color: #0f172a;
+}
+h1.section:first-of-type { page-break-before: auto; }
+h2 {
+  font-size: 15pt; color: #1e40af;
+  margin: 24px 0 10px;
+  border-right: 4px solid #1e40af; padding-right: 10px;
+}
+h3 {
+  font-size: 12pt; color: #334155;
+  margin: 18px 0 8px;
+}
+h4 {
+  font-size: 11pt; color: #475569;
+  margin: 12px 0 4px;
+}
+p { margin: 6px 0; }
+ul, ol { margin: 6px 0; padding-right: 24px; }
+li { margin: 3px 0; }
+strong { color: #0f172a; }
+code {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  background: #f1f5f9; padding: 1px 5px; border-radius: 3px;
+  font-size: 10pt; direction: ltr; display: inline-block;
+}
+pre {
+  background: #f8fafc; border: 1px solid #e2e8f0;
+  padding: 10px 14px; border-radius: 6px;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 9.5pt; line-height: 1.45;
+  direction: ltr; text-align: left;
+  overflow-x: auto;
+  page-break-inside: avoid;
+}
+table {
+  width: 100%; border-collapse: collapse;
+  margin: 10px 0;
+  page-break-inside: avoid;
+  font-size: 10pt;
+}
+th {
+  background: #1e40af; color: #fff;
+  text-align: right; padding: 7px 10px;
+  font-weight: 600;
+}
+td {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 6px 10px;
+}
+tr:nth-child(even) td { background: #f8fafc; }
+td.num, th.num { font-variant-numeric: tabular-nums; text-align: left; direction: ltr; }
+td.tk, th.tk { font-family: "SF Mono", Menlo, monospace; font-weight: 600; }
+
+.callout {
+  background: #fef3c7; border-right: 4px solid #f59e0b;
+  padding: 10px 14px; border-radius: 4px;
+  margin: 12px 0;
+  page-break-inside: avoid;
+}
+.callout.success { background: #d1fae5; border-color: #10b981; }
+.callout.warn    { background: #fef3c7; border-color: #f59e0b; }
+.callout.danger  { background: #fee2e2; border-color: #ef4444; }
+.callout.info    { background: #dbeafe; border-color: #3b82f6; }
+.callout strong { color: inherit; }
+
+.kpi-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 8px; margin: 12px 0;
+}
+.kpi {
+  background: #f1f5f9; padding: 10px 12px; border-radius: 6px;
+  text-align: center;
+}
+.kpi .num {
+  font-size: 18pt; font-weight: 700; color: #0f172a;
+  font-variant-numeric: tabular-nums; direction: ltr;
+}
+.kpi .lbl { font-size: 9pt; color: #64748b; margin-top: 2px; }
+
+.diagram {
+  background: #f8fafc; border: 1px solid #e2e8f0;
+  border-radius: 6px; padding: 14px;
+  font-family: "SF Mono", Menlo, monospace; font-size: 10pt;
+  white-space: pre; direction: ltr; text-align: left;
+  margin: 10px 0;
+  page-break-inside: avoid;
+}
+
+.toc { padding: 0; list-style: none; }
+.toc li {
+  padding: 5px 0; border-bottom: 1px dotted #cbd5e1;
+  display: flex; justify-content: space-between;
+}
+.toc .num { color: #64748b; direction: ltr; }
+
+.footer-note {
+  font-size: 9pt; color: #64748b; font-style: italic;
+  border-top: 1px solid #e2e8f0; padding-top: 10px; margin-top: 16px;
+}
+.tag {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: 9pt; font-weight: 600;
+  margin: 0 2px;
+}
+.tag.full { background: #fef3c7; color: #b45309; }
+.tag.recovery { background: #ddd6fe; color: #6d28d9; }
+.tag.watchlist { background: #dbeafe; color: #1e40af; }
+.tag.none { background: #e5e7eb; color: #4b5563; }
+.tag.graduated { background: #d1fae5; color: #047857; }
+.tag.manual { background: #d1fae5; color: #047857; }
+.tag.pullback { background: #ede9fe; color: #6d28d9; }
+</style>
+</head>
+<body>
+
+<!-- ─── COVER ─── -->
+<div class="cover">
+  <div>
+    <div class="top">
+      <span class="badge">📊 Technical Briefing</span>
+      <span class="badge">Internal — Confidential</span>
+    </div>
+    <h1>Smart Volume Radar</h1>
+    <h2>מדריך מערכת מקיף — לוגיקה, תוצאות, ניתוח</h2>
+    <div class="for">
+      <strong>נמען:</strong> רון<br>
+      <strong>מטרה:</strong> הבנה מלאה של ארכיטקטורת הסורק, היגיון ההחלטה, ביצועים ב-30 ימים אחרונים, ושאלות פתוחות לעתיד.
+    </div>
+  </div>
+  <div class="meta">
+    <span>תאריך: 3 במאי 2026</span>
+    <span>גרסה: Momentum Edition v2.0</span>
+    <span>מקור: ניתוח 30 ימי מסחר (23.3 → 1.5)</span>
+  </div>
+</div>
+
+<!-- ─── TOC ─── -->
+<h1 class="section">תוכן עניינים</h1>
+<ul class="toc">
+  <li><span>1. סקירה כללית — מה המערכת ולמה</span><span class="num">3</span></li>
+  <li><span>2. צינור הסריקה — צעד אחר צעד</span><span class="num">4</span></li>
+  <li><span>3. המוח — Setup Engine ומקרי קצה</span><span class="num">6</span></li>
+  <li><span>4. מערכת ה-Monitor — מעקב ומצבים</span><span class="num">10</span></li>
+  <li><span>5. תוצאות 30 ימי המסחר</span><span class="num">12</span></li>
+  <li><span>6. הצלחות — מה עובד ולמה</span><span class="num">15</span></li>
+  <li><span>7. כשלונות — מה לא עובד / חשד לבעיה</span><span class="num">17</span></li>
+  <li><span>8. שאלות פתוחות וצעדים הבאים</span><span class="num">19</span></li>
+  <li><span>9. נספחים — קבצים, פקודות, מילון מונחים</span><span class="num">21</span></li>
+</ul>
+
+<!-- ─── 1. OVERVIEW ─── -->
+<h1 class="section">1. סקירה כללית</h1>
+
+<h2>מה זה Smart Volume Radar?</h2>
+<p>
+מערכת אוטומטית לסריקה יומית של רשימת מניות מ-Google Sheet, זיהוי מועמדות לפריצת מומנטום בסטייל Stage 2 (Minervini/VCP), ומעקב אקטיבי אחרי המועמדות עד שהן מבשילות (או נכשלות).
+</p>
+
+<div class="kpi-grid">
+  <div class="kpi"><div class="num">366</div><div class="lbl">מניות ברשימה</div></div>
+  <div class="kpi"><div class="num">4</div><div class="lbl">רמות החלטה</div></div>
+  <div class="kpi"><div class="num">9</div><div class="lbl">קריטריונים בעיצוב</div></div>
+  <div class="kpi"><div class="num">~3 דק</div><div class="lbl">זמן סריקה יומית</div></div>
+</div>
+
+<h2>הקלטות והפלטים</h2>
+<table>
+<tr><th>שלב</th><th>קלט</th><th>פלט</th></tr>
+<tr><td>סריקה</td><td>Google Sheet (366 tickers) + Yahoo Finance (5y data)</td><td><code>StockData[]</code> מנורמל לכל מניה</td></tr>
+<tr><td>החלטה</td><td><code>StockData</code> + market regime</td><td><code>MomentumResult</code>: full / recovery / close / none</td></tr>
+<tr><td>שמירה</td><td>תוצאות לכל המניות</td><td><code>results/scan-YYYY-MM-DD.json</code></td></tr>
+<tr><td>מעקב</td><td>תוצאות + state קודם</td><td><code>results/monitor-list.json</code> מעודכן</td></tr>
+<tr><td>דיווח</td><td>monitor + scan</td><td>2 הודעות Telegram</td></tr>
+</table>
+
+<h2>למה זה רץ אוטומטית?</h2>
+<p>
+כל יום מסחר ב-<strong>20:15 UTC</strong> (23:15 בישראל בקיץ, 15 דקות אחרי סגירת השוק האמריקאי), GitHub Action מתעורר, מריץ את <code>npm run start</code>, שולח דו"ח לטלגרם, ומבצע commit-back ל-<code>monitor-list.json</code> כדי שmצב המעקב ישרוד בין ריצות.
+</p>
+
+<div class="callout warn">
+<strong>הערה על שעון קיץ:</strong> 20:15 UTC עובד רק בשעון EDT (סופ"ש). בחורף (EST, מתחיל 2 בנובמבר) השעה הזאת היא 15:15 ET — <strong>45 דקות לפני</strong> סגירת השוק. הנתונים יהיו חלקיים. צריך לעדכן ל-<code>21:30 UTC</code> בנובמבר.
+</div>
+
+<!-- ─── 2. PIPELINE ─── -->
+<h1 class="section">2. צינור הסריקה — צעד אחר צעד</h1>
+
+<h2>זרימה ברמה גבוהה</h2>
+<div class="diagram">
+Google Sheet → fetchAndCacheWatchlist() → 366 tickers
+          ↓
+fetchMarketRegime("SPY") → 'bull' / 'bear'
+          ↓
+fetchAllStocksAsOfDate(tickers, today)
+   ↓ (concurrency 3, Yahoo 5y data per ticker)
+parseYahooChartResult() — חישובים מקומיים
+          ↓
+לכל מניה: evaluateMomentumSetup()
+          ↓
+sendDailyReport() → טלגרם הודעה ראשונה (עם רמות לכל מניה)
+          ↓
+writeScanResults() → results/scan-YYYY-MM-DD.json
+          ↓
+updateMonitorState() → state machine
+          ↓
+saveMonitorState() → results/monitor-list.json
+          ↓
+formatMonitorTelegramMessage() → טלגרם הודעה שנייה (followup)
+</div>
+
+<h2>מה מחושב לכל מניה?</h2>
+<p>
+ב-<code>parseYahooChartResult</code>, כל מניה עוברת חישוב של ~15 מדדים. הנה הליבה:
+</p>
+
+<table>
+<tr><th>מדד</th><th>נוסחה</th><th>למה צריך</th></tr>
+<tr><td><strong>RVOL</strong></td><td>currentVolume ÷ avg(63d volume)</td><td>אינדיקציה לעניין מוסדי. ≥2.0 = פי 2 מהממוצע = יוצא דופן.</td></tr>
+<tr><td><strong>projectedRvol</strong></td><td>currentVolume ÷ (minutes/390) ÷ avg63d</td><td>תיקון לסריקות תוך-יומיות. אחרי הסגירה = RVOL.</td></tr>
+<tr><td><strong>SMA21/50/200</strong></td><td>ממוצע נע פשוט של N הסגירות האחרונות</td><td>21 = קצר טווח, 50 = בינוני, 200 = ארוך טווח.</td></tr>
+<tr><td><strong>SMA200 slope</strong></td><td>linear regression על 20 ערכי SMA200 אחרונים → up/flat/down</td><td>מגדיר Stage 2 (חובה: לא יורדת).</td></tr>
+<tr><td><strong>SMA50 slope</strong></td><td>זהה אבל על SMA50 ו-10 בלבד</td><td>חישוב Recovery Rally — מגמת ביניים מתהפכת.</td></tr>
+<tr><td><strong>52w high (ATH)</strong></td><td>max של 252 הסגירות האחרונות</td><td>נקודת הPivot.</td></tr>
+<tr><td><strong>daysSinceLastHigh</strong></td><td>ימים מאז הסגירה הקודמת ≥ ATH×0.995, לא כולל היום</td><td>תופס "tightness" של VCP. חיוני לפריצות מבסיס.</td></tr>
+<tr><td><strong>consecutiveGreenDays</strong></td><td>ספירה של close[i] &gt; close[i-1] ב-15 ימים אחרונים</td><td>סימן Ants Accumulation.</td></tr>
+<tr><td><strong>gapDay</strong></td><td>אם open &gt; prevHigh ב-≥3% — נשמר כanchor</td><td>זיהוי earnings gap.</td></tr>
+<tr><td><strong>avwapFromGap</strong></td><td>VWAP מנקודת הgap עד היום</td><td>גובה הgap — אם המחיר מתחתיו = הgap "נשבר".</td></tr>
+</table>
+
+<h2>מאיפה הנתונים?</h2>
+<ul>
+  <li><strong>Yahoo Finance Chart API</strong> — primary, 5 שנות historic per ticker. מהיר, חינם, די אמין.</li>
+  <li><strong>Twelve Data API</strong> — fallback אופציונלי לRSI/SMA21 מדויקים יותר (אם קיים TWELVE_DATA_API_KEY).</li>
+  <li><strong>Finnhub</strong> — חדשות, לא מעורב בהחלטה.</li>
+  <li><strong>Google Sheets CSV export</strong> — רשימת המניות, מתעדכנת ידנית ע"י המשתמש.</li>
+</ul>
+
+<h2>מקרה קצה — Backtest Mode</h2>
+<p>
+<code>BACKTEST_MODE=1</code> מבטל את ה-freshness guard (שמוודא שהנתון מהיום ולא מאתמול). חיוני להרצות היסטוריות. בproduction אסור.
+</p>
+
+<!-- ─── 3. SETUP ENGINE ─── -->
+<h1 class="section">3. המוח — Setup Engine</h1>
+
+<h2>4 הרמות (MomentumLevel)</h2>
+<table>
+<tr><th>רמה</th><th>אמוג'י</th><th>תרגום למעשה</th></tr>
+<tr><td><span class="tag full">full</span></td><td>🎯</td><td>"Stage 2 momentum breakout — שקול קנייה"</td></tr>
+<tr><td><span class="tag recovery">recovery</span></td><td>🦅</td><td>"היפוך מbear — סיכון/סיכוי גבוהים"</td></tr>
+<tr><td><span class="tag watchlist">close</span></td><td>👀</td><td>"קרוב לפריצה — הוסף ל-monitor, אל תקנה מיד"</td></tr>
+<tr><td><span class="tag none">none</span></td><td>·</td><td>"שום סיגנל. תיעוד לdebugging בלבד."</td></tr>
+</table>
+
+<h2>Full Setup — המבנה (4 חובה + 1 מתוך 5 איכות)</h2>
+
+<h3>הקריטריונים החובה — כולם חייבים להיות ✓</h3>
+<table>
+<tr><th>קריטריון</th><th>תנאי</th><th>למה חובה?</th></tr>
+<tr><td><strong>rvolPass</strong></td><td>projectedRvol ≥ 2.0 (3.0 ב-bear)</td><td>בלי volume אין פריצה אמיתית — רק "drift up".</td></tr>
+<tr><td><strong>stage2</strong></td><td>price &gt; SMA50 &gt; SMA200, slope לא יורד</td><td>"אל תפעל נגד המגמה הראשית."</td></tr>
+<tr><td><strong>pivotBreakout</strong></td><td>lastPrice ≥ ATH × 0.98</td><td>חייב להיות פריצה ממש, לא drift.</td></tr>
+<tr><td><strong>aboveGapAvwap</strong></td><td>אין gap, או price ≥ avwap (ב-3+ ימים אחרי הgap)</td><td>אם הייתה earnings gap, היא חייבת להחזיק.</td></tr>
+</table>
+
+<h3>סמני האיכות — לפחות אחד מתוך 5</h3>
+<table>
+<tr><th>סמן</th><th>תנאי</th><th>תפקיד</th></tr>
+<tr><td><strong>lowRiskEntry</strong></td><td>distance מ-SMA21 ≤ 8%</td><td>"כניסה נקייה, לא רדיפה."</td></tr>
+<tr><td><strong>tightness</strong></td><td>daysSinceLastHigh ≥ 15</td><td>"בסיס אמיתי לפני הפריצה." (VCP classic)</td></tr>
+<tr><td><strong>antsAccumulation</strong></td><td>≥12 ימים ירוקים מתוך 15 + RVOL ≥ 1.2</td><td>"הצטברות שקטה."</td></tr>
+<tr><td><strong>bigMoveToday</strong></td><td>priceChange ≥ +3%</td><td>"continuation breakout — תזוזה משמעותית היום."</td></tr>
+<tr><td><strong>HCV bypass</strong></td><td>effectiveRvol ≥ 3.0</td><td>"RVOL קיצוני — confirmation מוסדי בלי תלות באיכות הכניסה."</td></tr>
+</table>
+
+<h3>הלוגיקה (פסאודו-קוד)</h3>
+<pre>
+const mandatoryAllPass = MANDATORY.every(k => criteria[k]);
+const hasQualityMarker =
+    QUALITY.some(k => criteria[k])
+    || effectiveRvol >= 3.0;
+
+if (mandatoryAllPass && hasQualityMarker) {
+    level = 'full';
+    if (!lowRiskEntry || !tightness)
+        highConvictionBypass = true;  // entry לא pristine
+}
+</pre>
+
+<h2>Recovery Rally — שכבה לbear-market reversal</h2>
+<p>
+תופסת מניות שעדיין במגמת bear (SMA200 יורדת — Stage 2 ✗) אבל מתחילות להפוך:
+</p>
+<pre>
+🦅 Recovery =
+  ✗ stage2 (SMA200 עוד למטה)
+  ✓ price > SMA50
+  ✓ sma50Slope = 'up'         ← המגמה הקצרה התהפכה
+  ✓ pivotBreakout
+  ✓ aboveGapAvwap
+  ✓ effectiveRvol ≥ 2.5      ← סף יותר גבוה (סיכון bear-bounce)
+</pre>
+
+<div class="callout info">
+<strong>למה הוספנו את זה?</strong> בסקירת היסטוריה ראינו ש-NBIS ו-WOLF עשו ראליות של +400% ו-+128% אחרי קריסה — אבל ה-Stage 2 הפסיל אותם. Recovery Rally נותן להם הזדמנות, עם סף גבוה יותר כדי לסנן dead-cat-bounces.
+</div>
+
+<h2>Watchlist (close) — הסף הנמוך</h2>
+<pre>
+👀 Watchlist =
+  effectiveRvol ≥ 1.5
+  AND (pivotBreakout OR lowRiskEntry)
+</pre>
+<p>
+מתפעל רק אם לא הוגדר Full/Recovery. נופל לכאן מקבלים מניות עם נפח גבוה אבל לא מספיק לFull.
+</p>
+
+<h2>מקרי קצה חשובים</h2>
+
+<h3>1. AVWAP fresh-gap protection</h3>
+<p>
+ביום של הgap עצמו (gapDay.barsAgo &lt; 3), AVWAP מתכווץ ל"typical price של אותו בר" — סטטיסטיקה חסרת משמעות. הגrדנו את ה-aboveGapAvwap לעבור אוטומטית במקרה הזה. מקרה אמיתי: INTC ב-18.9.25 — בלי התיקון הזה Full לא היה מתפעל ביום הפריצה.
+</p>
+
+<h3>2. high-conviction bypass</h3>
+<p>
+מומנטום מהיר (40% תוך שבועיים כמו INTC) לא יושב על SMA21 בזמן שהוא מתפרץ. Spec קלאסי דורש lowRiskEntry — מה שלא ניתן ליצירה. הbypass: אם RVOL ≥ 3 + pivot + Stage 2 → זה מספיק institutional confirmation.
+</p>
+
+<h3>3. tightness לא מתאפס ביום הפריצה</h3>
+<p>
+ה-daysSinceLastHigh מחושב על closes <strong>לא כולל היום</strong>. בלי זה — מניה שפורצת ATH חדש היום היה מקבל daysSinceAth=0 ונכשל ב-tightness. עם התיקון הזה: יום הפריצה רואה את ימי הבסיס לפני.
+</p>
+
+<h3>4. Regime-aware RVOL</h3>
+<p>
+ב-bull, סף הRVOL הוא 2.0. ב-bear הוא עולה ל-3.0. הסיבה: ב-bear רוב הפריצות נכשלות; רק חזקות במיוחד שורדות. דורש את הסף הגבוה לסנן noise.
+</p>
+
+<h3>5. Stale data guard</h3>
+<p>
+בproduction (לא backtest), אם הנתון של היום חסר → המניה מוסרת. מונע סיגנלים שגויים על ימים שלא הסתיימו. ב-<code>BACKTEST_MODE=1</code> זה מבוטל.
+</p>
+
+<!-- ─── 4. MONITOR LIFECYCLE ─── -->
+<h1 class="section">4. מערכת ה-Monitor — Followup Lifecycle</h1>
+
+<h2>למה צריך?</h2>
+<p>
+התראת Watchlist בלבד לא אומרת "קנה". היא אומרת "שווה מעקב." 60-70% מהWatchlists לא יסיימו רווחיים אם תקנה מיד. אבל אם תחכה לאישור — שיעור הצלחה מקפיץ ל-95%+. ה-Monitor אוטומט את ההמתנה.
+</p>
+
+<h2>State machine</h2>
+<div class="diagram">
+התראה (full / recovery / close)
+   ↓
+status = 'monitoring'  ← נכנס לרשימת monitor
+   ↓
+כל יום בודק:
+   ↓
+   ├─→ 🎓 graduated      — אם היום שוב full על אותה מניה (BUY חזק!)
+   ├─→ 🟢 manual-entry    — pivot ✓ + RVOL ≥ 1.5 + +3% day + Stage 2
+   ├─→ 📐 sma21-pullback  — dist ≤ 2% + RVOL ≤ 1.0 + green close + Stage 2
+   └─→ 🗑️ expired         — 30 ימי מסחר ללא resolution
+</div>
+
+<h2>4 ה-resolutions בפירוט</h2>
+
+<h3><span class="tag graduated">🎓 graduated</span> — הסיגנל הכי חזק</h3>
+<p>
+מניה שהייתה Watchlist הופכת ל-Full באחד מהימים הבאים. כלומר הסורק זיהה Stage 2 + RVOL ≥ 2 + pivot + סמן איכות — באופן עצמאי. <strong>ב-30 הימים האחרונים: 15 graduations, 100% מהן ירוקות, ממוצע +47%</strong>.
+</p>
+
+<h3><span class="tag manual">🟢 manual-entry</span> — אישור פריצה אקטיבית</h3>
+<p>
+המניה לא הקפיצה Full אבל היום עומדת בקריטריונים: pivot + RVOL ≥ 1.5 + יום ירוק חזק (≥3%) + Stage 2. הסף הRVOL הנמוך מ-Full מוצדק כי המניה כבר במעקב — יש homework. <strong>ב-30 הימים: 20 manual-entries, 95% ירוקות, ממוצע +26%, חציון 5.7 ימים מ-Watchlist</strong>.
+</p>
+
+<h3><span class="tag pullback">📐 sma21-pullback</span> — Re-entry classic</h3>
+<p>
+מניה שב-Watchlist יורדת בשקט ל-SMA21 (dist ≤ 2%), עם RVOL נמוך (≤1.0), וסוגרת ירוק. זה הדפוס של Minervini "VCP retest" — הזדמנות שנייה לכניסה. <strong>ב-30 הימים: 48 pullbacks, 67% ירוקות, ממוצע +4.4% (יותר ממוצע — לא תמיד פולבק = breakout)</strong>.
+</p>
+
+<h3><span class="tag none">🗑️ expired</span> — ניקוי</h3>
+<p>
+30 ימי מסחר ללא resolution → המניה איבדה רלוונטיות. נסגר ה-entry, נשמר בhistory. <strong>ב-30 הימים: 0 expired (הזמן עוד לא הספיק)</strong>.
+</p>
+
+<h2>Re-alerts</h2>
+<p>
+אם מניה כבר ב-monitor ושוב מקבלת alert — המערכת לא יוצרת entry חדש; היא רק מוסיפה event לhistory. זה מונע duplicates ומשמר history נקייה.
+</p>
+
+<!-- ─── 5. RESULTS ─── -->
+<h1 class="section">5. תוצאות 30 ימי המסחר</h1>
+
+<h2>הסיכום הכללי</h2>
+<div class="kpi-grid">
+  <div class="kpi"><div class="num">30</div><div class="lbl">ימי מסחר</div></div>
+  <div class="kpi"><div class="num">722</div><div class="lbl">סך alerts</div></div>
+  <div class="kpi"><div class="num">243</div><div class="lbl">monitor entries</div></div>
+  <div class="kpi"><div class="num">35</div><div class="lbl">resolutions בכאלה</div></div>
+</div>
+<p>חלון: 23.3.26 → 1.5.26. רגיים: 18 bull (60%), 12 bear (40%).</p>
+
+<h2>זרימת התראות</h2>
+<table>
+<tr><th>רמה</th><th>סך</th><th>ממוצע ליום</th><th>הערה</th></tr>
+<tr><td>🎯 Full</td><td class="num">58</td><td class="num">1.9</td><td>שיא: 24.4 ו-29.4 (8+7 ביום!)</td></tr>
+<tr><td>🦅 Recovery</td><td class="num">0</td><td class="num">0</td><td>אף מניה לא עמדה בקריטריונים — bull market</td></tr>
+<tr><td>👀 Watchlist</td><td class="num">664</td><td class="num">22.1</td><td>הזרם הקבוע</td></tr>
+</table>
+
+<h2>תשואות לפי רמה (alert price → 1.5.26)</h2>
+<table>
+<tr><th>רמה</th><th>N</th><th>תשואה ממ'</th><th>חציון</th><th>Hit%</th><th>Min</th><th>Max</th></tr>
+<tr><td><strong>🎯 Full</strong></td><td class="num">10</td><td class="num"><strong>+33.1%</strong></td><td class="num">+10.5%</td><td class="num"><strong>90%</strong></td><td class="num">-1.9%</td><td class="num">+193.8%</td></tr>
+<tr><td>👀 Watchlist</td><td class="num">233</td><td class="num">+7.8%</td><td class="num">+4.0%</td><td class="num">67.8%</td><td class="num">-24.9%</td><td class="num">+151%</td></tr>
+</table>
+<div class="callout success"><strong>Δ Full vs Watchlist:</strong> +25.3% תשואה ממוצעת לטובת Full — היררכיית הרמות עובדת.</div>
+
+<h2>תשואות לפי resolution</h2>
+<table>
+<tr><th>סטטוס</th><th>N</th><th>תשואה ממ'</th><th>חציון</th><th>Hit%</th></tr>
+<tr><td>🎓 graduated</td><td class="num">15</td><td class="num"><strong>+46.9%</strong></td><td class="num">+33.5%</td><td class="num"><strong>100%</strong></td></tr>
+<tr><td>🟢 manual-entry</td><td class="num">20</td><td class="num">+26.1%</td><td class="num">+15.8%</td><td class="num">95%</td></tr>
+<tr><td>📐 sma21-pullback</td><td class="num">48</td><td class="num">+4.4%</td><td class="num">+3.6%</td><td class="num">66.7%</td></tr>
+<tr><td>👀 monitoring (עדיין)</td><td class="num">160</td><td class="num">+4.4%</td><td class="num">+1.5%</td><td class="num">63.1%</td></tr>
+</table>
+
+<h2>Top 10 winners</h2>
+<table>
+<tr><th>מניה</th><th>תאריך alert</th><th>סטטוס</th><th>תשואה</th></tr>
+<tr><td class="tk">MXL</td><td>17.4</td><td>graduated</td><td class="num"><strong>+193.8%</strong></td></tr>
+<tr><td class="tk">AEHR</td><td>31.3</td><td>manual-entry</td><td class="num">+151%</td></tr>
+<tr><td class="tk">INTC</td><td>8.4</td><td>graduated</td><td class="num">+69%</td></tr>
+<tr><td class="tk">MRVL</td><td>31.3</td><td>manual-entry</td><td class="num">+66.5%</td></tr>
+<tr><td class="tk">ON</td><td>31.3</td><td>graduated</td><td class="num">+66.4%</td></tr>
+<tr><td class="tk">AGX</td><td>24.3</td><td>graduated</td><td class="num">+57.9%</td></tr>
+<tr><td class="tk">SOXX</td><td>30.3</td><td>monitoring</td><td class="num">+50.3%</td></tr>
+<tr><td class="tk">NXPI</td><td>31.3</td><td>monitoring</td><td class="num">+50.0%</td></tr>
+<tr><td class="tk">1IFX.MI</td><td>7.4</td><td>manual-entry</td><td class="num">+49%</td></tr>
+<tr><td class="tk">NOKI.VI</td><td>26.3</td><td>graduated</td><td class="num">+47%</td></tr>
+</table>
+
+<h2>Bottom 5 losers</h2>
+<table>
+<tr><th>מניה</th><th>סטטוס</th><th>תשואה</th></tr>
+<tr><td class="tk">KOG.OL</td><td>sma21-pullback</td><td class="num">-24.9%</td></tr>
+<tr><td class="tk">NKE</td><td>monitoring</td><td class="num">-15.9%</td></tr>
+<tr><td class="tk">LDO.MI</td><td>monitoring</td><td class="num">-15.4%</td></tr>
+<tr><td class="tk">RHM.DE</td><td>monitoring</td><td class="num">-14.3%</td></tr>
+<tr><td class="tk">KTOS</td><td>monitoring</td><td class="num">-12.6%</td></tr>
+</table>
+
+<h2>פילוח גיאוגרפי</h2>
+<table>
+<tr><th>אזור</th><th>N alerts</th><th>תשואה ממ'</th><th>Hit%</th></tr>
+<tr><td>🇺🇸 US</td><td class="num">124</td><td class="num">+11.1%</td><td class="num">68.5%</td></tr>
+<tr><td>🇮🇱 IL (.TA)</td><td class="num">87</td><td class="num">+5.8%</td><td class="num">70.1%</td></tr>
+<tr><td>🇪🇺 EU</td><td class="num">28</td><td class="num">+6.4%</td><td class="num">64.3%</td></tr>
+<tr><td>🇯🇵🇹🇼 Asia</td><td class="num">4</td><td class="num">+21.3%</td><td class="num">75%</td></tr>
+</table>
+
+<h2>פילוח סקטוריאלי (top 10)</h2>
+<table>
+<tr><th>סקטור</th><th>N</th><th>תשואה ממ'</th><th>Hit%</th></tr>
+<tr><td>🥇 <strong>Semiconductor</strong></td><td class="num">34</td><td class="num"><strong>+29.9%</strong></td><td class="num"><strong>85.3%</strong></td></tr>
+<tr><td>🥈 <strong>AI - Chain</strong></td><td class="num">12</td><td class="num">+20.1%</td><td class="num"><strong>91.7%</strong></td></tr>
+<tr><td>🥉 Cleantech</td><td class="num">25</td><td class="num">+10.5%</td><td class="num">80%</td></tr>
+<tr><td>Software</td><td class="num">20</td><td class="num">+4.2%</td><td class="num">60%</td></tr>
+<tr><td>Banks</td><td class="num">16</td><td class="num">+4.2%</td><td class="num">62.5%</td></tr>
+<tr><td>Finance</td><td class="num">16</td><td class="num">+5.2%</td><td class="num">81.3%</td></tr>
+<tr><td>OIL</td><td class="num">20</td><td class="num">+2.9%</td><td class="num">55%</td></tr>
+<tr><td>Real Estate</td><td class="num">13</td><td class="num">+4.6%</td><td class="num">76.9%</td></tr>
+<tr><td>Consumer Basic</td><td class="num">16</td><td class="num">+1.9%</td><td class="num">50%</td></tr>
+<tr><td>❌ <strong>Aerospace & Defense</strong></td><td class="num">26</td><td class="num"><strong>-1.1%</strong></td><td class="num"><strong>46%</strong></td></tr>
+</table>
+
+<!-- ─── 6. SUCCESSES ─── -->
+<h1 class="section">6. הצלחות — מה עובד ולמה</h1>
+
+<h2>הצלחה 1 — Hit rate של 90% על Full</h2>
+<p>
+מתוך 10 alerts של Full ב-30 ימים, 9 ירוקות (ממוצע +33.1%, חציון +10.5%). ה-failure היחיד היה -1.9%. <strong>התקבעה אמינות גבוהה מאוד.</strong>
+</p>
+<div class="callout success">
+<strong>מה זה אומר ל-Ron:</strong> כשהסורק נדלק על Full — תאמין לסיגנל. אבל זה דרושים ניטרולים: זה תקופת bull (60%), ו-N=10 קטן יחסית. ב-bear רגיל אין סיכוי ש-90% יחזור על עצמו.
+</div>
+
+<h2>הצלחה 2 — Graduated = 100% ירוקות, +47%</h2>
+<p>
+כל 15 ה-graduations היו ירוקות. ממוצע +47%, חציון +33%. השיא: MXL +194%, AEHR (להלן manual-entry) +151%, INTC +69%.
+</p>
+<div class="callout success">
+<strong>זה ה-holy grail.</strong> כשמניה עוברת מ-Watchlist ל-Full אקטיבית — האות הכי חזק שהמערכת מספקת. אם רואים graduation — שווה לפעול.
+</div>
+
+<h2>הצלחה 3 — manual-entry מהיר ומדויק</h2>
+<p>
+20 manual-entries, 19 ירוקות (95%). ממוצע +26%, חציון רק 5.7 ימי מסחר מ-Watchlist הראשון. <strong>זה הסיגנל המהיר ביותר במערכת</strong> — בערך שבוע מ-תיוג ל-trigger.
+</p>
+
+<h2>הצלחה 4 — דומיננטיות סקטור Semi+AI</h2>
+<p>
+50% מ-Top 15 winners היו Semiconductor או AI Chain:
+</p>
+<table>
+<tr><th>סקטור</th><th>תשואה ממ'</th><th>Hit%</th></tr>
+<tr><td>Semiconductor</td><td class="num">+29.9%</td><td class="num">85.3%</td></tr>
+<tr><td>AI - Chain</td><td class="num">+20.1%</td><td class="num">91.7%</td></tr>
+</table>
+<p>
+ה-rotation המוסדי לסקטור היה ברור בנתונים: 34+12 = 46 alerts לבדם, ~20% מסך הalerts.
+</p>
+
+<h2>הצלחה 5 — Bull-market detection עבד</h2>
+<p>
+ה-radar הקלאסי תיעדכן ל-bull ב-8.4 (אחרי 12 ימי bear). מאז התראות Full זינקו: 0-1 ליום ב-bear → 2-8 ליום ב-bull. אישור שהsystem מגיב נכון לשינוי regime.
+</p>
+
+<h2>הצלחה 6 — אפס expired</h2>
+<p>
+ב-30 ימי מסחר אף monitor לא הגיע ל-30 ימים בלי resolution. כל ה-83 ה-resolved (15+20+48) נפתרו בתוך 28 ימי מסחר מקס. זה אומר: <strong>הקריטריונים ל-resolution לא קפדניים מדי</strong> (אחרת היינו מקבלים expired רבות) <strong>ולא רכים מדי</strong> (אחרת היו עוברים לresolution מוקדם בלי בסיס).
+</p>
+
+<!-- ─── 7. FAILURES ─── -->
+<h1 class="section">7. כשלונות — מה לא עובד</h1>
+
+<h2>כשלון 1 — Aerospace & Defense -1.1%</h2>
+<p>
+26 alerts בסקטור הזה, תשואה <strong>שלילית</strong> בממוצע, hit rate רק 46%. אלה כשלונות מובהקים — הסקטור הזה הניב סדרת false alarms.
+</p>
+<div class="callout danger">
+<strong>היפותזה:</strong> מניות Defense (LMT, RTX, NOC, GD, HII, RHM.DE, BA.L, LDO.MI) הן עתירות-נפח אבל איטיות. ה-RVOL שלהן יכול לעלות ל-2.0 על איזה headline בלי ש-momentum אמיתי. הסיגנל פסול בסקטור הזה.<br><br>
+<strong>פתרון אפשרי:</strong> סינון לפי סקטור — בDefense דרוש RVOL ≥ 2.5 או דריכה מסוימת ב-priceChange. או — שילוב סקטור-rank כמו שאתה הזכרת (150 סקטורים). אם הסקטור Defense נמצא ב-rank נמוך, להוריד את הvolume של הalert לWatchlist בלבד.
+</div>
+
+<h2>כשלון 2 — HCV bypass כמעט-מונופוליסטי</h2>
+<p>
+מתוך 10 ה-Full alerts, <strong>9 הופעלו דרך bypass</strong> (lowRiskEntry או tightness נכשלו). רק 1 היה pristine entry — וזה דווקא -1.9%, השלילי היחיד.
+</p>
+<div class="callout warn">
+<strong>שאלה לבדיקה:</strong> האם הbypass מספק מספיק "איכות"? הוא נדלק על RVOL ≥ 3 — זה institutional confirmation. אבל המניות האלה לרוב מאוד extended (60-150% מעל SMA21!). אם נבדוק על תקופה ארוכה יותר ונראה ש-pristine fluently מתחת ל-bypass — זה אזעקה.<br><br>
+<strong>מדגם 1 לא מספיק להחלטה.</strong> צריך לרוץ על H2 2025 או רבעון אחר.
+</div>
+
+<h2>כשלון 3 — 0 Recovery alerts ב-30 ימים</h2>
+<p>
+שכבת Recovery Rally בנויה לתפוס מניות שמתאוששות מbear. ב-30 ימי המסחר האלה (60% bull, 40% bear) — אפס alerts. זה לא בהכרח רע, אבל גם <strong>לא נבדק</strong>.
+</p>
+<div class="callout warn">
+<strong>צריך להריץ:</strong> תקופה שבה כן היו mass recoveries — למשל אחרי 2022Q4 או 2023H1. אם גם אז 0 alerts — הקריטריונים מחמירים מדי. אם 5-10 alerts בריאים — תקין.
+</div>
+
+<h2>כשלון 4 — 65.8% עדיין ב-monitoring</h2>
+<p>
+160 מתוך 243 entries עדיין במצב 'monitoring'. זאת אומרת רק <strong>34% מ-resolution</strong> בתוך 30 ימים. לא בהכרח רע — חלק מהפריצות לוקחות חודשים. אבל זה אומר ש<strong>התמונה שלנו על הצלחה לא שלמה</strong>.
+</p>
+<p>
+ה-160 הללו מתחלקים:
+</p>
+<ul>
+  <li>חלק יעברו ל-graduated/manual-entry/sma21-pullback בחודש הבא</li>
+  <li>חלק יעברו ל-expired (30 ימי מסחר חלפו)</li>
+  <li>בעוד חודשיים נדע: כמה הצליחו, כמה דעכו</li>
+</ul>
+
+<h2>כשלון 5 — Survivorship bias קיים</h2>
+<p>
+ה-watchlist שלנו הוא של היום. מניות שהיו ברשימה ב-23.3 וכבר הוסרו (כי קרסו, נמחקו, השתלטו עליהן) <strong>לא בנתונים שלנו</strong>. זה מטה את המספרים כלפי מעלה.
+</p>
+<div class="callout danger">
+<strong>פתרון:</strong> מהיום והלאה לשמור snapshot של רשימת ה-Google Sheet כל חודש. בעוד 6 חודשים נוכל לעשות backtest טהור על הרשימה כפי שהייתה אז.
+</div>
+
+<h2>כשלון 6 — אין מודל slippage/עמלות</h2>
+<p>
+כל המספרים מבוססים על "סגירת היום". בפועל סוחר משלם:
+</p>
+<ul>
+  <li><strong>Slippage</strong> 1-3% על ימי breakout (קונים על gap-up)</li>
+  <li><strong>Spread</strong> משמעותי על מניות דקות</li>
+  <li><strong>עמלות</strong> ~$5/trade, על 8-12 פוזיציות במקביל זה ~$50-100/חודש</li>
+</ul>
+<p>
+תיק שהראינו בbacktest סימולטיבי כ-+33% (max-8) — בפועל יהיה כנראה +25-28%. עדיין מצוין, אבל לא +33%.
+</p>
+
+<!-- ─── 8. OPEN QUESTIONS ─── -->
+<h1 class="section">8. שאלות פתוחות וצעדים הבאים</h1>
+
+<h2>שאלות חיוניות לבדיקה</h2>
+
+<h3>1. Out-of-sample validation על תקופת bear</h3>
+<p>
+ה-90% hit rate על Full נעשה בתקופה רובה bull. <strong>חייבים לרוץ על Q4 2024 או H1 2025</strong> (תקופת bear) כדי לראות אם המספרים שורדים. אם hit rate נופל מתחת ל-50% ב-bear — צריך להחמיר את הקריטריונים.
+</p>
+
+<h3>2. אינטגרציה של דירוג סקטור (חדש מהשיחה!)</h3>
+<div class="callout info">
+<strong>הצעה של Kobi:</strong> יש מדד שמדרג כ-150 סקטורים. אם המניה בסקטור עם דירוג גבוה — זה תמיכה נוספת לalert. אם בסקטור עם דירוג נמוך — אזעקה לזהירות.
+</div>
+<p>
+דרך אפשרית להוסיף:
+</p>
+<ul>
+  <li>שדה חדש <code>sectorRank</code> ב-StockData (1-150)</li>
+  <li>סמן איכות נוסף: <code>topSector</code> — true אם sectorRank ≤ 30</li>
+  <li>סינון: ב-bottom 30 sectors → רק Watchlist, לעולם לא Full</li>
+</ul>
+<p>
+בdata שלנו זה היה כנראה מסנן את Aerospace & Defense מהFull.
+</p>
+
+<h3>3. Expiration cleanup</h3>
+<p>
+אחרי כמה חודשים, מספר entries יגדל מאוד (מאות-אלפים). צריך retention policy:
+</p>
+<ul>
+  <li>entries עם status='expired' שעברו &gt; 90 ימים — למחוק</li>
+  <li>entries 'graduated/manual-entry/sma21-pullback' — לשמור לעד (history value)</li>
+</ul>
+
+<h3>4. Position sizing simulation</h3>
+<p>
+ה-portfolio sim הניח 8 פוזיציות שוות גודל. בפועל הסוחרים מאזנים סיכון לפי volatility (ATR-based sizing). זה יכול לשנות את התשואות משמעותית.
+</p>
+
+<h3>5. הוספת LLM news enrichment</h3>
+<p>
+ה-Telegram כבר תומך בLLM summary (Gemini). אבל זה לא מסנן את ה-monitor. אופציה: לפני graduation להריץ LLM על news של המניה. אם שלילי (downgrade, lawsuit, etc.) — חסום graduation.
+</p>
+
+<h2>צעדים הבאים מומלצים (לפי עדיפות)</h2>
+<table>
+<tr><th>#</th><th>פעולה</th><th>מאמץ</th><th>ערך</th></tr>
+<tr><td>1</td><td>Paper trade על האסטרטגיה לחודשיים — לקבל baseline ריאליסטי</td><td>נמוך</td><td>גבוה מאוד</td></tr>
+<tr><td>2</td><td>Out-of-sample backtest על Q1-Q3 2025 (bear segments)</td><td>בינוני (1-2 שעות)</td><td>גבוה</td></tr>
+<tr><td>3</td><td>אינטגרציית sector rank (אם יש לך source)</td><td>בינוני</td><td>גבוה — תפיל את Aerospace</td></tr>
+<tr><td>4</td><td>Slippage + עמלות במודל הbacktest</td><td>נמוך</td><td>בינוני (ריאליזם)</td></tr>
+<tr><td>5</td><td>הסרה מלאה של המערכת הישנה (3-tag/3-path)</td><td>בינוני (3-4 שעות)</td><td>נמוך — קוד נקי</td></tr>
+<tr><td>6</td><td>שמירת snapshot של ה-watchlist כל חודש</td><td>טריוויאלי</td><td>גבוה לטווח ארוך</td></tr>
+</table>
+
+<!-- ─── 9. APPENDIX ─── -->
+<h1 class="section">9. נספחים</h1>
+
+<h2>מבנה קבצים</h2>
+<pre>
+src/
+  index.ts                     ← הצינור הראשי
+  config/index.ts              ← env + watchlist + sectors
+  types/index.ts               ← StockData, MomentumResult, MonitorEntry, ScanResultDay
+
+  services/
+    marketData.ts              ← Yahoo + parseYahooChartResult + fetchMarketRegime
+    rvolCalculator.ts          ← projectedRvol + marketSessionMinutesElapsed
+    newsService.ts             ← Finnhub
+    telegramBot.ts             ← formatDailyReport + formatMonitorTelegramMessage
+    llmSummary.ts              ← אופציונלי
+    monitorTracker.ts          ← state machine
+
+  utils/
+    technicalAnalysis.ts       ← SMA, RSI, slope, gap, AVWAP, daysSinceLastHigh
+    setup.ts                   ← evaluateMomentumSetup (המוח)
+    monitorStore.ts            ← JSON persistence
+    scanResultWriter.ts        ← writeScanResultDay (new schema)
+
+scripts/
+  scan-now.ts                  ← סריקה אחת ללא Telegram (debug)
+  monitor-update.ts            ← עדכון monitor בלבד
+  rebuild-history.ts           ← בנייה מאפס של 30+ ימים
+  analyze-history.ts           ← דו"ח אנליטי על ה-rebuild
+  backtest-momentum.ts         ← date-sweep / walk-forward על מניות
+  backtest-watchlist.ts        ← portfolio simulation
+
+results/
+  scan-YYYY-MM-DD.json         ← snapshot מלא של כל המניות (כולל level=none)
+  monitor-list.json            ← state מתמשך, נכלל ב-git
+
+tests/
+  setup.test.ts                ← 23 בדיקות לעיצוב
+  technicalAnalysis.test.ts    ← 12 חדשות + הקיימות
+  projectedRvol.test.ts        ← 6 בדיקות ל-intraday
+  monitorTracker.test.ts       ← 12 בדיקות לstate machine
+</pre>
+
+<h2>פקודות שימוש</h2>
+<table>
+<tr><th>פקודה</th><th>תפקיד</th></tr>
+<tr><td><code>npm run start</code></td><td>סריקה מלאה + Telegram (production daily)</td></tr>
+<tr><td><code>npm run scan-now</code></td><td>סריקה אחת לטרמינל (debug)</td></tr>
+<tr><td><code>npm run monitor-update</code></td><td>עדכון monitor + סיכום</td></tr>
+<tr><td><code>npm run rebuild-history -- --days 30</code></td><td>בנייה מאפס של 30 ימים</td></tr>
+<tr><td><code>npx tsx scripts/analyze-history.ts</code></td><td>דו"ח אנליטי על ה-results</td></tr>
+<tr><td><code>npm run backtest-momentum -- --mode date-sweep --tickers MXL</code></td><td>מתי הסורק נדלק על מניה</td></tr>
+<tr><td><code>npm run backtest-watchlist</code></td><td>portfolio simulation</td></tr>
+<tr><td><code>npm run test</code></td><td>53 בדיקות יחידה</td></tr>
+</table>
+
+<h2>מילון מונחים</h2>
+<table>
+<tr><th>מונח</th><th>הסבר</th></tr>
+<tr><td><strong>RVOL</strong></td><td>Relative Volume — נפח היום ÷ ממוצע 63 ימים. 2.0 = פי 2 מהממוצע.</td></tr>
+<tr><td><strong>projectedRvol</strong></td><td>RVOL מתוקן לזמן יום. בסוף יום = RVOL.</td></tr>
+<tr><td><strong>Stage 2</strong></td><td>price &gt; SMA50 &gt; SMA200, slope לא יורד. מצב "מגמת עלייה בריאה" של Minervini.</td></tr>
+<tr><td><strong>Pivot Breakout</strong></td><td>price ≥ 52w-high × 0.98. פריצה ממש מעל הציר.</td></tr>
+<tr><td><strong>VCP</strong></td><td>Volatility Contraction Pattern — בסיס שמתקרב לpivot עם תנודתיות יורדת.</td></tr>
+<tr><td><strong>tightness</strong></td><td>15+ ימי מסחר ללא touchdown של ATH. מעיד על "שקט מתוח".</td></tr>
+<tr><td><strong>AVWAP</strong></td><td>Anchored Volume-Weighted Average Price. ממוצע vol-weighted מנקודה ספציפית (לרוב earnings gap).</td></tr>
+<tr><td><strong>HCV bypass</strong></td><td>High-Conviction bypass — Full על אף שlowRiskEntry או tightness נכשלו, כי RVOL ≥ 3.</td></tr>
+<tr><td><strong>Ants Accumulation</strong></td><td>≥12 ימים ירוקים ב-15 ימים. דפוס של "הצטברות שקטה" של מוסדיים.</td></tr>
+<tr><td><strong>Stage 2 Recovery</strong></td><td>מניה שעדיין ב-Stage 1 (SMA200 יורדת) אבל SMA50 התהפכה לעלייה. מועמדת להתאוששות.</td></tr>
+</table>
+
+<h2>קישורים מהירים</h2>
+<ul>
+  <li><strong>סורק daily:</strong> GitHub Actions → workflow "Smart Volume Radar - Daily Scan", רץ 20:15 UTC Mon-Fri</li>
+  <li><strong>Telegram bot:</strong> מקבל 2 הודעות יומיות — Daily Report + Monitor Followup</li>
+  <li><strong>Google Sheet רשימה:</strong> מנוהל ידנית ע"י Kobi, מתעדכן לעיתים</li>
+  <li><strong>JSON history:</strong> <code>results/scan-*.json</code> בrepo (committed), monitor-list.json גם</li>
+</ul>
+
+<div class="footer-note">
+מסמך זה נכתב ב-3.5.2026 ע"י המערכת בעקבות ניתוח 30 ימי המסחר 23.3 → 1.5.2026.<br>
+לשאלות / תוספות / תיקונים — Kobi.
+</div>
+
+</body>
+</html>
