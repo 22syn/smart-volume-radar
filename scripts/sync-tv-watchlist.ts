@@ -83,6 +83,62 @@ function historyPathFor(watchlistName: string): string {
     return path.join(os.homedir(), '.cache', 'svr-tv-sync', `ticker-history-${safe}.json`);
 }
 
+// First-seen tracking — records the EARLIEST date each ticker appeared as a
+// target for a given watchlist. Used as the "signal date" by the downstream
+// watchlist health-check (telegram-mcp/watchlist-health.js). Distinct from the
+// last-seen history used for staleness pruning.
+function firstSeenPathFor(watchlistName: string): string {
+    const safe = watchlistName.replace(/[^a-zA-Z0-9-]/g, '_');
+    return path.join(os.homedir(), '.cache', 'svr-tv-sync', `ticker-firstseen-${safe}.json`);
+}
+function recordFirstSeen(watchlistName: string, symbols: string[]): Record<string, string> {
+    const p = firstSeenPathFor(watchlistName);
+    let h: Record<string, string> = {};
+    if (fs.existsSync(p)) {
+        try {
+            h = JSON.parse(fs.readFileSync(p, 'utf8'));
+        } catch {
+            h = {};
+        }
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    for (const s of symbols) {
+        const key = s.split(':').pop()!.toUpperCase();
+        if (!h[key]) h[key] = today; // only set on first appearance
+    }
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify(h, null, 2));
+    return h;
+}
+
+// Accumulated snapshot of what is actually in each TV list after the sync run.
+// Written to ~/telegram-mcp/data/tv-state.json for the health-check.
+const STATE_SNAPSHOT: Record<string, Array<{ ticker: string; signalDate: string; exchange?: string }>> = {};
+
+function exchangeOf(rawTarget: string): string | undefined {
+    // Map a "TASE:RMLI" style prefix to an exchange tag the health-check understands.
+    const m = rawTarget.match(/^([A-Z]+):/);
+    return m ? m[1] : undefined;
+}
+
+// Persistent ticker→exchange registry. Accumulates across runs so that foreign
+// tickers (TASE/TWSE/LSE/SIX) keep their exchange tag even on days they are not
+// in the fresh target list (otherwise the health-check can't resolve the Yahoo
+// symbol and reports "no data").
+const EXCHANGE_REGISTRY_PATH = path.join(os.homedir(), '.cache', 'svr-tv-sync', 'ticker-exchange.json');
+function loadExchangeRegistry(): Record<string, string> {
+    if (!fs.existsSync(EXCHANGE_REGISTRY_PATH)) return {};
+    try {
+        return JSON.parse(fs.readFileSync(EXCHANGE_REGISTRY_PATH, 'utf8'));
+    } catch {
+        return {};
+    }
+}
+function saveExchangeRegistry(reg: Record<string, string>): void {
+    fs.mkdirSync(path.dirname(EXCHANGE_REGISTRY_PATH), { recursive: true });
+    fs.writeFileSync(EXCHANGE_REGISTRY_PATH, JSON.stringify(reg, null, 2));
+}
+
 // ─── Sync targets (the default 4-list rotation) ─────────────────────
 interface SyncTarget {
     file: string;
@@ -267,7 +323,11 @@ async function tryWithin<T>(timeout: number, op: () => Promise<T>): Promise<T | 
     }
 }
 
-async function openWatchlist(page: Page, name: string): Promise<void> {
+async function openWatchlist(
+    page: Page,
+    name: string,
+    createIfMissing: boolean = true
+): Promise<boolean> {
     log(`↳ Looking for watchlist "${name}"...`);
     await dismissPopups(page);
 
@@ -294,11 +354,16 @@ async function openWatchlist(page: Page, name: string): Promise<void> {
             await item.click({ force: true });
             await page.waitForTimeout(1500);
             await page.keyboard.press('Escape').catch(() => undefined);
-            return;
+            return true;
         }
         log(`  "${name}" not in list browser, closing modal`);
         await page.keyboard.press('Escape');
         await page.waitForTimeout(500);
+    }
+
+    if (!createIfMissing) {
+        log(`  ⏭  "${name}" missing and target empty — skipping (no need to create)`);
+        return false;
     }
 
     // Create via "Create new list"
@@ -338,6 +403,7 @@ async function openWatchlist(page: Page, name: string): Promise<void> {
     await nameInput.press('Enter');
     await page.waitForTimeout(1500);
     log(`✓ Created watchlist "${name}"`);
+    return true;
 }
 
 async function readCurrentSymbols(page: Page): Promise<string[]> {
@@ -534,13 +600,28 @@ async function syncWatchlist(
     log(`\n═══ SYNCING "${watchlistName}" ═══`);
     log(`📋 Target (${target.length}): ${target.join(', ') || '—'}`);
 
-    await openWatchlist(page, watchlistName);
+    const opened = await openWatchlist(page, watchlistName, target.length > 0);
+    if (!opened) {
+        log(`  → nothing to do (watchlist missing + no targets to sync)`);
+        return;
+    }
 
     const current = await readCurrentSymbols(page);
     log(`📋 Current in TV (${current.length}): ${current.join(', ') || '—'}`);
 
     const historyPath = historyPathFor(watchlistName);
     recordSeenTickers(historyPath, target);
+    const firstSeen = recordFirstSeen(watchlistName, target);
+
+    // Build exchange map from the raw target list (e.g. "TASE:RMLI" → RMLI: TASE),
+    // merged with the persistent registry so foreign tickers keep their tag even
+    // when absent from today's target list.
+    const exchangeMap = loadExchangeRegistry();
+    for (const raw of target) {
+        const ex = exchangeOf(raw);
+        if (ex) exchangeMap[raw.split(':').pop()!.toUpperCase()] = ex;
+    }
+    saveExchangeRegistry(exchangeMap);
 
     const normalize = (s: string) => s.split(':').pop()!.toUpperCase();
     const targetSet = new Set(target.map(normalize));
@@ -588,6 +669,20 @@ async function syncWatchlist(
         }
         log(`✓ removed ${removed}/${toRemove.length} symbols`);
     }
+
+    // Record the post-sync expected contents into the state snapshot.
+    // Expected = (current ∪ toAdd) − toRemove.
+    const removedSet = new Set(toRemove.map(normalize));
+    const finalSet = new Set<string>();
+    for (const s of current) finalSet.add(normalize(s));
+    for (const s of toAdd) finalSet.add(normalize(s));
+    for (const s of removedSet) finalSet.delete(s);
+
+    STATE_SNAPSHOT[watchlistName] = [...finalSet].map((ticker) => ({
+        ticker,
+        signalDate: firstSeen[ticker] ?? new Date().toISOString().slice(0, 10),
+        ...(exchangeMap[ticker] ? { exchange: exchangeMap[ticker] } : {}),
+    }));
 }
 
 // ─── Resolve effective file for a target (artifact > local) ─────────
@@ -696,6 +791,29 @@ async function main() {
         );
         await page.screenshot({ path: screenshotPath, fullPage: false });
         log(`📸 Screenshot saved: ${screenshotPath}`);
+
+        // Persist TV-state snapshot for the watchlist health-check.
+        // Only write in full 4-list mode (single-list runs would clobber siblings).
+        if (!SINGLE_LIST_MODE && Object.keys(STATE_SNAPSHOT).length > 0) {
+            const tvStatePath = path.join(os.homedir(), 'telegram-mcp', 'data', 'tv-state.json');
+            try {
+                fs.mkdirSync(path.dirname(tvStatePath), { recursive: true });
+                fs.writeFileSync(
+                    tvStatePath,
+                    JSON.stringify(
+                        {
+                            updatedAt: new Date().toISOString().slice(0, 10),
+                            watchlists: STATE_SNAPSHOT,
+                        },
+                        null,
+                        2
+                    )
+                );
+                log(`🗂  TV state snapshot → ${tvStatePath}`);
+            } catch (e) {
+                log(`⚠️ Could not write tv-state.json: ${(e as Error).message}`);
+            }
+        }
     } catch (e) {
         log(`❌ Error: ${(e as Error).message}`);
         if (context) {
