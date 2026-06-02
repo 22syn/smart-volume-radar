@@ -23,6 +23,7 @@
 import type {
     ActionLabel,
     BreakoutStage,
+    EntryGrade,
     MomentumCriteria,
     StockData,
     TradePlan,
@@ -77,6 +78,20 @@ const IN_TREND_THRESHOLD = 2;
 // RVOL<1.0 bucket (1,772 alerts) had only 36% win. Stocks with sub-average
 // volume don't deserve a Telegram line.
 const MIN_RVOL_FOR_NO_VOL_WARNING = 1.0;
+
+// ─── TD-25 (2026-06-02) — Entry-Quality Grade (flag-only) ───────────────
+// From the entry-precision study (scripts/entry-precision-study.ts over 2,762
+// historical flags), four dials independently isolate the highest-precision
+// entries. Each lifts win-rate from a ~51% baseline:
+//   • momentum level full/recovery   → 64% / 70%   (vs close 53%)
+//   • RVOL in [3, 10)                 → 66% / 63%   (vs <2 51%, ≥10 53% climax)
+//   • championScore ≥ 90              → 66%         (monotonic from 44% @<60)
+//   • distributionDays ≤ 2            → 60%         (vs 6+ days 48%)
+// Grade = count of dials hit: 4 → A+, 3 → A, 2 → B, else ungraded.
+const TD25_RVOL_FLOOR = 3;
+const TD25_RVOL_CEIL = 10; // ≥10 is exhaustion/climax — does NOT earn the dial
+const TD25_SCORE_FLOOR = 90;
+const TD25_MAX_DISTRIBUTION = 2;
 
 /** Weights — derived from train+test stable lifts in the 86-day analysis. */
 const WEIGHTS = {
@@ -379,7 +394,32 @@ export function determineAction(
         stock.isHotStreak = true;
     }
 
+    // ─── TD-25: Entry-quality grade (flag only, BUY/WATCH only) ───────
+    // Ranks how precise an actionable entry is. Does not change the action.
+    if (action === 'BUY' || action === 'WATCH') {
+        const grade = computeEntryGrade(stock, score);
+        if (grade) stock.entryGrade = grade;
+    }
+
     return action;
+}
+
+/**
+ * TD-25 — grade an actionable entry on the four empirically-validated precision
+ * dials. Returns 'A+' (all 4), 'A' (3), 'B' (2), or undefined (<2). Flag-only.
+ */
+function computeEntryGrade(stock: StockData, score: number): EntryGrade | undefined {
+    const rvol = effectiveRvol(stock);
+    let dials = 0;
+    if (stock.momentum?.level === 'full' || stock.momentum?.level === 'recovery') dials++;
+    if (rvol >= TD25_RVOL_FLOOR && rvol < TD25_RVOL_CEIL) dials++;
+    if (score >= TD25_SCORE_FLOOR) dials++;
+    if ((stock.distributionDays ?? 0) <= TD25_MAX_DISTRIBUTION) dials++;
+
+    if (dials >= 4) return 'A+';
+    if (dials === 3) return 'A';
+    if (dials === 2) return 'B';
+    return undefined;
 }
 
 /**

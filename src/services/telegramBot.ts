@@ -244,6 +244,11 @@ function formatSingleStockBlock(stock: RVOLResult, monitorMeta?: MonitorMeta): s
     if (stock.isHotStreak) {
         block += ` 🏆 <i>Hot Streak</i>`;
     }
+    // TD-25: Entry-quality grade — A+ entries hit all 4 precision dials (~66% win).
+    if (stock.entryGrade) {
+        const gradeEmoji = stock.entryGrade === 'A+' ? '💎' : stock.entryGrade === 'A' ? '⭐' : '✦';
+        block += ` ${gradeEmoji} <b>${stock.entryGrade}</b>`;
+    }
     if (stock.championScore != null) {
         block += `  <b>${stock.championScore.toFixed(0)}</b><i>/100</i>`;
     }

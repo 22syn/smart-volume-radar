@@ -235,6 +235,70 @@ describe('determineAction', () => {
     });
 });
 
+describe('TD-25 entry-quality grade', () => {
+    // A+ = all 4 dials: momentum full + RVOL∈[3,10) + score≥90 + distribution≤2
+    const primeStock = () =>
+        makeStock({
+            lastPrice: 100,
+            ath: 100,
+            rvol: 4, // dial: RVOL in [3,10)
+            distributionDays: 1, // dial: ≤2
+            momentum: { ...makeMomentum(makeCriteria()), level: 'full' }, // dial: full
+        });
+
+    it('A+ when all 4 dials hit on a BUY', () => {
+        const stock = primeStock();
+        const plan = computeTradePlan(stock);
+        determineAction(stock, 92, 'Breaking Out', plan); // dial: score≥90
+        expect(stock.entryGrade).toBe('A+');
+    });
+
+    it('A when 3 dials hit (score below 90)', () => {
+        const stock = primeStock();
+        const plan = computeTradePlan(stock);
+        determineAction(stock, 85, 'Breaking Out', plan); // score dial misses
+        expect(stock.entryGrade).toBe('A');
+    });
+
+    it('B when only 2 dials hit', () => {
+        const stock = primeStock();
+        // distributionDays=3 misses the ≤2 dial but stays below TD-13's ≥4
+        // demotion threshold, so the action remains BUY (gradeable).
+        stock.distributionDays = 3;
+        const plan = computeTradePlan(stock);
+        determineAction(stock, 85, 'Breaking Out', plan); // score dial also misses → 2 left (full + RVOL)
+        expect(stock.entryGrade).toBe('B');
+    });
+
+    it('no grade when fewer than 2 dials hit', () => {
+        const stock = makeStock({
+            lastPrice: 100,
+            ath: 100,
+            rvol: 2.2, // RVOL dial misses (below 3)
+            distributionDays: 3, // distribution misses (>2) but no TD-13 demotion (<4)
+            momentum: { ...makeMomentum(makeCriteria()), level: 'close' }, // momentum misses
+        });
+        const plan = computeTradePlan(stock);
+        determineAction(stock, 80, 'Breaking Out', plan); // score misses → 0 dials, stays BUY
+        expect(stock.entryGrade).toBeUndefined();
+    });
+
+    it('RVOL ≥ 10 does NOT earn the dial (climax/exhaustion)', () => {
+        const stock = primeStock();
+        stock.rvol = 12; // climax — should not count
+        const plan = computeTradePlan(stock);
+        determineAction(stock, 92, 'Breaking Out', plan); // full + score + dist = 3 dials
+        expect(stock.entryGrade).toBe('A');
+    });
+
+    it('no grade on non-actionable actions (PASS)', () => {
+        const stock = primeStock();
+        const plan = computeTradePlan(stock);
+        determineAction(stock, 35, 'Setup', plan); // score<40 → PASS
+        expect(stock.entryGrade).toBeUndefined();
+    });
+});
+
 describe('Phase 2 score contributors', () => {
     it('+5 for accumulationDays >= 3', () => {
         const base = makeStock({

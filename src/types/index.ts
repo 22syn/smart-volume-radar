@@ -165,7 +165,18 @@ export interface StockData {
     isFatigued?: boolean;
     /** TD-22: action was promoted from CAUTION_NO_VOL → WATCH via sector-override. */
     sectorOverrideApplied?: boolean;
+    /**
+     * TD-25: Entry-quality grade on an actionable BUY/WATCH. Flag-only — does
+     * NOT change which stocks are actionable, only ranks how precise the entry
+     * is. Grounded in the entry-precision study (2,762 historical flags):
+     * the dials full + RVOL∈[3,10) + score≥90 + distribution≤2 each independently
+     * lift win-rate to 63-66% vs ~51% baseline. A+ = all 4, A = 3, B = 2.
+     */
+    entryGrade?: EntryGrade;
 }
+
+/** TD-25 entry-quality grade. Higher = more precise entry per the empirical study. */
+export type EntryGrade = 'A+' | 'A' | 'B';
 
 /**
  * Trajectory of a fundamental metric's YoY growth rate over the last two
