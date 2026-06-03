@@ -235,59 +235,67 @@ describe('determineAction', () => {
     });
 });
 
-describe('TD-25 entry-quality grade', () => {
-    // A+ = all 4 dials: momentum full + RVOL∈[3,10) + score≥90 + distribution≤2
+describe('TD-25/26 entry-quality grade (5 dials incl. ADR%)', () => {
+    // All 5 dials: momentum full + RVOL∈[3,10) + score≥90 + distribution≤2 + ADR≥5%
     const primeStock = () =>
         makeStock({
             lastPrice: 100,
             ath: 100,
             rvol: 4, // dial: RVOL in [3,10)
             distributionDays: 1, // dial: ≤2
+            adrPct: 6, // dial: ADR ≥ 5%
             momentum: { ...makeMomentum(makeCriteria()), level: 'full' }, // dial: full
         });
 
-    it('A+ when all 4 dials hit on a BUY', () => {
+    it('A+ when all 5 dials hit on a BUY', () => {
         const stock = primeStock();
         const plan = computeTradePlan(stock);
         determineAction(stock, 92, 'Breaking Out', plan); // dial: score≥90
         expect(stock.entryGrade).toBe('A+');
     });
 
-    it('A when 3 dials hit (score below 90)', () => {
+    it('A when 4 dials hit (score below 90)', () => {
         const stock = primeStock();
         const plan = computeTradePlan(stock);
-        determineAction(stock, 85, 'Breaking Out', plan); // score dial misses
+        determineAction(stock, 85, 'Breaking Out', plan); // score dial misses → 4/5
         expect(stock.entryGrade).toBe('A');
     });
 
-    it('B when only 2 dials hit', () => {
+    it('B when 3 dials hit (score + ADR miss)', () => {
         const stock = primeStock();
-        // distributionDays=3 misses the ≤2 dial but stays below TD-13's ≥4
-        // demotion threshold, so the action remains BUY (gradeable).
-        stock.distributionDays = 3;
+        stock.adrPct = 3; // ADR dial misses
         const plan = computeTradePlan(stock);
-        determineAction(stock, 85, 'Breaking Out', plan); // score dial also misses → 2 left (full + RVOL)
+        determineAction(stock, 85, 'Breaking Out', plan); // score also misses → 3/5 (full + RVOL + dist)
         expect(stock.entryGrade).toBe('B');
     });
 
-    it('no grade when fewer than 2 dials hit', () => {
+    it('no grade when fewer than 3 dials hit', () => {
         const stock = makeStock({
             lastPrice: 100,
             ath: 100,
             rvol: 2.2, // RVOL dial misses (below 3)
-            distributionDays: 3, // distribution misses (>2) but no TD-13 demotion (<4)
+            distributionDays: 1, // dist dial hits
+            adrPct: 3, // ADR misses
             momentum: { ...makeMomentum(makeCriteria()), level: 'close' }, // momentum misses
         });
         const plan = computeTradePlan(stock);
-        determineAction(stock, 80, 'Breaking Out', plan); // score misses → 0 dials, stays BUY
+        determineAction(stock, 80, 'Breaking Out', plan); // score misses → 1 dial, stays BUY
         expect(stock.entryGrade).toBeUndefined();
     });
 
     it('RVOL ≥ 10 does NOT earn the dial (climax/exhaustion)', () => {
         const stock = primeStock();
-        stock.rvol = 12; // climax — should not count
+        stock.rvol = 12; // climax — should not count → 4/5
         const plan = computeTradePlan(stock);
-        determineAction(stock, 92, 'Breaking Out', plan); // full + score + dist = 3 dials
+        determineAction(stock, 92, 'Breaking Out', plan); // full + score + dist + ADR = 4 dials
+        expect(stock.entryGrade).toBe('A');
+    });
+
+    it('ADR below 5% drops A+ to A (TD-26 dial)', () => {
+        const stock = primeStock();
+        stock.adrPct = 4; // ADR dial misses → 4/5
+        const plan = computeTradePlan(stock);
+        determineAction(stock, 92, 'Breaking Out', plan);
         expect(stock.entryGrade).toBe('A');
     });
 

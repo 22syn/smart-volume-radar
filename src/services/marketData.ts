@@ -175,6 +175,25 @@ export async function parseYahooChartResult(
         const past = closes[closes.length - 22]!;
         if (past > 0) return21d = ((lastPrice - past) / past) * 100;
     }
+    // ADR% (Average Daily Range, Qullamaggie definition) = 100 × mean over the
+    // last 20 bars of (high/low − 1). G1 (TD-26): a volatility floor — low-range
+    // names structurally can't produce the 20%+ moves the strategy targets.
+    // Empirically monotonic with forward return (54% win <3% → 69% win ≥9%), and
+    // ADR≥5% on an A+/A entry lifts win-rate to ~87%.
+    let adrPct: number | undefined = undefined;
+    if (highs.length >= 20 && lows.length >= 20) {
+        let sum = 0;
+        let cnt = 0;
+        for (let k = highs.length - 20; k < highs.length; k++) {
+            const h = highs[k];
+            const l = lows[k];
+            if (h != null && l != null && l > 0) {
+                sum += h / l - 1;
+                cnt++;
+            }
+        }
+        if (cnt > 0) adrPct = (sum / cnt) * 100;
+    }
 
     return {
         ticker,
@@ -210,6 +229,7 @@ export async function parseYahooChartResult(
         distributionDays: adDays.distributionDays,
         return63d,
         return21d,
+        adrPct,
     };
 }
 

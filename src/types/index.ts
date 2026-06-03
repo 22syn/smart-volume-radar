@@ -120,6 +120,10 @@ export interface StockData {
     /** Total return over the last 21 trading days (~1 month), as % — used for
      *  short-window sector context. */
     return21d?: number;
+    /** ADR% — Average Daily Range (Qullamaggie) = 100 × mean over last 20 bars of
+     *  (high/low − 1). Volatility floor for TD-26: low-range names structurally
+     *  can't produce the target moves. Empirically monotonic with forward return. */
+    adrPct?: number;
     /** Relative-Strength percentile (0-100) vs other watchlist members over 63 trading
      *  days, using SPY-relative return (alpha). Populated post-fetch in `index.ts`. */
     rsPercentile?: number;

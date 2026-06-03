@@ -93,6 +93,13 @@ const TD25_RVOL_CEIL = 10; // ≥10 is exhaustion/climax — does NOT earn the d
 const TD25_SCORE_FLOOR = 90;
 const TD25_MAX_DISTRIBUTION = 2;
 
+// ─── TD-26 (2026-06-02) — ADR% dial (5th entry-grade dial) ──────────────
+// From scripts/adr-study.ts: ADR% (Qullamaggie's Average Daily Range) is
+// monotonic with forward return (<3% → 54% win, ≥9% → 69%). Crucially, an
+// ADR ≥ 5% on a 3-4-dial entry lifts win-rate to ~87% (n=39). Added as the
+// 5th dial: A+ now = 5/5, A = 4/5, B = 3/5.
+const TD26_ADR_FLOOR = 5;
+
 /** Weights — derived from train+test stable lifts in the 86-day analysis. */
 const WEIGHTS = {
     /** pivotBreakout: REDUCED 25 → 12 (TD-17, 2026-05-23). The +25 weight was
@@ -405,8 +412,10 @@ export function determineAction(
 }
 
 /**
- * TD-25 — grade an actionable entry on the four empirically-validated precision
- * dials. Returns 'A+' (all 4), 'A' (3), 'B' (2), or undefined (<2). Flag-only.
+ * TD-25 + TD-26 — grade an actionable entry on the five empirically-validated
+ * precision dials. Returns 'A+' (5/5), 'A' (4/5), 'B' (3/5), or undefined (<3).
+ * Flag-only. Validation (BUY+WATCH, n=403): A+ 87% win / +33.7% peak,
+ * A 75% / +22%, B 66%, ungraded ~53%.
  */
 function computeEntryGrade(stock: StockData, score: number): EntryGrade | undefined {
     const rvol = effectiveRvol(stock);
@@ -415,10 +424,11 @@ function computeEntryGrade(stock: StockData, score: number): EntryGrade | undefi
     if (rvol >= TD25_RVOL_FLOOR && rvol < TD25_RVOL_CEIL) dials++;
     if (score >= TD25_SCORE_FLOOR) dials++;
     if ((stock.distributionDays ?? 0) <= TD25_MAX_DISTRIBUTION) dials++;
+    if ((stock.adrPct ?? 0) >= TD26_ADR_FLOOR) dials++; // TD-26 ADR% dial
 
-    if (dials >= 4) return 'A+';
-    if (dials === 3) return 'A';
-    if (dials === 2) return 'B';
+    if (dials >= 5) return 'A+';
+    if (dials === 4) return 'A';
+    if (dials === 3) return 'B';
     return undefined;
 }
 
