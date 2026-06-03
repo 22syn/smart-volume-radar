@@ -591,31 +591,69 @@ async function addSymbolsBulk(
     return { added, failed };
 }
 
+// Remove a symbol from the currently-open watchlist.
+//
+// Headless note (verified 2026-06-03): TradingView's right-click context menu
+// does NOT render in headless Chromium, so the legacy right-click→"Remove" path
+// silently failed for every symbol (adds worked because they use the Add-Symbol
+// dialog, not a menu). Primary strategy is now select-row + Delete key, which is
+// headless-safe. Each strategy is verified by re-querying the DOM — we return
+// true only once the row is actually gone.
 async function removeSymbol(page: Page, symbol: string): Promise<boolean> {
     const normalized = symbol.split(':').pop()!.toUpperCase();
-    const row = await page.evaluateHandle((norm) => {
-        const els = document.querySelectorAll('[data-symbol-short]');
-        for (const el of els) {
-            const v = (el.getAttribute('data-symbol-short') || '').toUpperCase();
-            if (v === norm) return el as HTMLElement;
-        }
-        return null;
-    }, normalized);
-    const el = row.asElement();
-    if (!el) return false;
+    const sel = `[data-symbol-short="${normalized}"]`;
+    const isPresent = () => page.evaluate((s) => !!document.querySelector(s), sel);
+    const getRow = async () => {
+        const h = await page.evaluateHandle((s) => document.querySelector(s) as HTMLElement | null, sel);
+        return h.asElement();
+    };
 
-    await el.click({ button: 'right' });
-    await page.waitForTimeout(700);
-    const removeBtn = await tryWithin(2500, async () => {
-        return page.getByText('Remove', { exact: false }).first().elementHandle();
-    });
-    if (!removeBtn) {
-        await page.keyboard.press('Escape').catch(() => undefined);
-        return false;
+    if (!(await isPresent())) return true; // already absent → nothing to do
+
+    // Strategy 1 — select row + Delete (headless-safe, primary).
+    let el = await getRow();
+    if (el) {
+        await el.scrollIntoViewIfNeeded().catch(() => undefined);
+        await el.click().catch(() => undefined);
+        await page.waitForTimeout(300);
+        await page.keyboard.press('Delete');
+        await page.waitForTimeout(500);
+        if (!(await isPresent())) return true;
+        await page.keyboard.press('Backspace');
+        await page.waitForTimeout(500);
+        if (!(await isPresent())) return true;
     }
-    await removeBtn.click({ force: true });
-    await page.waitForTimeout(500);
-    return true;
+
+    // Strategy 2 — hover-revealed remove control (span.removeButton-*).
+    el = await getRow();
+    if (el) {
+        await el.hover().catch(() => undefined);
+        await page.waitForTimeout(300);
+        const rm = await tryWithin(1500, async () => el!.$('[class*="removeButton"]'));
+        if (rm) {
+            await rm.click({ force: true }).catch(() => undefined);
+            await page.waitForTimeout(500);
+            if (!(await isPresent())) return true;
+        }
+    }
+
+    // Strategy 3 — legacy right-click → Remove (works only in headed mode).
+    el = await getRow();
+    if (el) {
+        await el.click({ button: 'right' });
+        await page.waitForTimeout(700);
+        const removeBtn = await tryWithin(2500, async () =>
+            page.getByText('Remove', { exact: false }).first().elementHandle()
+        );
+        if (removeBtn) {
+            await removeBtn.click({ force: true });
+            await page.waitForTimeout(500);
+        }
+        await page.keyboard.press('Escape').catch(() => undefined);
+        if (!(await isPresent())) return true;
+    }
+
+    return false;
 }
 
 async function syncWatchlist(
