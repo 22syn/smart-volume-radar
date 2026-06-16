@@ -55,6 +55,9 @@ results/*
 # Exception: sector-outcomes.json drives TD-15 (dynamic sector blacklist).
 # Same weekly refresh cadence as ticker-outcomes.
 !results/sector-outcomes.json
+# Exception: tv-state.json is committed by the tv-sync GHA workflow so
+# telegram-mcp can read watchlist state without needing local disk access.
+!results/tv-state.json
 # Finnhub fundamentals cache (TTL 7d) — never committed, never shared across machines.
 results/finnhub-cache/
 .claude/worktrees/
