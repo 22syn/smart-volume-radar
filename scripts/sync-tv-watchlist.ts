@@ -39,8 +39,12 @@ const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 
 // ─── Config ────────────────────────────────────────────────────────────
+const IS_CI = process.env.CI === 'true';
 const PROFILE_DIR = path.join(os.homedir(), '.cache', 'svr-tv-sync', 'chromium-profile');
-const LOG_DIR = path.join(os.homedir(), 'Library', 'Logs');
+const LOG_DIR = IS_CI
+    ? (process.env.GITHUB_WORKSPACE ?? process.cwd())
+    : path.join(os.homedir(), 'Library', 'Logs');
+const TV_COOKIES_FILE = process.env.TV_COOKIES_FILE ?? '';
 fs.mkdirSync(path.dirname(PROFILE_DIR), { recursive: true });
 fs.mkdirSync(LOG_DIR, { recursive: true });
 
@@ -793,11 +797,27 @@ async function main() {
 
     let context: BrowserContext | null = null;
     try {
-        context = await chromium.launchPersistentContext(PROFILE_DIR, {
-            headless: !HEADED,
-            viewport: { width: 1400, height: 900 },
-            args: ['--disable-blink-features=AutomationControlled'],
-        });
+        if (IS_CI) {
+            // In CI: regular launch + inject cookies from TV_COOKIES_FILE secret.
+            const browser = await chromium.launch({
+                headless: true,
+                args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
+            });
+            context = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+            if (TV_COOKIES_FILE && fs.existsSync(TV_COOKIES_FILE)) {
+                const cookies = JSON.parse(fs.readFileSync(TV_COOKIES_FILE, 'utf8'));
+                await context.addCookies(cookies);
+                log(`🍪 Injected ${cookies.length} cookies from ${TV_COOKIES_FILE}`);
+            } else {
+                throw new Error('CI mode requires TV_COOKIES_FILE env var pointing to a cookies JSON file.');
+            }
+        } else {
+            context = await chromium.launchPersistentContext(PROFILE_DIR, {
+                headless: !HEADED,
+                viewport: { width: 1400, height: 900 },
+                args: ['--disable-blink-features=AutomationControlled'],
+            });
+        }
         const page = context.pages()[0] ?? (await context.newPage());
 
         if (LOGIN_MODE) {
@@ -877,7 +897,9 @@ async function main() {
         // Persist TV-state snapshot for the watchlist health-check.
         // Only write in full 4-list mode (single-list runs would clobber siblings).
         if (!SINGLE_LIST_MODE && Object.keys(STATE_SNAPSHOT).length > 0) {
-            const tvStatePath = path.join(os.homedir(), 'telegram-mcp', 'data', 'tv-state.json');
+            const tvStatePath = IS_CI
+                ? path.join(process.env.GITHUB_WORKSPACE ?? process.cwd(), 'results', 'tv-state.json')
+                : path.join(os.homedir(), 'telegram-mcp', 'data', 'tv-state.json');
             try {
                 fs.mkdirSync(path.dirname(tvStatePath), { recursive: true });
                 fs.writeFileSync(
