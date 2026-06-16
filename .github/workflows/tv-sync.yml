@@ -1,0 +1,95 @@
+name: TV Watchlist Sync
+
+on:
+  # Fire after the Smart Radar scan completes (Lean runs in parallel; the sync
+  # script downloads artifacts from both workflows independently, so Lean's
+  # artifact is picked up regardless of which finished first).
+  workflow_run:
+    workflows: ["Smart Volume Radar - Daily Scan"]
+    types: [completed]
+
+  # Manual trigger for testing / catch-up runs.
+  workflow_dispatch:
+
+jobs:
+  tv-sync:
+    # Only run when the upstream scan succeeded (skip on failure/cancel).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write   # to commit tv-state.json back to repo
+      actions: read     # to download artifacts from other workflows via gh CLI
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium --with-deps
+
+      # Restore persisted state (ticker history, exchange registry).
+      # On first run ever this step is a no-op (artifact doesn't exist yet).
+      - name: Restore TV sync state
+        uses: actions/download-artifact@v4
+        with:
+          name: tv-sync-state
+          path: /home/runner/.cache/svr-tv-sync/
+        continue-on-error: true
+
+      # Decode the TV_COOKIES secret (base64 JSON) and write to temp file.
+      - name: Prepare TradingView cookies
+        run: |
+          echo "${{ secrets.TV_COOKIES }}" | base64 -d > /tmp/tv-cookies.json
+          echo "TV_COOKIES_FILE=/tmp/tv-cookies.json" >> $GITHUB_ENV
+
+      - name: Run TV sync
+        env:
+          CI: 'true'
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TV_COOKIES_FILE: ${{ env.TV_COOKIES_FILE }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: npm run tv-sync
+
+      # Persist state files for the next run (ticker history, first-seen, exchange registry).
+      - name: Save TV sync state
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tv-sync-state
+          path: /home/runner/.cache/svr-tv-sync/
+          retention-days: 90
+          overwrite: true
+
+      # Commit tv-state.json back to repo so telegram-mcp can read it.
+      - name: Commit tv-state.json
+        if: success() && hashFiles('results/tv-state.json') != ''
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add results/tv-state.json
+          if git diff --staged --quiet; then
+            echo "tv-state.json unchanged — nothing to commit"
+          else
+            git commit -m "chore: update tv-state.json (tv-sync $(date -u +%Y-%m-%d))"
+            git pull --rebase origin main || true
+            git push origin HEAD:main
+          fi
+
+      - name: Notify Telegram on failure
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_CHAT_ID}&text=❌ TV Sync (GHA) failed. Check GitHub Actions."
