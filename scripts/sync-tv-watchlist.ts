@@ -796,10 +796,11 @@ async function main() {
     log(`Profile dir: ${PROFILE_DIR}`);
 
     let context: BrowserContext | null = null;
+    let browser: import('playwright').Browser | null = null;
     try {
         if (IS_CI) {
             // In CI: regular launch + inject cookies from TV_COOKIES_FILE secret.
-            const browser = await chromium.launch({
+            browser = await chromium.launch({
                 headless: true,
                 args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
             });
@@ -932,6 +933,7 @@ async function main() {
         process.exit(1);
     } finally {
         await context?.close();
+        await browser?.close();
     }
 }
 
