@@ -29,6 +29,7 @@
     "analyze-criteria-importance": "tsx scripts/analyze-criteria-importance.ts",
     "preview-report": "tsx scripts/preview-report.ts",
     "tv-sync": "tsx scripts/sync-tv-watchlist.ts",
+    "export-tv-cookies": "tsx scripts/export-tv-cookies.ts",
     "recall-3month": "tsx scripts/recall-3month.ts"
   },
   "keywords": [
