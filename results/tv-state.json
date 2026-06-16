@@ -22,8 +22,7 @@
       },
       {
         "ticker": "NOKI",
-        "signalDate": "2026-06-16",
-        "exchange": "VIE"
+        "signalDate": "2026-06-16"
       },
       {
         "ticker": "UMC",
@@ -39,10 +38,15 @@
       },
       {
         "ticker": "TA-BANKS",
-        "signalDate": "2026-06-16"
+        "signalDate": "2026-06-16",
+        "exchange": "TASE"
       },
       {
         "ticker": "8035.T",
+        "signalDate": "2026-06-16"
+      },
+      {
+        "ticker": "WDC",
         "signalDate": "2026-06-16"
       }
     ],
@@ -83,8 +87,7 @@
       },
       {
         "ticker": "NESN",
-        "signalDate": "2026-06-16",
-        "exchange": "SIX"
+        "signalDate": "2026-06-16"
       },
       {
         "ticker": "MDLZ",
@@ -152,6 +155,10 @@
       },
       {
         "ticker": "CL",
+        "signalDate": "2026-06-16"
+      },
+      {
+        "ticker": "MTCH",
         "signalDate": "2026-06-16"
       }
     ]
