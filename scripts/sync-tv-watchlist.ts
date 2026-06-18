@@ -82,6 +82,14 @@ const WATCHLIST_FILE_OVERRIDE = arg('file', path.join(PROJECT_ROOT, 'results', '
 
 const PRUNE_AFTER_DAYS = parseInt(arg('prune-after-days', '14'), 10);
 
+// Granular single-operation modes (used by the MCP tools). Each opens one
+// list, performs one operation, prints a JSON result to stdout, and exits.
+const READ_LIST = arg('read', '');
+const ADD_LIST = arg('add', '');
+const REMOVE_LIST = arg('remove', '');
+const SYMBOLS_CSV = arg('symbols', '');
+const GRANULAR_MODE = !!(READ_LIST || ADD_LIST || REMOVE_LIST);
+
 function historyPathFor(watchlistName: string): string {
     const safe = watchlistName.replace(/[^a-zA-Z0-9-]/g, '_');
     return path.join(os.homedir(), '.cache', 'svr-tv-sync', `ticker-history-${safe}.json`);
@@ -809,6 +817,62 @@ function resolveSingleListTask(): SyncTarget {
     return { file: WATCHLIST_FILE_OVERRIDE, name: WATCHLIST_NAME_OVERRIDE, workflow: workflowFor() };
 }
 
+// ─── Granular single-operation handlers (--read / --add / --remove) ──
+function parseSymbolsCsv(csv: string): string[] {
+    return csv
+        .split(',')
+        .map((s) => s.trim().toUpperCase())
+        .filter((s) => s.length > 0);
+}
+
+// Assumes `page` is already on the TV chart page and logged in (the caller
+// runs the shared navigation + login check first). Reuses the same Playwright
+// primitives as the sync path. Prints exactly one JSON object to stdout.
+async function runGranular(page: Page): Promise<number> {
+    if (READ_LIST) {
+        const found = await openWatchlist(page, READ_LIST, false);
+        if (!found) {
+            console.log(JSON.stringify({ mode: 'read', watchlist: READ_LIST, error: 'watchlist not found' }));
+            return 1;
+        }
+        const symbols = await readCurrentSymbols(page);
+        console.log(JSON.stringify({ mode: 'read', watchlist: READ_LIST, symbols }));
+        return 0;
+    }
+
+    if (ADD_LIST) {
+        const syms = parseSymbolsCsv(SYMBOLS_CSV);
+        if (syms.length === 0) {
+            console.log(JSON.stringify({ mode: 'add', watchlist: ADD_LIST, error: 'no symbols given' }));
+            return 1;
+        }
+        await openWatchlist(page, ADD_LIST, true);
+        const { added, failed } = await addSymbolsBulk(page, syms);
+        console.log(JSON.stringify({ mode: 'add', watchlist: ADD_LIST, added, failed }));
+        return 0;
+    }
+
+    // REMOVE_LIST
+    const syms = parseSymbolsCsv(SYMBOLS_CSV);
+    if (syms.length === 0) {
+        console.log(JSON.stringify({ mode: 'remove', watchlist: REMOVE_LIST, error: 'no symbols given' }));
+        return 1;
+    }
+    const found = await openWatchlist(page, REMOVE_LIST, false);
+    if (!found) {
+        console.log(JSON.stringify({ mode: 'remove', watchlist: REMOVE_LIST, error: 'watchlist not found' }));
+        return 1;
+    }
+    const removed: string[] = [];
+    const notFound: string[] = [];
+    for (const s of syms) {
+        if (await removeSymbol(page, s)) removed.push(s);
+        else notFound.push(s);
+    }
+    console.log(JSON.stringify({ mode: 'remove', watchlist: REMOVE_LIST, removed, notFound }));
+    return 0;
+}
+
 // ─── Main ───────────────────────────────────────────────────────────
 async function main() {
     const mode = SINGLE_LIST_MODE
@@ -874,6 +938,17 @@ async function main() {
                 'Not logged into TradingView. Run with --login once to authenticate. ' +
                     'See ~/Library/Logs/tv-sync.log for details.'
             );
+        }
+
+        if (GRANULAR_MODE) {
+            let code = 1;
+            try {
+                code = await runGranular(page);
+            } finally {
+                await context.close().catch(() => {});
+                await browser?.close().catch(() => {});
+            }
+            process.exit(code);
         }
 
         const tasks: SyncTarget[] = SINGLE_LIST_MODE

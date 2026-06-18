@@ -2,8 +2,9 @@
 'use strict';
 /**
  * svr-tv-sync MCP server
- * Exposes one tool, tv_sync, that shells out to the repo's `npm run tv-sync`
- * so behavior is identical to a manual run. No sync logic lives here.
+ * Shells out to the repo's `npm run tv-sync` so behavior matches a manual run.
+ * No sync logic here. tv_sync runs the full/single sync; tv_read_watchlist /
+ * tv_add_symbols / tv_remove_symbols use the script's granular modes (JSON on stdout).
  */
 const path = require('path');
 const fs = require('fs');
@@ -15,35 +16,39 @@ const {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } = require('@modelcontextprotocol/sdk/types.js');
-const { buildArgs, WATCHLISTS } = require('./src/buildArgs.js');
+const { TOOL_DEFINITIONS, TOOL_SPECS } = require('./src/tools.js');
 
-// Repo root is the parent of this MCP package directory.
 const REPO_DIR = path.resolve(__dirname, '..');
 const STATE_PATH = path.join(os.homedir(), 'telegram-mcp', 'data', 'tv-state.json');
 const TIMEOUT_MS = Number(process.env.TV_SYNC_TIMEOUT_MS) || 35 * 60 * 1000;
-const MAX_OUTPUT_TAIL = 4000; // chars returned from each stream
-const MAX_BUFFER = 1_000_000; // cap each stream's retained bytes (~1MB)
+const MAX_OUTPUT_TAIL = 4000;
+const MAX_BUFFER = 1_000_000;
 
 function tail(str, n = MAX_OUTPUT_TAIL) {
   return str.length > n ? str.slice(-n) : str;
 }
 
-/**
- * Run `npm run tv-sync -- <flags>` in REPO_DIR with an outer timeout.
- * Resolves with { exitCode, timedOut, stdout, stderr, durationMs }.
- */
+/** Find the last stdout line that parses as JSON (skips the npm banner). */
+function parseGranularResult(stdout) {
+  const lines = stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      return JSON.parse(lines[i]);
+    } catch (_) {
+      /* keep scanning upward */
+    }
+  }
+  return null;
+}
+
 function runTvSync(flags) {
   return new Promise((resolve) => {
     const startedAt = Date.now();
-    const child = spawn('npm', ['run', 'tv-sync', '--', ...flags], {
-      cwd: REPO_DIR,
-      env: process.env,
-    });
+    const child = spawn('npm', ['run', 'tv-sync', '--', ...flags], { cwd: REPO_DIR, env: process.env });
 
     let stdout = '';
     let stderr = '';
     let timedOut = false;
-
     let settled = false;
     const settle = (result) => {
       if (settled) return;
@@ -67,92 +72,66 @@ function runTvSync(flags) {
     });
 
     child.on('close', (code) => {
-      settle({
-        exitCode: code,
-        timedOut,
-        stdout,
-        stderr,
-        durationMs: Date.now() - startedAt,
-        startedAt,
-      });
+      settle({ exitCode: code, timedOut, stdout, stderr, durationMs: Date.now() - startedAt, startedAt });
     });
-
     child.on('error', (err) => {
-      settle({
-        exitCode: -1,
-        timedOut,
-        stdout,
-        stderr: stderr + `\nspawn error: ${err.message}`,
-        durationMs: Date.now() - startedAt,
-        startedAt,
-      });
+      settle({ exitCode: -1, timedOut, stdout, stderr: stderr + `\nspawn error: ${err.message}`, durationMs: Date.now() - startedAt, startedAt });
     });
   });
 }
 
-const server = new Server(
-  { name: 'svr-tv-sync', version: '1.0.0' },
-  { capabilities: { tools: {} } }
-);
+const server = new Server({ name: 'svr-tv-sync', version: '2.0.0' }, { capabilities: { tools: {} } });
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [
-    {
-      name: 'tv_sync',
-      description:
-        'Sync the Smart Volume Radar watchlists to TradingView by running the repo\'s ' +
-        'existing `npm run tv-sync` (Playwright, local Chromium profile). Identical to a ' +
-        'manual run. Use dryRun to preview the add/remove diff without writing.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          dryRun: { type: 'boolean', description: 'Read + diff only, no writes (--dry-run).', default: false },
-          replace: { type: 'boolean', description: 'Remove any TV symbol not in the target list (--replace). Default is additive + staleness prune.', default: false },
-          headed: { type: 'boolean', description: 'Run with a visible browser window for debugging (--headed).', default: false },
-          watchlist: { type: 'string', enum: WATCHLISTS, description: 'Sync only this one list instead of all four.' },
-        },
-        additionalProperties: false,
-      },
-    },
-  ],
-}));
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOL_DEFINITIONS }));
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  if (request.params.name !== 'tv_sync') {
-    throw new Error(`Unknown tool: ${request.params.name}`);
-  }
+  const spec = TOOL_SPECS[request.params.name];
+  if (!spec) throw new Error(`Unknown tool: ${request.params.name}`);
   if (!fs.existsSync(path.join(REPO_DIR, 'package.json'))) {
     return { isError: true, content: [{ type: 'text', text: `Repo not found at ${REPO_DIR}` }] };
   }
 
   let flags;
   try {
-    flags = buildArgs(request.params.arguments || {});
+    flags = spec.build(request.params.arguments || {});
   } catch (err) {
     return { isError: true, content: [{ type: 'text', text: String(err.message) }] };
   }
 
   const result = await runTvSync(flags);
+  const minutes = (result.durationMs / 60000).toFixed(1);
 
-  // Report tv-state.json only if it was (re)written during this run.
+  if (spec.granular) {
+    const parsed = result.timedOut ? null : parseGranularResult(result.stdout);
+    if (parsed === null) {
+      const why = result.timedOut ? `timed out after ${minutes} min` : 'could not parse JSON result';
+      return {
+        isError: true,
+        content: [{ type: 'text', text: `${request.params.name} failed (${why}). flags: [${flags.join(' ')}]\n--- stdout ---\n${tail(result.stdout)}\n--- stderr ---\n${tail(result.stderr)}` }],
+      };
+    }
+    const failedAll =
+      (Array.isArray(parsed.added) && parsed.added.length === 0 && Array.isArray(parsed.failed) && parsed.failed.length > 0) ||
+      (Array.isArray(parsed.removed) && parsed.removed.length === 0 && Array.isArray(parsed.notFound) && parsed.notFound.length > 0);
+    return {
+      isError: result.exitCode !== 0 || parsed.error != null || failedAll,
+      content: [{ type: 'text', text: JSON.stringify(parsed, null, 2) }],
+    };
+  }
+
+  // tv_sync — full/single sync summary.
   let statePath = null;
   try {
     const st = fs.statSync(STATE_PATH);
     if (st.mtimeMs >= result.startedAt) statePath = STATE_PATH;
-  } catch (_) { /* not written / not present */ }
-
-  const minutes = (result.durationMs / 60000).toFixed(1);
+  } catch (_) { /* not written */ }
   const ok = result.exitCode === 0 && !result.timedOut;
   const header = result.timedOut
     ? `tv_sync TIMED OUT after ${minutes} min (TV_SYNC_TIMEOUT_MS=${TIMEOUT_MS}); child killed.`
     : `tv_sync exited ${result.exitCode} in ${minutes} min. flags: [${flags.join(' ')}]`;
-
   const body =
-    `${header}\n` +
-    `statePath: ${statePath || '(not updated)'}\n` +
-    `--- stdout (tail) ---\n${tail(result.stdout)}\n` +
-    `--- stderr (tail) ---\n${tail(result.stderr)}`;
-
+    `${header}\nstatePath: ${statePath || '(not updated)'}\n` +
+    `--- stdout (tail) ---\n${tail(result.stdout)}\n--- stderr (tail) ---\n${tail(result.stderr)}`;
   return { isError: !ok, content: [{ type: 'text', text: body }] };
 });
 
