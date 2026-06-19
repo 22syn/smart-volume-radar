@@ -1,140 +1,153 @@
 {
-  "updatedAt": "2026-06-18",
+  "updatedAt": "2026-06-19",
   "watchlists": {
     "Smart Radar - BUY": [],
     "Smart Radar - WATCH": [
       {
         "ticker": "NOKI",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "UMC",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "ZION",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "TA-BANKS",
-        "signalDate": "2026-06-18",
+        "signalDate": "2026-06-19",
         "exchange": "TASE"
       },
       {
         "ticker": "8035.T",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "WDC",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "TDRN",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "ALAB",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "ARM",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "QCOM",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "DELL",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
+      },
+      {
+        "ticker": "NBIS",
+        "signalDate": "2026-06-19"
+      },
+      {
+        "ticker": "028260",
+        "signalDate": "2026-06-19",
+        "exchange": "KRX"
+      },
+      {
+        "ticker": "APH",
+        "signalDate": "2026-06-19"
       }
     ],
     "Lean Radar - Breakouts": [
       {
         "ticker": "KRE",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       }
     ],
     "Lean Radar - Near": [
       {
         "ticker": "PLUS",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "WBS",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "KO",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "NESN",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "MDLZ",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "VLY",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "EQIX",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "EWBC",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "KRE",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "PNC",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "ZION",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "MNST",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "TFC",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "KBE",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "PKG",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "REG",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "RTX",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "JPM",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "CL",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       },
       {
         "ticker": "MTCH",
-        "signalDate": "2026-06-18"
+        "signalDate": "2026-06-19"
       }
     ]
   }
