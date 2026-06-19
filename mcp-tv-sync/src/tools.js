@@ -1,6 +1,6 @@
 'use strict';
 const {
-  buildArgs, buildReadArgs, buildAddArgs, buildRemoveArgs, WATCHLISTS,
+  buildArgs, buildReadArgs, buildAddArgs, buildRemoveArgs, buildScreenshotArgs, WATCHLISTS,
 } = require('./buildArgs.js');
 
 const WL_REQUIRED = { type: 'string', enum: WATCHLISTS, description: 'Which watchlist to operate on.' };
@@ -60,14 +60,30 @@ const TOOL_DEFINITIONS = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'tv_screenshot',
+    description:
+      'Open a symbol on TradingView (your saved chart layout) and return a screenshot of the chart as an image. ' +
+      'Use to visually inspect a stock\'s chart.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        symbol: { type: 'string', description: 'TradingView symbol, e.g. "NVDA", "AAPL", or exchange-qualified "TASE:RMLI".' },
+        interval: { type: 'string', description: 'Optional timeframe, e.g. "1D","1W","4H","60". Defaults to the saved layout\'s timeframe.' },
+      },
+      required: ['symbol'],
+      additionalProperties: false,
+    },
+  },
 ];
 
-// name -> how to build its flags and whether it returns a JSON granular result.
+// name -> how to build its flags and what kind of result it returns.
 const TOOL_SPECS = {
-  tv_sync: { build: buildArgs, granular: false },
-  tv_read_watchlist: { build: buildReadArgs, granular: true },
-  tv_add_symbols: { build: buildAddArgs, granular: true },
-  tv_remove_symbols: { build: buildRemoveArgs, granular: true },
+  tv_sync: { build: buildArgs, kind: 'sync' },
+  tv_read_watchlist: { build: buildReadArgs, kind: 'granular' },
+  tv_add_symbols: { build: buildAddArgs, kind: 'granular' },
+  tv_remove_symbols: { build: buildRemoveArgs, kind: 'granular' },
+  tv_screenshot: { build: buildScreenshotArgs, kind: 'image' },
 };
 
 module.exports = { TOOL_DEFINITIONS, TOOL_SPECS };

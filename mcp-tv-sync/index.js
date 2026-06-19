@@ -101,7 +101,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const result = await runTvSync(flags);
   const minutes = (result.durationMs / 60000).toFixed(1);
 
-  if (spec.granular) {
+  if (spec.kind === 'granular') {
     const parsed = result.timedOut ? null : parseGranularResult(result.stdout);
     if (parsed === null) {
       const why = result.timedOut ? `timed out after ${minutes} min` : 'could not parse JSON result';
@@ -117,6 +117,37 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       isError: result.exitCode !== 0 || parsed.error != null || failedAll,
       content: [{ type: 'text', text: JSON.stringify(parsed, null, 2) }],
     };
+  }
+
+  if (spec.kind === 'image') {
+    const parsed = result.timedOut ? null : parseGranularResult(result.stdout);
+    const failMsg = (why) => ({
+      isError: true,
+      content: [{ type: 'text', text: `${request.params.name} failed (${why}). flags: [${flags.join(' ')}]\n--- stdout ---\n${tail(result.stdout)}\n--- stderr ---\n${tail(result.stderr)}` }],
+    });
+    if (result.timedOut) return failMsg(`timed out after ${minutes} min`);
+    if (parsed === null || parsed.error != null || !parsed.path) {
+      return failMsg(parsed && parsed.error ? parsed.error : 'no screenshot path in result');
+    }
+    let data;
+    try {
+      data = fs.readFileSync(parsed.path).toString('base64');
+    } catch (err) {
+      return failMsg(`could not read screenshot file ${parsed.path}: ${err.message}`);
+    }
+    fs.unlink(parsed.path, () => {});
+    const caption = `TradingView ${parsed.symbol}${parsed.interval ? ' @ ' + parsed.interval : ''} — ${parsed.path}`;
+    return {
+      isError: result.exitCode !== 0,
+      content: [
+        { type: 'image', data, mimeType: 'image/png' },
+        { type: 'text', text: caption },
+      ],
+    };
+  }
+
+  if (spec.kind !== 'sync') {
+    throw new Error(`Unhandled kind '${spec.kind}' for tool ${request.params.name}`);
   }
 
   // tv_sync — full/single sync summary.

@@ -94,3 +94,25 @@ test('add/remove reject empty symbols', () => {
   assert.throws(() => buildAddArgs({ watchlist: 'Lean Radar - Near', symbols: [] }), /non-empty/i);
   assert.throws(() => buildRemoveArgs({ watchlist: 'Lean Radar - Near', symbols: ['  '] }), /non-empty/i);
 });
+
+const { buildScreenshotArgs } = require('../src/buildArgs.js');
+
+test('buildScreenshotArgs maps symbol to --screenshot', () => {
+  assert.deepEqual(buildScreenshotArgs({ symbol: 'NVDA' }), ['--screenshot', 'NVDA']);
+});
+
+test('buildScreenshotArgs appends --interval when set', () => {
+  assert.deepEqual(
+    buildScreenshotArgs({ symbol: 'NVDA', interval: '1W' }),
+    ['--screenshot', 'NVDA', '--interval', '1W']
+  );
+});
+
+test('buildScreenshotArgs trims symbol and omits empty interval', () => {
+  assert.deepEqual(buildScreenshotArgs({ symbol: '  AAPL ', interval: '' }), ['--screenshot', 'AAPL']);
+});
+
+test('buildScreenshotArgs throws on empty/missing symbol', () => {
+  assert.throws(() => buildScreenshotArgs({ symbol: '   ' }), /symbol is required/i);
+  assert.throws(() => buildScreenshotArgs({}), /symbol is required/i);
+});

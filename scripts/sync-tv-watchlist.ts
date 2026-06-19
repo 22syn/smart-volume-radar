@@ -90,6 +90,12 @@ const REMOVE_LIST = arg('remove', '');
 const SYMBOLS_CSV = arg('symbols', '');
 const GRANULAR_MODE = !!(READ_LIST || ADD_LIST || REMOVE_LIST);
 
+// Screenshot mode (used by the tv_screenshot MCP tool): open one symbol on the
+// saved chart layout, capture a PNG, print its path as JSON.
+const SCREENSHOT_SYMBOL = arg('screenshot', '');
+const SCREENSHOT_INTERVAL = arg('interval', '');
+const SCREENSHOT_MODE = !!SCREENSHOT_SYMBOL;
+
 function historyPathFor(watchlistName: string): string {
     const safe = watchlistName.replace(/[^a-zA-Z0-9-]/g, '_');
     return path.join(os.homedir(), '.cache', 'svr-tv-sync', `ticker-history-${safe}.json`);
@@ -873,6 +879,45 @@ async function runGranular(page: Page): Promise<number> {
     return 0;
 }
 
+// ─── Screenshot mode (--screenshot SYMBOL [--interval CODE]) ─────────
+// Map friendly interval forms to TradingView interval codes. Unknown values
+// pass through unchanged. "1M" is intentionally NOT mapped (ambiguous: monthly
+// is "M", one-minute is "1").
+function tvInterval(raw: string): string {
+    const s = raw.trim().toUpperCase();
+    const map: Record<string, string> = {
+        '1D': 'D', D: 'D', DAY: 'D', DAILY: 'D',
+        '1W': 'W', W: 'W', WEEK: 'W', WEEKLY: 'W',
+        M: 'M', MONTH: 'M', MONTHLY: 'M',
+        '1H': '60', '60': '60', '60M': '60',
+        '4H': '240', '240': '240', '2H': '120', '120': '120',
+        '30': '30', '15': '15', '5': '5', '1': '1',
+    };
+    return map[s] ?? s;
+}
+
+// Assumes `page` is already logged in (caller runs navigation + login check
+// first). Navigates to the symbol on the saved layout, screenshots to a temp
+// PNG, and prints one JSON object to stdout.
+async function runScreenshot(page: Page): Promise<number> {
+    let url = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(SCREENSHOT_SYMBOL)}`;
+    if (SCREENSHOT_INTERVAL) url += `&interval=${encodeURIComponent(tvInterval(SCREENSHOT_INTERVAL))}`;
+    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(6000);
+    await dismissPopups(page);
+    const safe = SCREENSHOT_SYMBOL.replace(/[^a-zA-Z0-9]/g, '_');
+    const out = path.join(os.tmpdir(), `svr-tv-shot-${safe}-${Date.now()}.png`);
+    await page.screenshot({ path: out, fullPage: false });
+    log(`📸 Screenshot saved: ${out}`);
+    console.log(JSON.stringify({
+        mode: 'screenshot',
+        symbol: SCREENSHOT_SYMBOL,
+        interval: SCREENSHOT_INTERVAL || null,
+        path: out,
+    }));
+    return 0;
+}
+
 // ─── Main ───────────────────────────────────────────────────────────
 async function main() {
     const mode = SINGLE_LIST_MODE
@@ -944,6 +989,17 @@ async function main() {
             let code = 1;
             try {
                 code = await runGranular(page);
+            } finally {
+                await context.close().catch(() => {});
+                await browser?.close().catch(() => {});
+            }
+            process.exit(code);
+        }
+
+        if (SCREENSHOT_MODE) {
+            let code = 1;
+            try {
+                code = await runScreenshot(page);
             } finally {
                 await context.close().catch(() => {});
                 await browser?.close().catch(() => {});

@@ -63,4 +63,14 @@ function buildRemoveArgs(params = {}) {
   return ['--remove', params.watchlist, '--symbols', normalizeSymbols(params.symbols).join(',')];
 }
 
-module.exports = { buildArgs, buildReadArgs, buildAddArgs, buildRemoveArgs, WATCHLISTS };
+function buildScreenshotArgs(params = {}) {
+  const symbol = params.symbol == null ? '' : String(params.symbol).trim();
+  if (symbol === '') throw new Error('symbol is required');
+  const args = ['--screenshot', symbol];
+  if (params.interval != null && params.interval !== '') {
+    args.push('--interval', String(params.interval));
+  }
+  return args;
+}
+
+module.exports = { buildArgs, buildReadArgs, buildAddArgs, buildRemoveArgs, buildScreenshotArgs, WATCHLISTS };
