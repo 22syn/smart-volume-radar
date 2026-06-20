@@ -76,6 +76,22 @@ const TOOL_DEFINITIONS = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'tv_deep_dive',
+    description:
+      'Deep dive on a ticker: returns its TradingView chart image(s) PLUS a text block of its ' +
+      'current Smart/Lean Radar state (price, RVOL, action, momentum criteria, champion score, ' +
+      'trade plan, sector rank). Use to analyze a stock visually and technically together.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        symbol: { type: 'string', description: 'TradingView symbol / ticker, e.g. "NVDA".' },
+        intervals: { type: 'array', items: { type: 'string' }, maxItems: 4, description: 'Optional timeframes, e.g. ["1D","1W"] (max 4).' },
+      },
+      required: ['symbol'],
+      additionalProperties: false,
+    },
+  },
 ];
 
 // name -> how to build its flags and what kind of result it returns.
@@ -85,6 +101,7 @@ const TOOL_SPECS = {
   tv_add_symbols: { build: buildAddArgs, kind: 'granular' },
   tv_remove_symbols: { build: buildRemoveArgs, kind: 'granular' },
   tv_screenshot: { build: buildScreenshotArgs, kind: 'image' },
+  tv_deep_dive: { build: buildScreenshotArgs, kind: 'deepdive' },
 };
 
 module.exports = { TOOL_DEFINITIONS, TOOL_SPECS };

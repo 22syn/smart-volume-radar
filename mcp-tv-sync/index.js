@@ -17,6 +17,7 @@ const {
   ListToolsRequestSchema,
 } = require('@modelcontextprotocol/sdk/types.js');
 const { TOOL_DEFINITIONS, TOOL_SPECS } = require('./src/tools.js');
+const radar = require('./src/radarData.js');
 
 const REPO_DIR = path.resolve(__dirname, '..');
 const STATE_PATH = path.join(os.homedir(), 'telegram-mcp', 'data', 'tv-state.json');
@@ -80,6 +81,27 @@ function runTvSync(flags) {
   });
 }
 
+// Turn a parsed {symbol, shots:[{interval,path}]} into MCP image+caption blocks.
+// Reads + unlinks each PNG. Returns { blocks, imageCount }.
+function shotsToContent(parsed) {
+  const blocks = [];
+  let imageCount = 0;
+  for (const shot of parsed.shots) {
+    let data;
+    try {
+      data = fs.readFileSync(shot.path).toString('base64');
+    } catch (_) {
+      blocks.push({ type: 'text', text: `[warning] could not read screenshot for ${shot.interval || 'default'}` });
+      continue;
+    }
+    fs.unlink(shot.path, () => {});
+    blocks.push({ type: 'image', data, mimeType: 'image/png' });
+    blocks.push({ type: 'text', text: `TradingView ${parsed.symbol} @ ${shot.interval || 'default'}` });
+    imageCount++;
+  }
+  return { blocks, imageCount };
+}
+
 const server = new Server({ name: 'svr-tv-sync', version: '2.0.0' }, { capabilities: { tools: {} } });
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOL_DEFINITIONS }));
@@ -101,6 +123,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const result = await runTvSync(flags);
   const minutes = (result.durationMs / 60000).toFixed(1);
 
+  const screenshotFailText = (why) =>
+    `${request.params.name} failed (${why}). flags: [${flags.join(' ')}]\n--- stdout ---\n${tail(result.stdout)}\n--- stderr ---\n${tail(result.stderr)}`;
+
   if (spec.kind === 'granular') {
     const parsed = result.timedOut ? null : parseGranularResult(result.stdout);
     if (parsed === null) {
@@ -121,31 +146,48 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   if (spec.kind === 'image') {
     const parsed = result.timedOut ? null : parseGranularResult(result.stdout);
-    const failMsg = (why) => ({
-      isError: true,
-      content: [{ type: 'text', text: `${request.params.name} failed (${why}). flags: [${flags.join(' ')}]\n--- stdout ---\n${tail(result.stdout)}\n--- stderr ---\n${tail(result.stderr)}` }],
-    });
-    if (result.timedOut) return failMsg(`timed out after ${minutes} min`);
+    if (result.timedOut) return { isError: true, content: [{ type: 'text', text: screenshotFailText(`timed out after ${minutes} min`) }] };
     if (parsed === null || parsed.error != null || !Array.isArray(parsed.shots) || parsed.shots.length === 0) {
-      return failMsg(parsed && parsed.error ? parsed.error : 'no screenshots in result');
+      return { isError: true, content: [{ type: 'text', text: screenshotFailText(parsed && parsed.error ? parsed.error : 'no screenshots in result') }] };
     }
-    const content = [];
-    let imageCount = 0;
-    for (const shot of parsed.shots) {
-      let data;
-      try {
-        data = fs.readFileSync(shot.path).toString('base64');
-      } catch (_) {
-        content.push({ type: 'text', text: `[warning] could not read screenshot for ${shot.interval || 'default'}` });
-        continue;
-      }
-      fs.unlink(shot.path, () => {});
-      content.push({ type: 'image', data, mimeType: 'image/png' });
-      content.push({ type: 'text', text: `TradingView ${parsed.symbol} @ ${shot.interval || 'default'}` });
-      imageCount++;
+    const { blocks, imageCount } = shotsToContent(parsed);
+    if (imageCount === 0) return { isError: true, content: [{ type: 'text', text: screenshotFailText('no readable screenshot files') }] };
+    return { isError: result.exitCode !== 0, content: blocks };
+  }
+
+  if (spec.kind === 'deepdive') {
+    const symbol = (request.params.arguments && request.params.arguments.symbol) || '';
+    let radarBlock;
+    try {
+      const snap = radar.loadLatestRadar(REPO_DIR);
+      const stock = snap ? radar.findStock(snap, symbol) : null;
+      radarBlock = radar.formatDeepDive({
+        symbol,
+        stock,
+        scanDate: snap ? snap.scanDate : null,
+        leanBuckets: radar.leanBucketsFor(radar.loadLatestLean(REPO_DIR), symbol),
+        monitorEntry: radar.loadMonitorEntry(REPO_DIR, symbol),
+      });
+    } catch (err) {
+      process.stderr.write(`[deepdive] radar load failed: ${err.stack || err.message}\n`);
+      radarBlock = `Radar state unavailable: ${err.message}`;
     }
-    if (imageCount === 0) return failMsg('no readable screenshot files');
-    return { isError: result.exitCode !== 0, content };
+
+    const parsed = result.timedOut ? null : parseGranularResult(result.stdout);
+    const deepFail = (why) => ({
+      isError: true,
+      content: [
+        { type: 'text', text: radarBlock },
+        { type: 'text', text: screenshotFailText(why) },
+      ],
+    });
+    if (result.timedOut) return deepFail(`timed out after ${minutes} min`);
+    if (parsed === null || parsed.error != null || !Array.isArray(parsed.shots) || parsed.shots.length === 0) {
+      return deepFail(parsed && parsed.error ? parsed.error : 'no screenshots in result');
+    }
+    const { blocks, imageCount } = shotsToContent(parsed);
+    if (imageCount === 0) return deepFail('no readable screenshot files');
+    return { isError: result.exitCode !== 0, content: [{ type: 'text', text: radarBlock }, ...blocks] };
   }
 
   if (spec.kind !== 'sync') {
