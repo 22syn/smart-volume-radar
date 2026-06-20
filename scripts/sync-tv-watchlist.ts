@@ -529,6 +529,12 @@ async function readCurrentSymbols(page: Page): Promise<string[]> {
         const scrollDeadline = Date.now() + SCROLL_DEADLINE_MS;
         while (pos < scrollHeight + step) {
             if (Date.now() > scrollDeadline) {
+                if (REPLACE) {
+                    // A partial read in --replace mode would compute toRemove from an
+                    // incomplete set and could half-clean the list. Fail so the
+                    // per-list retry handles it instead of silently proceeding.
+                    throw new Error(`watchlist scroll exceeded ${Math.round(SCROLL_DEADLINE_MS / 1000)}s in --replace mode`);
+                }
                 log(`  ⚠️ watchlist scroll exceeded ${Math.round(SCROLL_DEADLINE_MS / 1000)}s — using partial read`);
                 break;
             }
@@ -1113,7 +1119,13 @@ async function main() {
                 });
             let listOk = await runList();
             if (listOk === null) {
-                log(`  ⚠️ "${t.name}" timed out/failed — retrying once...`);
+                log(`  ⚠️ "${t.name}" timed out/failed — resetting page and retrying once...`);
+                // Reset page state so any dangling commands from the timed-out
+                // attempt can't interleave with the retry on the same page.
+                await page.goto('https://www.tradingview.com/chart/', {
+                    waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS,
+                }).catch(() => {});
+                await page.waitForTimeout(3000);
                 listOk = await runList();
             }
             if (listOk === null) {
