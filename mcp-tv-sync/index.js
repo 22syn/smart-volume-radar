@@ -130,18 +130,21 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return failMsg(parsed && parsed.error ? parsed.error : 'no screenshots in result');
     }
     const content = [];
+    let imageCount = 0;
     for (const shot of parsed.shots) {
       let data;
       try {
         data = fs.readFileSync(shot.path).toString('base64');
       } catch (_) {
-        continue; // skip a shot we can't read; others may be fine
+        content.push({ type: 'text', text: `[warning] could not read screenshot for ${shot.interval || 'default'}` });
+        continue;
       }
       fs.unlink(shot.path, () => {});
       content.push({ type: 'image', data, mimeType: 'image/png' });
       content.push({ type: 'text', text: `TradingView ${parsed.symbol} @ ${shot.interval || 'default'}` });
+      imageCount++;
     }
-    if (content.length === 0) return failMsg('no readable screenshot files');
+    if (imageCount === 0) return failMsg('no readable screenshot files');
     return { isError: result.exitCode !== 0, content };
   }
 

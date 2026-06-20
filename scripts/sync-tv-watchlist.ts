@@ -957,8 +957,12 @@ async function runScreenshot(page: Page): Promise<number> {
     const intervals = resolveScreenshotIntervals();
     const shots: Array<{ interval: string | null; path: string }> = [];
     for (const iv of intervals) {
-        const out = await captureChart(page, iv);
-        shots.push({ interval: iv, path: out });
+        try {
+            const out = await captureChart(page, iv);
+            shots.push({ interval: iv, path: out });
+        } catch (err) {
+            log(`  ⚠️ screenshot failed for interval ${iv ?? 'default'}: ${(err as Error).message}`);
+        }
     }
     console.log(JSON.stringify({ mode: 'screenshot', symbol: SCREENSHOT_SYMBOL, shots }));
     return 0;
