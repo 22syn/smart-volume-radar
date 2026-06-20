@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-13T11:54:04.410Z",
+  "generatedAt": "2026-06-20T11:56:09.992Z",
   "config": {
     "TRAILING_N": 30,
     "BLACKLIST_RATE": 0.1,
@@ -11,242 +11,62 @@
   },
   "perTicker": {
     "6531.TW": {
-      "recentWinRate": 0.8333333333333334,
-      "recentAlertsCounted": 24,
+      "recentWinRate": 0.8,
+      "recentAlertsCounted": 20,
       "blacklisted": false,
       "hotStreak": true
-    },
-    "MU": {
-      "recentWinRate": 0.7894736842105263,
-      "recentAlertsCounted": 19,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "QLTU.TA": {
-      "recentWinRate": 0.16666666666666666,
-      "recentAlertsCounted": 6,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "VRT": {
-      "recentWinRate": 1,
-      "recentAlertsCounted": 5,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "TSEM": {
-      "recentWinRate": 0.7857142857142857,
-      "recentAlertsCounted": 14,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "NBIS": {
-      "recentWinRate": 0.9411764705882353,
-      "recentAlertsCounted": 17,
-      "blacklisted": false,
-      "hotStreak": true
-    },
-    "CIEN": {
-      "recentWinRate": 0.75,
-      "recentAlertsCounted": 12,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "PWR": {
-      "recentWinRate": 0.29411764705882354,
-      "recentAlertsCounted": 17,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "OPCE.TA": {
-      "recentWinRate": 0.2222222222222222,
-      "recentAlertsCounted": 9,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "UCO": {
-      "recentWinRate": 0.5,
-      "recentAlertsCounted": 12,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "USO": {
-      "recentWinRate": 0.8571428571428571,
-      "recentAlertsCounted": 14,
-      "blacklisted": false,
-      "hotStreak": true
-    },
-    "APA": {
-      "recentWinRate": 0.38461538461538464,
-      "recentAlertsCounted": 13,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "OXY": {
-      "recentWinRate": 0.2727272727272727,
-      "recentAlertsCounted": 11,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "XOM": {
-      "recentWinRate": 0,
-      "recentAlertsCounted": 10,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "SHEL": {
-      "recentWinRate": 0,
-      "recentAlertsCounted": 14,
-      "blacklisted": true,
-      "hotStreak": false
-    },
-    "TTE": {
-      "recentWinRate": 0.05555555555555555,
-      "recentAlertsCounted": 18,
-      "blacklisted": true,
-      "hotStreak": false
-    },
-    "CVX": {
-      "recentWinRate": 0,
-      "recentAlertsCounted": 9,
-      "blacklisted": true,
-      "hotStreak": false
-    },
-    "CTRA": {
-      "recentWinRate": 0.3333333333333333,
-      "recentAlertsCounted": 6,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "GNRS.TA": {
-      "recentWinRate": 0.47058823529411764,
-      "recentAlertsCounted": 17,
-      "blacklisted": false,
-      "hotStreak": false
     },
     "WDC": {
-      "recentWinRate": 1,
-      "recentAlertsCounted": 10,
-      "blacklisted": false,
-      "hotStreak": true
-    },
-    "HBR.L": {
-      "recentWinRate": 0.16666666666666666,
-      "recentAlertsCounted": 6,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "ITH.L": {
-      "recentWinRate": 0.2,
-      "recentAlertsCounted": 5,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "RIG": {
-      "recentWinRate": 0,
-      "recentAlertsCounted": 4,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "PTNR.TA": {
-      "recentWinRate": 0,
-      "recentAlertsCounted": 3,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "VRDS.TA": {
-      "recentWinRate": 0.8,
-      "recentAlertsCounted": 10,
+      "recentWinRate": 0.8181818181818182,
+      "recentAlertsCounted": 11,
       "blacklisted": false,
       "hotStreak": true
     },
     "SNDK": {
       "recentWinRate": 1,
-      "recentAlertsCounted": 11,
-      "blacklisted": false,
-      "hotStreak": true
-    },
-    "AIXA.DE": {
-      "recentWinRate": 0.9473684210526315,
-      "recentAlertsCounted": 19,
-      "blacklisted": false,
-      "hotStreak": true
-    },
-    "SEDG": {
-      "recentWinRate": 0.6153846153846154,
-      "recentAlertsCounted": 13,
+      "recentAlertsCounted": 9,
       "blacklisted": false,
       "hotStreak": false
     },
-    "PBF": {
-      "recentWinRate": 0,
-      "recentAlertsCounted": 6,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "DLEKG.TA": {
-      "recentWinRate": 0,
-      "recentAlertsCounted": 3,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "NVPT.TA": {
-      "recentWinRate": 0,
-      "recentAlertsCounted": 6,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "PCBT.TA": {
-      "recentWinRate": 0,
-      "recentAlertsCounted": 1,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "LITE": {
-      "recentWinRate": 0.7692307692307693,
-      "recentAlertsCounted": 13,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "AGX": {
-      "recentWinRate": 1,
-      "recentAlertsCounted": 8,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "EQT": {
-      "recentWinRate": 0,
-      "recentAlertsCounted": 3,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "XLE": {
-      "recentWinRate": 0,
-      "recentAlertsCounted": 5,
-      "blacklisted": false,
-      "hotStreak": false
-    },
-    "PAZ.TA": {
+    "QLTU.TA": {
       "recentWinRate": 0,
       "recentAlertsCounted": 2,
       "blacklisted": false,
       "hotStreak": false
     },
-    "CASY": {
-      "recentWinRate": 1,
-      "recentAlertsCounted": 10,
+    "AIXA.DE": {
+      "recentWinRate": 0.9411764705882353,
+      "recentAlertsCounted": 17,
       "blacklisted": false,
       "hotStreak": true
     },
-    "SPEN.TA": {
-      "recentWinRate": 0.4375,
-      "recentAlertsCounted": 16,
+    "VRT": {
+      "recentWinRate": 1,
+      "recentAlertsCounted": 2,
       "blacklisted": false,
       "hotStreak": false
     },
-    "TSEM.TA": {
-      "recentWinRate": 0.7777777777777778,
-      "recentAlertsCounted": 9,
+    "TSEM": {
+      "recentWinRate": 0.7272727272727273,
+      "recentAlertsCounted": 11,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "LITE": {
+      "recentWinRate": 0.75,
+      "recentAlertsCounted": 12,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "CIEN": {
+      "recentWinRate": 0.625,
+      "recentAlertsCounted": 8,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "SEDG": {
+      "recentWinRate": 0.5833333333333334,
+      "recentAlertsCounted": 12,
       "blacklisted": false,
       "hotStreak": false
     },
@@ -268,7 +88,67 @@
       "blacklisted": false,
       "hotStreak": false
     },
-    "SD": {
+    "AGX": {
+      "recentWinRate": 1,
+      "recentAlertsCounted": 7,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "PWR": {
+      "recentWinRate": 0.3125,
+      "recentAlertsCounted": 16,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "EQT": {
+      "recentWinRate": 0,
+      "recentAlertsCounted": 2,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "OPCE.TA": {
+      "recentWinRate": 0.14285714285714285,
+      "recentAlertsCounted": 7,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "EQIX": {
+      "recentWinRate": 0.2857142857142857,
+      "recentAlertsCounted": 7,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "BA.L": {
+      "recentWinRate": 0,
+      "recentAlertsCounted": 4,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "EXA.PA": {
+      "recentWinRate": 0,
+      "recentAlertsCounted": 1,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "EXENS.PA": {
+      "recentWinRate": 0,
+      "recentAlertsCounted": 1,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "KOG.OL": {
+      "recentWinRate": 0,
+      "recentAlertsCounted": 4,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "THEON.AS": {
+      "recentWinRate": 1,
+      "recentAlertsCounted": 1,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "ESLT.TA": {
       "recentWinRate": 0,
       "recentAlertsCounted": 1,
       "blacklisted": false,
@@ -286,6 +166,12 @@
       "blacklisted": false,
       "hotStreak": false
     },
+    "GNRS.TA": {
+      "recentWinRate": 0.4,
+      "recentAlertsCounted": 15,
+      "blacklisted": false,
+      "hotStreak": false
+    },
     "MSKE.TA": {
       "recentWinRate": 0.3333333333333333,
       "recentAlertsCounted": 3,
@@ -294,13 +180,37 @@
     },
     "NVMI.TA": {
       "recentWinRate": 0,
-      "recentAlertsCounted": 5,
+      "recentAlertsCounted": 6,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "CASY": {
+      "recentWinRate": 1,
+      "recentAlertsCounted": 9,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "SPEN.TA": {
+      "recentWinRate": 0.4,
+      "recentAlertsCounted": 15,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "TSEM.TA": {
+      "recentWinRate": 0.75,
+      "recentAlertsCounted": 8,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "VRDS.TA": {
+      "recentWinRate": 0.75,
+      "recentAlertsCounted": 8,
       "blacklisted": false,
       "hotStreak": false
     },
     "CAMT": {
-      "recentWinRate": 0.2857142857142857,
-      "recentAlertsCounted": 7,
+      "recentWinRate": 0.25,
+      "recentAlertsCounted": 8,
       "blacklisted": false,
       "hotStreak": false
     },
@@ -329,13 +239,13 @@
       "hotStreak": false
     },
     "ARM": {
-      "recentWinRate": 0.8,
-      "recentAlertsCounted": 20,
+      "recentWinRate": 0.7916666666666666,
+      "recentAlertsCounted": 24,
       "blacklisted": false,
-      "hotStreak": true
+      "hotStreak": false
     },
     "MRVL": {
-      "recentWinRate": 0.8666666666666667,
+      "recentWinRate": 0.8,
       "recentAlertsCounted": 30,
       "blacklisted": false,
       "hotStreak": true
@@ -343,6 +253,12 @@
     "NXT": {
       "recentWinRate": 0.42857142857142855,
       "recentAlertsCounted": 7,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "DLR": {
+      "recentWinRate": 0.1,
+      "recentAlertsCounted": 10,
       "blacklisted": false,
       "hotStreak": false
     },
@@ -358,21 +274,27 @@
       "blacklisted": false,
       "hotStreak": true
     },
-    "NOKI.VI": {
-      "recentWinRate": 0.8125,
-      "recentAlertsCounted": 16,
+    "LDO.MI": {
+      "recentWinRate": 0,
+      "recentAlertsCounted": 1,
       "blacklisted": false,
-      "hotStreak": true
+      "hotStreak": false
+    },
+    "NOKI.VI": {
+      "recentWinRate": 0.7647058823529411,
+      "recentAlertsCounted": 17,
+      "blacklisted": false,
+      "hotStreak": false
     },
     "INTC": {
-      "recentWinRate": 0.8260869565217391,
+      "recentWinRate": 0.8695652173913043,
       "recentAlertsCounted": 23,
       "blacklisted": false,
       "hotStreak": true
     },
     "STX": {
-      "recentWinRate": 0.9230769230769231,
-      "recentAlertsCounted": 13,
+      "recentWinRate": 0.8125,
+      "recentAlertsCounted": 16,
       "blacklisted": false,
       "hotStreak": true
     },
@@ -389,22 +311,22 @@
       "hotStreak": false
     },
     "SOXX": {
-      "recentWinRate": 0.6842105263157895,
-      "recentAlertsCounted": 19,
+      "recentWinRate": 0.7619047619047619,
+      "recentAlertsCounted": 21,
       "blacklisted": false,
       "hotStreak": false
     },
     "MPWR": {
-      "recentWinRate": 0.11764705882352941,
-      "recentAlertsCounted": 17,
+      "recentWinRate": 0.1111111111111111,
+      "recentAlertsCounted": 18,
       "blacklisted": false,
       "hotStreak": false
     },
     "000660.KS": {
-      "recentWinRate": 0.6666666666666666,
-      "recentAlertsCounted": 21,
+      "recentWinRate": 0.9545454545454546,
+      "recentAlertsCounted": 22,
       "blacklisted": false,
-      "hotStreak": false
+      "hotStreak": true
     },
     "028260.KS": {
       "recentWinRate": 0.875,
@@ -413,20 +335,38 @@
       "hotStreak": true
     },
     "BESI.AS": {
-      "recentWinRate": 0.8888888888888888,
-      "recentAlertsCounted": 9,
+      "recentWinRate": 0.8,
+      "recentAlertsCounted": 10,
       "blacklisted": false,
-      "hotStreak": false
+      "hotStreak": true
+    },
+    "NBIS": {
+      "recentWinRate": 0.875,
+      "recentAlertsCounted": 16,
+      "blacklisted": false,
+      "hotStreak": true
     },
     "TER": {
-      "recentWinRate": 0.5,
-      "recentAlertsCounted": 4,
+      "recentWinRate": 0.4,
+      "recentAlertsCounted": 5,
       "blacklisted": false,
       "hotStreak": false
     },
     "ENR.DE": {
       "recentWinRate": 0.125,
       "recentAlertsCounted": 8,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "CW": {
+      "recentWinRate": 0,
+      "recentAlertsCounted": 1,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "GHM": {
+      "recentWinRate": 0.25,
+      "recentAlertsCounted": 4,
       "blacklisted": false,
       "hotStreak": false
     },
@@ -437,14 +377,14 @@
       "hotStreak": true
     },
     "UCTT": {
-      "recentWinRate": 0.8571428571428571,
-      "recentAlertsCounted": 7,
+      "recentWinRate": 0.8888888888888888,
+      "recentAlertsCounted": 9,
       "blacklisted": false,
       "hotStreak": false
     },
     "VLY": {
       "recentWinRate": 0,
-      "recentAlertsCounted": 4,
+      "recentAlertsCounted": 6,
       "blacklisted": false,
       "hotStreak": false
     },
@@ -455,14 +395,14 @@
       "hotStreak": false
     },
     "SMH": {
-      "recentWinRate": 0.6470588235294118,
-      "recentAlertsCounted": 17,
+      "recentWinRate": 0.6842105263157895,
+      "recentAlertsCounted": 19,
       "blacklisted": false,
       "hotStreak": false
     },
     "ONTO": {
-      "recentWinRate": 0.25,
-      "recentAlertsCounted": 12,
+      "recentWinRate": 0.2857142857142857,
+      "recentAlertsCounted": 14,
       "blacklisted": false,
       "hotStreak": false
     },
@@ -473,10 +413,16 @@
       "hotStreak": false
     },
     "SIMO": {
-      "recentWinRate": 0.7857142857142857,
-      "recentAlertsCounted": 28,
+      "recentWinRate": 0.8620689655172413,
+      "recentAlertsCounted": 29,
       "blacklisted": false,
-      "hotStreak": false
+      "hotStreak": true
+    },
+    "MU": {
+      "recentWinRate": 1,
+      "recentAlertsCounted": 15,
+      "blacklisted": false,
+      "hotStreak": true
     },
     "AMZN": {
       "recentWinRate": 0.16666666666666666,
@@ -486,31 +432,37 @@
     },
     "C": {
       "recentWinRate": 0,
-      "recentAlertsCounted": 4,
+      "recentAlertsCounted": 7,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "RR.L": {
+      "recentWinRate": 0,
+      "recentAlertsCounted": 1,
       "blacklisted": false,
       "hotStreak": false
     },
     "ASML": {
+      "recentWinRate": 0.5882352941176471,
+      "recentAlertsCounted": 17,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "KLAC": {
       "recentWinRate": 0.5714285714285714,
       "recentAlertsCounted": 14,
       "blacklisted": false,
       "hotStreak": false
     },
-    "KLAC": {
-      "recentWinRate": 0.3333333333333333,
+    "LRCX": {
+      "recentWinRate": 0.5555555555555556,
       "recentAlertsCounted": 9,
       "blacklisted": false,
       "hotStreak": false
     },
-    "LRCX": {
-      "recentWinRate": 0.8333333333333334,
-      "recentAlertsCounted": 6,
-      "blacklisted": false,
-      "hotStreak": false
-    },
     "ASML.AS": {
-      "recentWinRate": 0.36363636363636365,
-      "recentAlertsCounted": 11,
+      "recentWinRate": 0.6,
+      "recentAlertsCounted": 15,
       "blacklisted": false,
       "hotStreak": false
     },
@@ -528,8 +480,14 @@
     },
     "MS": {
       "recentWinRate": 0,
-      "recentAlertsCounted": 5,
+      "recentAlertsCounted": 6,
       "blacklisted": false,
+      "hotStreak": false
+    },
+    "REG": {
+      "recentWinRate": 0,
+      "recentAlertsCounted": 8,
+      "blacklisted": true,
       "hotStreak": false
     },
     "ON": {
@@ -539,14 +497,14 @@
       "hotStreak": true
     },
     "AMKR": {
-      "recentWinRate": 0.3333333333333333,
-      "recentAlertsCounted": 12,
+      "recentWinRate": 0.25,
+      "recentAlertsCounted": 16,
       "blacklisted": false,
       "hotStreak": false
     },
     "8035.T": {
-      "recentWinRate": 0.8421052631578947,
-      "recentAlertsCounted": 19,
+      "recentWinRate": 0.8333333333333334,
+      "recentAlertsCounted": 24,
       "blacklisted": false,
       "hotStreak": true
     },
@@ -557,10 +515,10 @@
       "hotStreak": true
     },
     "UMC": {
-      "recentWinRate": 0.75,
-      "recentAlertsCounted": 28,
+      "recentWinRate": 0.8275862068965517,
+      "recentAlertsCounted": 29,
       "blacklisted": false,
-      "hotStreak": false
+      "hotStreak": true
     },
     "GFS": {
       "recentWinRate": 0.7058823529411765,
@@ -569,14 +527,14 @@
       "hotStreak": false
     },
     "ADI": {
-      "recentWinRate": 0.14285714285714285,
-      "recentAlertsCounted": 14,
+      "recentWinRate": 0.125,
+      "recentAlertsCounted": 16,
       "blacklisted": false,
       "hotStreak": false
     },
     "EWBC": {
       "recentWinRate": 0,
-      "recentAlertsCounted": 2,
+      "recentAlertsCounted": 4,
       "blacklisted": false,
       "hotStreak": false
     },
@@ -594,6 +552,12 @@
     },
     "NVMI": {
       "recentWinRate": 0,
+      "recentAlertsCounted": 7,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "ETN": {
+      "recentWinRate": 0,
       "recentAlertsCounted": 5,
       "blacklisted": false,
       "hotStreak": false
@@ -606,7 +570,7 @@
     },
     "KBE": {
       "recentWinRate": 0,
-      "recentAlertsCounted": 1,
+      "recentAlertsCounted": 2,
       "blacklisted": false,
       "hotStreak": false
     },
@@ -623,7 +587,7 @@
       "hotStreak": false
     },
     "APH": {
-      "recentWinRate": 0,
+      "recentWinRate": 0.3333333333333333,
       "recentAlertsCounted": 6,
       "blacklisted": false,
       "hotStreak": false
@@ -670,6 +634,12 @@
       "blacklisted": false,
       "hotStreak": false
     },
+    "SKBN.TA": {
+      "recentWinRate": 0,
+      "recentAlertsCounted": 11,
+      "blacklisted": true,
+      "hotStreak": false
+    },
     "TRPZ.TA": {
       "recentWinRate": 0,
       "recentAlertsCounted": 1,
@@ -677,7 +647,7 @@
       "hotStreak": false
     },
     "CIFR": {
-      "recentWinRate": 0.3333333333333333,
+      "recentWinRate": 1,
       "recentAlertsCounted": 6,
       "blacklisted": false,
       "hotStreak": false
@@ -695,8 +665,8 @@
       "hotStreak": false
     },
     "AMAT": {
-      "recentWinRate": 0.9411764705882353,
-      "recentAlertsCounted": 17,
+      "recentWinRate": 0.8095238095238095,
+      "recentAlertsCounted": 21,
       "blacklisted": false,
       "hotStreak": true
     },
@@ -706,7 +676,7 @@
       "blacklisted": false,
       "hotStreak": false
     },
-    "SWX": {
+    "FTAI": {
       "recentWinRate": 0,
       "recentAlertsCounted": 1,
       "blacklisted": false,
@@ -738,7 +708,7 @@
     },
     "ELTR.TA": {
       "recentWinRate": 0,
-      "recentAlertsCounted": 2,
+      "recentAlertsCounted": 4,
       "blacklisted": false,
       "hotStreak": false
     },
@@ -763,6 +733,12 @@
     "MVNE.TA": {
       "recentWinRate": 0,
       "recentAlertsCounted": 1,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "PTNR.TA": {
+      "recentWinRate": 0,
+      "recentAlertsCounted": 2,
       "blacklisted": false,
       "hotStreak": false
     },
@@ -862,6 +838,12 @@
       "blacklisted": false,
       "hotStreak": false
     },
+    "PAZ.TA": {
+      "recentWinRate": 0,
+      "recentAlertsCounted": 1,
+      "blacklisted": false,
+      "hotStreak": false
+    },
     "ORA": {
       "recentWinRate": 0,
       "recentAlertsCounted": 1,
@@ -881,7 +863,7 @@
       "hotStreak": false
     },
     "ALAB": {
-      "recentWinRate": 0.5555555555555556,
+      "recentWinRate": 1,
       "recentAlertsCounted": 9,
       "blacklisted": false,
       "hotStreak": false
@@ -960,7 +942,7 @@
     },
     "GS": {
       "recentWinRate": 0,
-      "recentAlertsCounted": 5,
+      "recentAlertsCounted": 8,
       "blacklisted": false,
       "hotStreak": false
     },
@@ -972,7 +954,7 @@
     },
     "TDRN.TA": {
       "recentWinRate": 0,
-      "recentAlertsCounted": 2,
+      "recentAlertsCounted": 3,
       "blacklisted": false,
       "hotStreak": false
     },
@@ -984,11 +966,23 @@
     },
     "ZION": {
       "recentWinRate": 0,
-      "recentAlertsCounted": 3,
+      "recentAlertsCounted": 5,
       "blacklisted": false,
       "hotStreak": false
     },
     "WBS": {
+      "recentWinRate": 0,
+      "recentAlertsCounted": 4,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "KRE": {
+      "recentWinRate": 0,
+      "recentAlertsCounted": 2,
+      "blacklisted": false,
+      "hotStreak": false
+    },
+    "JPM": {
       "recentWinRate": 0,
       "recentAlertsCounted": 2,
       "blacklisted": false,
