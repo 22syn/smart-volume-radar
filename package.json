@@ -29,6 +29,7 @@
     "analyze-criteria-importance": "tsx scripts/analyze-criteria-importance.ts",
     "preview-report": "tsx scripts/preview-report.ts",
     "tv-sync": "tsx scripts/sync-tv-watchlist.ts",
+    "sync-friend-watchlists": "tsx scripts/sync-friend-watchlists.ts",
     "export-tv-cookies": "tsx scripts/export-tv-cookies.ts",
     "recall-3month": "tsx scripts/recall-3month.ts"
   },
@@ -45,6 +46,7 @@
   "dependencies": {
     "dotenv": "^17.2.3",
     "fast-xml-parser": "^5.3.4",
+    "googleapis": "^144.0.0",
     "p-limit": "^7.3.0",
     "rss-parser": "^3.13.0",
     "yahoo-finance2": "3.13.0"
