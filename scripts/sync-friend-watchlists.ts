@@ -12,12 +12,13 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import logger from '../src/utils/logger.js';
-import { fetchSharedWatchlist } from '../src/services/sharedWatchlist.js';
+import { fetchSharedWatchlistDetailed } from '../src/services/sharedWatchlist.js';
 import { tvToYahoo } from '../src/services/symbolMap.js';
 import { writeUniverseSheet, type UniverseRow } from '../src/services/universeSheetWriter.js';
 
 interface Source {
-    sector: string;
+    /** Optional explicit sector label; defaults to the watchlist's own name. */
+    sector?: string;
     shareUrl: string;
 }
 
@@ -36,13 +37,11 @@ function loadSources(): Source[] {
     if (!Array.isArray(data)) throw new Error('watchlist-sources.json must be a JSON array');
     return data.map((row, i) => {
         const r = row as Record<string, unknown>;
-        if (typeof r.sector !== 'string' || !r.sector.trim()) {
-            throw new Error(`watchlist-sources[${i}]: "sector" must be a non-empty string`);
-        }
         if (typeof r.shareUrl !== 'string' || !r.shareUrl.trim()) {
             throw new Error(`watchlist-sources[${i}]: "shareUrl" must be a non-empty string`);
         }
-        return { sector: r.sector.trim(), shareUrl: r.shareUrl.trim() };
+        const sector = typeof r.sector === 'string' && r.sector.trim() ? r.sector.trim() : undefined;
+        return { sector, shareUrl: r.shareUrl.trim() };
     });
 }
 
@@ -57,10 +56,12 @@ async function main(): Promise<void> {
     let failures = 0;
 
     for (const s of sources) {
+        const label = s.sector ?? s.shareUrl;
         try {
-            const tvSymbols = await fetchSharedWatchlist(s.shareUrl);
+            const { name, symbols: tvSymbols } = await fetchSharedWatchlistDetailed(s.shareUrl);
+            const sector = s.sector ?? name ?? 'Other';
             if (tvSymbols.length === 0) {
-                logger.warn(`${s.sector}: read 0 symbols — skipping this source (suspected fetch/parse miss)`);
+                logger.warn(`${sector}: read 0 symbols — skipping this source (suspected fetch/parse miss)`);
                 failures++;
                 continue;
             }
@@ -68,18 +69,18 @@ async function main(): Promise<void> {
             for (const tv of tvSymbols) {
                 const yahoo = tvToYahoo(tv);
                 if (!yahoo) {
-                    skipped.push(`${tv} (${s.sector})`);
+                    skipped.push(`${tv} (${sector})`);
                     continue;
                 }
                 const key = yahoo.toUpperCase();
                 if (seen.has(key)) continue; // first sector wins, mirrors loadWatchlist dedup
                 seen.add(key);
-                rows.push({ symbol: yahoo, sector: s.sector });
+                rows.push({ symbol: yahoo, sector });
                 added++;
             }
-            logger.info(`${s.sector}: ${added} symbols (${tvSymbols.length} read)`);
+            logger.info(`${sector}: ${added} symbols (${tvSymbols.length} read)`);
         } catch (e) {
-            logger.error(`${s.sector}: ${(e as Error).message}`);
+            logger.error(`${label}: ${(e as Error).message}`);
             failures++;
         }
     }

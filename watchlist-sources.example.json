@@ -1,4 +1,4 @@
 [
-  { "sector": "Semiconductors", "shareUrl": "https://www.tradingview.com/watchlists/REPLACE_ME/" },
-  { "sector": "Energy", "shareUrl": "https://www.tradingview.com/watchlists/REPLACE_ME/" }
+  { "shareUrl": "https://www.tradingview.com/watchlists/REPLACE_ME/" },
+  { "shareUrl": "https://www.tradingview.com/watchlists/REPLACE_ME/", "sector": "Custom sector label (optional; defaults to the watchlist's own name)" }
 ]

@@ -42,7 +42,8 @@ Runs as a **CI step before the scan** in `daily-scan.yml`. Also runnable manuall
   `watchlist-sources.json`, runs the pipeline, logs a per-sector summary and the full
   skipped/unmapped list, exits non-zero on hard failure.
 - `watchlist-sources.json` (gitignored) + `watchlist-sources.example.json`
-  — `[{ "sector": "Semiconductors", "shareUrl": "https://www.tradingview.com/watchlists/<id>/" }]`.
+  — `[{ "shareUrl": "https://www.tradingview.com/watchlists/<id>/" }]`. `sector` is
+  optional; when omitted it defaults to the watchlist's own name (read from the page).
 - `tests/symbolMap.test.ts`, `tests/sharedWatchlist.test.ts` (Jest).
 - `package.json` — `googleapis` dep + `sync-friend-watchlists` script.
 - `.gitignore` — `watchlist-sources.json`, `*.gserviceaccount.json`.

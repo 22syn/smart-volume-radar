@@ -51,7 +51,10 @@ const EURONEXT_OVERRIDES: Record<string, string> = {
     HEIA: '.AS',
     INGA: '.AS',
     MT: '.AS',
+    THEON: '.AS', // Theon International — Amsterdam
     SOI: '.PA', // Soitec — Paris
+    NXI: '.PA', // Nexity — Paris
+    EXA: '.PA', // Exosens — Paris
     AIR: '.PA',
     MC: '.PA',
     OR: '.PA',
