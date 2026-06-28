@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import logger from '../src/utils/logger.js';
 import { fetchSharedWatchlistDetailed } from '../src/services/sharedWatchlist.js';
 import { tvToYahoo } from '../src/services/symbolMap.js';
-import { writeUniverseSheet, type UniverseRow } from '../src/services/universeSheetWriter.js';
+import { mergeUniverseSheet, type UniverseRow } from '../src/services/universeSheetWriter.js';
 
 interface Source {
     /** Optional explicit sector label; defaults to the watchlist's own name. */
@@ -89,13 +89,19 @@ async function main(): Promise<void> {
         logger.warn(`Skipped ${skipped.length} unmapped symbols: ${skipped.join(', ')}`);
     }
     if (rows.length === 0) {
-        throw new Error('No symbols resolved from any source — refusing to overwrite the universe sheet.');
+        logger.warn('No symbols resolved from any source — nothing to merge.');
+        if (failures > 0) process.exitCode = 1;
+        return;
     }
 
-    await writeUniverseSheet(sheetId, rows);
+    const { added, alreadyPresent } = await mergeUniverseSheet(sheetId, rows);
     logger.info(
-        `Universe sheet updated: ${rows.length} symbols across ${sources.length - failures}/${sources.length} sources.`,
+        `Universe sheet merged: +${added.length} new, ${alreadyPresent} already present ` +
+            `(from ${rows.length} resolved across ${sources.length - failures}/${sources.length} sources).`,
     );
+    if (added.length > 0) {
+        logger.info(`Added: ${added.map((r) => `${r.symbol} [${r.sector}]`).join(', ')}`);
+    }
     if (failures > 0) process.exitCode = 1;
 }
 

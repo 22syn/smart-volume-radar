@@ -1,6 +1,8 @@
 /**
- * Write the radar universe Google Sheet (columns Symbol | Sector) via the Sheets API.
- * The scan pipeline keeps reading this same sheet through its public CSV export.
+ * Merge symbols into the radar universe Google Sheet (columns Symbol | Sector) via the
+ * Sheets API. **Additive only** — appends symbols not already present, never deletes or
+ * overwrites existing rows (the sheet is the curated, multi-sector source of truth). The
+ * scan pipeline keeps reading this same sheet through its public CSV export.
  *
  * Auth: a service account, from GOOGLE_SHEETS_CREDENTIALS (path to JSON) or
  * GOOGLE_SHEETS_CREDENTIALS_JSON (raw JSON, e.g. a CI secret). The sheet must be shared
@@ -14,6 +16,11 @@ import type { sheets_v4 } from 'googleapis';
 export interface UniverseRow {
     symbol: string;
     sector: string;
+}
+
+export interface MergeResult {
+    added: UniverseRow[];
+    alreadyPresent: number;
 }
 
 interface ServiceAccount {
@@ -47,22 +54,55 @@ async function client(): Promise<sheets_v4.Sheets> {
     return google.sheets({ version: 'v4', auth });
 }
 
-/** Header + one row per symbol, ready for values.update. */
-export function buildValues(rows: UniverseRow[]): string[][] {
-    return [['Symbol', 'Sector'], ...rows.map((r) => [r.symbol, r.sector])];
+/** Pure: keep only rows whose symbol is not already in `existing` (case-insensitive). */
+export function selectNewRows(existing: Set<string>, rows: UniverseRow[]): UniverseRow[] {
+    return rows.filter((r) => !existing.has(r.symbol.toUpperCase()));
 }
 
-/** Overwrite the first tab's Symbol|Sector columns with `rows`. */
-export async function writeUniverseSheet(sheetId: string, rows: UniverseRow[]): Promise<void> {
+/** Build an uppercase symbol set from a sheet's column-A values (skips the header). */
+export function existingSymbolSet(colA: string[][]): Set<string> {
+    const set = new Set<string>();
+    for (let i = 0; i < colA.length; i++) {
+        const v = (colA[i]?.[0] ?? '').trim();
+        if (!v) continue;
+        if (i === 0 && v.toLowerCase() === 'symbol') continue; // header
+        set.add(v.toUpperCase());
+    }
+    return set;
+}
+
+/**
+ * Append only the symbols not already in the first tab. Never clears or deletes.
+ * Returns which rows were added and how many were skipped as already present.
+ */
+export async function mergeUniverseSheet(sheetId: string, rows: UniverseRow[]): Promise<MergeResult> {
     const api = await client();
     const meta = await api.spreadsheets.get({ spreadsheetId: sheetId });
     const firstTab = meta.data.sheets?.[0]?.properties?.title;
     if (!firstTab) throw new Error('universe sheet: no tabs found');
-    await api.spreadsheets.values.clear({ spreadsheetId: sheetId, range: `'${firstTab}'!A:B` });
-    await api.spreadsheets.values.update({
+
+    const existingRes = await api.spreadsheets.values.get({
         spreadsheetId: sheetId,
-        range: `'${firstTab}'!A1`,
-        valueInputOption: 'RAW',
-        requestBody: { values: buildValues(rows) },
+        range: `'${firstTab}'!A:A`,
     });
+    const colA = (existingRes.data.values ?? []) as string[][];
+    const existing = existingSymbolSet(colA);
+    const sheetEmpty = colA.length === 0;
+
+    const added = selectNewRows(existing, rows);
+    if (added.length === 0) {
+        return { added: [], alreadyPresent: rows.length };
+    }
+
+    const values = added.map((r) => [r.symbol, r.sector]);
+    if (sheetEmpty) values.unshift(['Symbol', 'Sector']); // seed header on a blank sheet
+
+    await api.spreadsheets.values.append({
+        spreadsheetId: sheetId,
+        range: `'${firstTab}'!A:B`,
+        valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS',
+        requestBody: { values },
+    });
+    return { added, alreadyPresent: rows.length - added.length };
 }
