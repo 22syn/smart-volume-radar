@@ -1,164 +1,170 @@
 {
-  "updatedAt": "2026-06-26",
+  "updatedAt": "2026-06-29",
   "watchlists": {
     "Smart Radar - BUY": [
       {
         "ticker": "MNST",
-        "signalDate": "2026-06-26"
+        "signalDate": "2026-06-29"
       }
     ],
     "Smart Radar - WATCH": [
       {
         "ticker": "TA-BANKS",
-        "signalDate": "2026-06-26",
+        "signalDate": "2026-06-29",
         "exchange": "TASE"
       },
       {
         "ticker": "8035.T",
-        "signalDate": "2026-06-26"
+        "signalDate": "2026-06-29"
       },
       {
         "ticker": "TDRN",
-        "signalDate": "2026-06-26"
+        "signalDate": "2026-06-29"
       },
       {
         "ticker": "DELL",
-        "signalDate": "2026-06-26"
+        "signalDate": "2026-06-29"
       },
       {
         "ticker": "028260",
-        "signalDate": "2026-06-26",
-        "exchange": "KRX"
+        "signalDate": "2026-06-29"
       },
       {
         "ticker": "APH",
-        "signalDate": "2026-06-26"
+        "signalDate": "2026-06-29"
       },
       {
         "ticker": "COHR",
-        "signalDate": "2026-06-26"
+        "signalDate": "2026-06-29"
       },
       {
         "ticker": "MAXO",
-        "signalDate": "2026-06-26"
+        "signalDate": "2026-06-29"
       },
       {
         "ticker": "000660",
-        "signalDate": "2026-06-26",
-        "exchange": "KRX"
+        "signalDate": "2026-06-29"
       },
       {
         "ticker": "ONTO",
-        "signalDate": "2026-06-26"
+        "signalDate": "2026-06-29"
       },
       {
         "ticker": "DIPL",
-        "signalDate": "2026-06-26"
+        "signalDate": "2026-06-29"
       },
       {
         "ticker": "FROG",
-        "signalDate": "2026-06-26"
+        "signalDate": "2026-06-29"
       },
       {
         "ticker": "CIFR",
-        "signalDate": "2026-06-26"
+        "signalDate": "2026-06-29"
       },
       {
         "ticker": "MXL",
-        "signalDate": "2026-06-26"
+        "signalDate": "2026-06-29"
       }
     ],
     "Lean Radar - Breakouts": [
       {
         "ticker": "AEP",
-        "signalDate": "2026-06-26"
+        "signalDate": "2026-06-29"
       },
       {
         "ticker": "PPL",
-        "signalDate": "2026-06-26"
+        "signalDate": "2026-06-29"
       },
       {
         "ticker": "REG",
-        "signalDate": "2026-06-26"
+        "signalDate": "2026-06-29"
       },
       {
         "ticker": "KDP",
-        "signalDate": "2026-06-26"
+        "signalDate": "2026-06-29"
       },
       {
         "ticker": "MNST",
-        "signalDate": "2026-06-26"
+        "signalDate": "2026-06-29"
       },
       {
         "ticker": "MTCH",
-        "signalDate": "2026-06-26"
+        "signalDate": "2026-06-29"
       }
     ],
     "Lean Radar - Near": [
       {
         "ticker": "WBS",
-        "signalDate": "2026-06-26"
-      },
-      {
-        "ticker": "EQIX",
-        "signalDate": "2026-06-26"
-      },
-      {
-        "ticker": "PKG",
-        "signalDate": "2026-06-26"
-      },
-      {
-        "ticker": "MNST",
-        "signalDate": "2026-06-26"
-      },
-      {
-        "ticker": "JPM",
-        "signalDate": "2026-06-26"
-      },
-      {
-        "ticker": "DLR",
-        "signalDate": "2026-06-26"
-      },
-      {
-        "ticker": "CL",
-        "signalDate": "2026-06-26"
-      },
-      {
-        "ticker": "NESN",
-        "signalDate": "2026-06-26",
-        "exchange": "SIX"
-      },
-      {
-        "ticker": "SRE",
-        "signalDate": "2026-06-26"
-      },
-      {
-        "ticker": "KBE",
-        "signalDate": "2026-06-26"
-      },
-      {
-        "ticker": "KRE",
-        "signalDate": "2026-06-26"
-      },
-      {
-        "ticker": "VLY",
-        "signalDate": "2026-06-26"
-      },
-      {
-        "ticker": "REG",
-        "signalDate": "2026-06-26"
-      },
-      {
-        "ticker": "UPS",
-        "signalDate": "2026-06-26"
-      },
-      {
-        "ticker": "AEP",
-        "signalDate": "2026-06-26"
+        "signalDate": "2026-06-29"
       },
       {
         "ticker": "KO",
-        "signalDate": "2026-06-26"
+        "signalDate": "2026-06-29"
+      },
+      {
+        "ticker": "NESN",
+        "signalDate": "2026-06-29",
+        "exchange": "SIX"
+      },
+      {
+        "ticker": "VLY",
+        "signalDate": "2026-06-29"
+      },
+      {
+        "ticker": "EQIX",
+        "signalDate": "2026-06-29"
+      },
+      {
+        "ticker": "KRE",
+        "signalDate": "2026-06-29"
+      },
+      {
+        "ticker": "MNST",
+        "signalDate": "2026-06-29"
+      },
+      {
+        "ticker": "KBE",
+        "signalDate": "2026-06-29"
+      },
+      {
+        "ticker": "PKG",
+        "signalDate": "2026-06-29"
+      },
+      {
+        "ticker": "REG",
+        "signalDate": "2026-06-29"
+      },
+      {
+        "ticker": "RTX",
+        "signalDate": "2026-06-29"
+      },
+      {
+        "ticker": "JPM",
+        "signalDate": "2026-06-29"
+      },
+      {
+        "ticker": "CL",
+        "signalDate": "2026-06-29"
+      },
+      {
+        "ticker": "MTCH",
+        "signalDate": "2026-06-29"
+      },
+      {
+        "ticker": "AEP",
+        "signalDate": "2026-06-29"
+      },
+      {
+        "ticker": "SRE",
+        "signalDate": "2026-06-29"
+      },
+      {
+        "ticker": "SWX",
+        "signalDate": "2026-06-29"
+      },
+      {
+        "ticker": "PM",
+        "signalDate": "2026-06-29"
       }
     ]
   }
