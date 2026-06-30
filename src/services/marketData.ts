@@ -266,9 +266,15 @@ export async function fetchYahooChartAsOfDate(
                 }
                 logger.warn(`❌ Yahoo Chart (asOfDate) API ${response.status} for ${ticker} after ${MAX_ATTEMPTS} attempts`);
             } else if (response.status === 404) {
+                if (attempt < 2) {
+                    const delay = 500;
+                    logger.warn(`⚠️ Ticker ${ticker} returned 404 on Yahoo Chart (asOfDate), retrying... (attempt ${attempt}/${MAX_ATTEMPTS})`);
+                    await new Promise((resolve) => setTimeout(resolve, delay));
+                    return fetchYahooChartAsOfDate(ticker, asOfDate, isFallback, attempt + 1);
+                }
                 if (!isFallback && ticker.includes('.')) {
                     const fallbackTicker = ticker.replace(/\./g, '-');
-                    logger.info(`🔍 Ticker ${ticker} not found on Yahoo Chart (asOfDate), trying fallback: ${fallbackTicker}`);
+                    logger.info(`🔍 Ticker ${ticker} not found on Yahoo Chart (asOfDate) after retry, trying fallback: ${fallbackTicker}`);
                     return fetchYahooChartAsOfDate(fallbackTicker, asOfDate, true);
                 }
                 logger.warn(`❌ Ticker not found on Yahoo Chart (asOfDate): ${ticker}`);
@@ -469,9 +475,15 @@ async function fetchFromYahooChart(ticker: string, isFallback = false, attempt =
                 }
                 logger.warn(`❌ Yahoo Chart API ${response.status} for ${ticker} after ${MAX_ATTEMPTS} attempts`);
             } else if (response.status === 404) {
+                if (attempt < 2) {
+                    const delay = 500;
+                    logger.warn(`⚠️ Ticker ${ticker} returned 404 on Yahoo Chart, retrying... (attempt ${attempt}/${MAX_ATTEMPTS})`);
+                    await new Promise((resolve) => setTimeout(resolve, delay));
+                    return fetchFromYahooChart(ticker, isFallback, attempt + 1);
+                }
                 if (!isFallback && ticker.includes('.')) {
                     const fallbackTicker = ticker.replace(/\./g, '-');
-                    logger.info(`🔍 Ticker ${ticker} not found on Yahoo Chart, trying fallback: ${fallbackTicker}`);
+                    logger.info(`🔍 Ticker ${ticker} not found on Yahoo Chart after retry, trying fallback: ${fallbackTicker}`);
                     return fetchFromYahooChart(fallbackTicker, true);
                 }
                 logger.warn(`❌ Ticker not found on Yahoo Chart: ${ticker}`);
@@ -597,9 +609,15 @@ async function fetchFromTwelveData(ticker: string, isFallback = false, attempt =
                 }
                 logger.warn(`❌ Twelve Data API ${response.status} for ${ticker} after ${MAX_ATTEMPTS} attempts`);
             } else if (response.status === 404) {
+                if (attempt < 2) {
+                    const delay = 500;
+                    logger.warn(`⚠️ Ticker ${ticker} returned 404 on Twelve Data, retrying... (attempt ${attempt}/${MAX_ATTEMPTS})`);
+                    await new Promise((resolve) => setTimeout(resolve, delay));
+                    return fetchFromTwelveData(ticker, isFallback, attempt + 1);
+                }
                 if (!isFallback && ticker.includes('.')) {
                     const fallbackTicker = ticker.replace(/\./g, '-');
-                    logger.info(`🔍 Ticker ${ticker} not found on Twelve Data, trying fallback: ${fallbackTicker}`);
+                    logger.info(`🔍 Ticker ${ticker} not found on Twelve Data after retry, trying fallback: ${fallbackTicker}`);
                     return fetchFromTwelveData(fallbackTicker, true);
                 }
                 logger.warn(`❌ Ticker not found on Twelve Data: ${ticker}`);
@@ -613,10 +631,18 @@ async function fetchFromTwelveData(ticker: string, isFallback = false, attempt =
 
         if (data.status === 'error' || !data.close) {
             if (data.status === 'error') {
-                if (data.code === 404 && !isFallback && ticker.includes('.')) {
-                    const fallbackTicker = ticker.replace(/\./g, '-');
-                    logger.info(`🔍 Twelve Data error 404 for ${ticker}, trying fallback: ${fallbackTicker}`);
-                    return fetchFromTwelveData(fallbackTicker, true);
+                if (data.code === 404) {
+                    if (attempt < 2) {
+                        const delay = 500;
+                        logger.warn(`⚠️ Twelve Data error 404 for ${ticker}, retrying... (attempt ${attempt}/${MAX_ATTEMPTS})`);
+                        await new Promise((resolve) => setTimeout(resolve, delay));
+                        return fetchFromTwelveData(ticker, isFallback, attempt + 1);
+                    }
+                    if (!isFallback && ticker.includes('.')) {
+                        const fallbackTicker = ticker.replace(/\./g, '-');
+                        logger.info(`🔍 Twelve Data error 404 for ${ticker} after retry, trying fallback: ${fallbackTicker}`);
+                        return fetchFromTwelveData(fallbackTicker, true);
+                    }
                 }
                 logger.warn(`❌ Twelve Data error for ${ticker}: ${data.message || 'Unknown error'}`);
             } else if (!data.close) {
