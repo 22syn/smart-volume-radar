@@ -26,7 +26,7 @@ jest.mock('../src/config/index.js', () => ({
 const mockFetch = jest.fn();
 global.fetch = mockFetch as typeof fetch;
 
-import { fetchAllStocks } from '../src/services/marketData.js';
+import { fetchAllStocks, fetchYahooChartAsOfDate } from '../src/services/marketData.js';
 import logger from '../src/utils/logger.js';
 
 function createYahooChartResponse(ticker: string): object {
@@ -273,5 +273,53 @@ describe('fetchAllStocks', () => {
         expect(mockFetch.mock.calls[3][0]).toContain('BRK-B');
 
         delete process.env.TWELVE_DATA_API_KEY;
+    });
+});
+
+describe('fetchYahooChartAsOfDate', () => {
+    beforeEach(() => {
+        mockFetch.mockReset();
+    });
+
+    it('falls back from dot to dash (e.g. EMBR3.SA -> EMBR3-SA)', async () => {
+        // First call for EMBR3.SA returns 404
+        mockFetch.mockResolvedValueOnce({
+            ok: false,
+            status: 404,
+        });
+        // Second call for EMBR3-SA (fallback) returns success
+        const response = createYahooChartResponse('EMBR3-SA') as any;
+        // Add timestamps for fetchYahooChartAsOfDate
+        response.chart.result[0].timestamp = [Math.floor(Date.now() / 1000)];
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: () => Promise.resolve(response),
+        });
+
+        const stock = await fetchYahooChartAsOfDate('EMBR3.SA', '2026-06-30');
+        expect(stock).not.toBeNull();
+        expect(stock?.ticker).toBe('EMBR3-SA');
+        expect(mockFetch).toHaveBeenCalledTimes(2);
+        expect(mockFetch).toHaveBeenNthCalledWith(1, expect.stringContaining('EMBR3.SA'), expect.any(Object));
+        expect(mockFetch).toHaveBeenNthCalledWith(2, expect.stringContaining('EMBR3-SA'), expect.any(Object));
+    });
+
+    it('retries on transient errors', async () => {
+        // First call fails with 500
+        mockFetch.mockResolvedValueOnce({
+            ok: false,
+            status: 500,
+        });
+        // Second call succeeds
+        const response = createYahooChartResponse('AAPL') as any;
+        response.chart.result[0].timestamp = [Math.floor(Date.now() / 1000)];
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: () => Promise.resolve(response),
+        });
+
+        const stock = await fetchYahooChartAsOfDate('AAPL', '2026-06-30');
+        expect(stock).not.toBeNull();
+        expect(mockFetch).toHaveBeenCalledTimes(2);
     });
 });
