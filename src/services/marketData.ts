@@ -266,7 +266,7 @@ export async function fetchYahooChartAsOfDate(
                 }
                 logger.warn(`❌ Yahoo Chart (asOfDate) API ${response.status} for ${ticker} after ${MAX_ATTEMPTS} attempts`);
             } else if (response.status === 404) {
-                if (attempt < 2) {
+                if (attempt < 3) {
                     const delay = 500;
                     logger.warn(`⚠️ Ticker ${ticker} returned 404 on Yahoo Chart (asOfDate), retrying... (attempt ${attempt}/${MAX_ATTEMPTS})`);
                     await new Promise((resolve) => setTimeout(resolve, delay));
@@ -475,7 +475,7 @@ async function fetchFromYahooChart(ticker: string, isFallback = false, attempt =
                 }
                 logger.warn(`❌ Yahoo Chart API ${response.status} for ${ticker} after ${MAX_ATTEMPTS} attempts`);
             } else if (response.status === 404) {
-                if (attempt < 2) {
+                if (attempt < 3) {
                     const delay = 500;
                     logger.warn(`⚠️ Ticker ${ticker} returned 404 on Yahoo Chart, retrying... (attempt ${attempt}/${MAX_ATTEMPTS})`);
                     await new Promise((resolve) => setTimeout(resolve, delay));
@@ -609,7 +609,7 @@ async function fetchFromTwelveData(ticker: string, isFallback = false, attempt =
                 }
                 logger.warn(`❌ Twelve Data API ${response.status} for ${ticker} after ${MAX_ATTEMPTS} attempts`);
             } else if (response.status === 404) {
-                if (attempt < 2) {
+                if (attempt < 3) {
                     const delay = 500;
                     logger.warn(`⚠️ Ticker ${ticker} returned 404 on Twelve Data, retrying... (attempt ${attempt}/${MAX_ATTEMPTS})`);
                     await new Promise((resolve) => setTimeout(resolve, delay));
@@ -632,7 +632,7 @@ async function fetchFromTwelveData(ticker: string, isFallback = false, attempt =
         if (data.status === 'error' || !data.close) {
             if (data.status === 'error') {
                 if (data.code === 404) {
-                    if (attempt < 2) {
+                    if (attempt < 3) {
                         const delay = 500;
                         logger.warn(`⚠️ Twelve Data error 404 for ${ticker}, retrying... (attempt ${attempt}/${MAX_ATTEMPTS})`);
                         await new Promise((resolve) => setTimeout(resolve, delay));
