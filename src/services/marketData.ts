@@ -240,54 +240,103 @@ export async function parseYahooChartResult(
  * Fetch Yahoo chart data as of a specific date. Fetches full history, slices to asOfDate,
  * then runs production parseYahooChartResult (same buggy volume logic). For replay/investigation.
  */
-export async function fetchYahooChartAsOfDate(ticker: string, asOfDate: string): Promise<StockData | null> {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5y`;
-    const response = await fetch(url, {
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json',
-        },
-    });
-    if (!response.ok) return null;
+export async function fetchYahooChartAsOfDate(
+    ticker: string,
+    asOfDate: string,
+    isFallback = false,
+    attempt = 1
+): Promise<StockData | null> {
+    try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5y`;
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                'Accept': 'application/json',
+            },
+        });
 
-    const data = (await response.json()) as { chart?: { result?: unknown[] } };
-    const result = data?.chart?.result?.[0] as { meta?: unknown; timestamp?: number[]; indicators?: { quote?: Array<{ open?: (number | null)[]; close?: (number | null)[]; high?: (number | null)[]; low?: (number | null)[]; volume?: (number | null)[] }> } } | undefined;
-    if (!result?.timestamp?.length) return null;
+        if (!response.ok) {
+            if (response.status === 429) {
+                logger.warn(`⚠️ Yahoo Chart (asOfDate) API rate limited for ${ticker}`);
+            } else if (response.status === 404) {
+                if (!isFallback && ticker.includes('.')) {
+                    const fallbackTicker = ticker.replace(/\./g, '-');
+                    logger.info(`🔍 Ticker ${ticker} not found on Yahoo Chart (asOfDate), trying fallback: ${fallbackTicker}`);
+                    return fetchYahooChartAsOfDate(fallbackTicker, asOfDate, true);
+                }
+                logger.warn(`❌ Ticker not found on Yahoo Chart (asOfDate): ${ticker}`);
+            } else {
+                if (attempt === 1) {
+                    logger.warn(`⚠️ Yahoo Chart (asOfDate) API error ${response.status} for ${ticker}, retrying...`);
+                    await new Promise((resolve) => setTimeout(resolve, 500));
+                    return fetchYahooChartAsOfDate(ticker, asOfDate, isFallback, attempt + 1);
+                }
+                logger.warn(`❌ Yahoo Chart (asOfDate) API error ${response.status} for ${ticker}`);
+            }
+            return null;
+        }
 
-    const ts = result.timestamp;
-    const quote = result.indicators?.quote?.[0];
-    if (!quote) return null;
+        const data = (await response.json()) as { chart?: { result?: unknown[] } };
+        const result = data?.chart?.result?.[0] as {
+            meta?: unknown;
+            timestamp?: number[];
+            indicators?: {
+                quote?: Array<{
+                    open?: (number | null)[];
+                    close?: (number | null)[];
+                    high?: (number | null)[];
+                    low?: (number | null)[];
+                    volume?: (number | null)[];
+                }>;
+            };
+        } | undefined;
+        if (!result?.timestamp?.length) return null;
 
-    const asOfEnd = new Date(asOfDate + 'T23:59:59Z').getTime() / 1000;
-    let lastIdx = -1;
-    for (let i = 0; i < ts.length; i++) {
-        if (ts[i]! <= asOfEnd) lastIdx = i;
+        const ts = result.timestamp;
+        const quote = result.indicators?.quote?.[0];
+        if (!quote) return null;
+
+        const asOfEnd = new Date(asOfDate + 'T23:59:59Z').getTime() / 1000;
+        let lastIdx = -1;
+        for (let i = 0; i < ts.length; i++) {
+            if (ts[i]! <= asOfEnd) lastIdx = i;
+        }
+        if (lastIdx < 0) return null;
+
+        const slice = <T>(arr: T[] | undefined): T[] => (arr ? arr.slice(0, lastIdx + 1) : []);
+
+        // Strip regularMarketPrice so parseYahooChartResult uses the historical close (currentClose),
+        // not today's live price which Yahoo always returns in meta regardless of slice date.
+        const metaWithoutLive = result.meta
+            ? { ...(result.meta as Record<string, unknown>), regularMarketPrice: undefined }
+            : undefined;
+
+        const sliced: typeof result = {
+            meta: metaWithoutLive as typeof result.meta,
+            timestamp: slice(ts),
+            indicators: {
+                quote: [
+                    {
+                        open: slice(quote.open),
+                        close: slice(quote.close),
+                        high: slice(quote.high),
+                        low: slice(quote.low),
+                        volume: slice(quote.volume),
+                    },
+                ],
+            },
+        };
+
+        return parseYahooChartResult(sliced as YahooChartResult, ticker, { skipTwelveData: true });
+    } catch (error) {
+        if (attempt === 1) {
+            logger.warn(`⚠️ Chart (asOfDate) fetch failed for ${ticker} (${(error as Error).message}), retrying...`);
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            return fetchYahooChartAsOfDate(ticker, asOfDate, isFallback, attempt + 1);
+        }
+        logger.error(`❌ Chart (asOfDate) fetch failed for ${ticker}:`, (error as Error).message);
+        return null;
     }
-    if (lastIdx < 0) return null;
-
-    const slice = <T>(arr: T[] | undefined): T[] => (arr ? arr.slice(0, lastIdx + 1) : []);
-
-    // Strip regularMarketPrice so parseYahooChartResult uses the historical close (currentClose),
-    // not today's live price which Yahoo always returns in meta regardless of slice date.
-    const metaWithoutLive = result.meta
-        ? { ...(result.meta as Record<string, unknown>), regularMarketPrice: undefined }
-        : undefined;
-
-    const sliced: typeof result = {
-        meta: metaWithoutLive as typeof result.meta,
-        timestamp: slice(ts),
-        indicators: {
-            quote: [{
-                open: slice(quote.open),
-                close: slice(quote.close),
-                high: slice(quote.high),
-                low: slice(quote.low),
-                volume: slice(quote.volume),
-            }],
-        },
-    };
-
-    return parseYahooChartResult(sliced as YahooChartResult, ticker, { skipTwelveData: true });
 }
 
 /**
