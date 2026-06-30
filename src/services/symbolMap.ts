@@ -70,29 +70,33 @@ const EURONEXT_OVERRIDES: Record<string, string> = {
  * "NYSE:BRK.B" → "BRK-B". Returns null for unknown/ambiguous exchanges (crypto, FX,
  * unlisted EURONEXT, …).
  */
+/** A clean Yahoo ticker: starts alphanumeric, then alphanumerics / dot / dash only. */
+const YAHOO_TICKER = /^[A-Za-z0-9][A-Za-z0-9.\-]*$/;
+
 export function tvToYahoo(tvSymbol: string): string | null {
     const raw = tvSymbol.trim();
     if (!raw) return null;
 
+    let candidate: string | null;
     const idx = raw.indexOf(':');
     if (idx === -1) {
         // No exchange prefix — assume a bare US ticker; normalize class shares.
-        return raw.replace(/\./g, '-');
+        candidate = raw.replace(/\./g, '-');
+    } else {
+        const exchange = raw.slice(0, idx).toUpperCase();
+        const base = raw.slice(idx + 1).trim();
+        if (!base) return null;
+        if (US_EXCHANGES.has(exchange)) {
+            candidate = base.replace(/\./g, '-'); // BRK.B → BRK-B
+        } else {
+            // Strip a trailing dot so LSE "BA." → "BA" → "BA.L" (not "BA..L").
+            const suffixBase = base.replace(/\.$/, '');
+            const suffix =
+                exchange === 'EURONEXT' ? EURONEXT_OVERRIDES[base.toUpperCase()] : PREFIX_TO_SUFFIX[exchange];
+            candidate = suffix ? `${suffixBase}${suffix}` : null;
+        }
     }
 
-    const exchange = raw.slice(0, idx).toUpperCase();
-    const base = raw.slice(idx + 1).trim();
-    if (!base) return null;
-
-    if (US_EXCHANGES.has(exchange)) {
-        return base.replace(/\./g, '-'); // BRK.B → BRK-B
-    }
-    // For suffix exchanges, strip a trailing dot so LSE "BA." → "BA" → "BA.L" (not "BA..L").
-    const suffixBase = base.replace(/\.$/, '');
-    if (exchange === 'EURONEXT') {
-        const suffix = EURONEXT_OVERRIDES[base.toUpperCase()];
-        return suffix ? `${suffixBase}${suffix}` : null;
-    }
-    const suffix = PREFIX_TO_SUFFIX[exchange];
-    return suffix ? `${suffixBase}${suffix}` : null;
+    // Reject malformed results (e.g. a source cell holding two symbols: "SOXX/AMEX:IGV").
+    return candidate && YAHOO_TICKER.test(candidate) ? candidate : null;
 }

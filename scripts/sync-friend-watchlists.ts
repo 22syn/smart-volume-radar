@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import logger from '../src/utils/logger.js';
 import { fetchSharedWatchlistDetailed } from '../src/services/sharedWatchlist.js';
 import { tvToYahoo } from '../src/services/symbolMap.js';
+import { isIndex } from '../src/config/index.js';
 import { mergeUniverseSheet, type UniverseRow } from '../src/services/universeSheetWriter.js';
 
 interface Source {
@@ -70,6 +71,10 @@ async function main(): Promise<void> {
                 const yahoo = tvToYahoo(tv);
                 if (!yahoo) {
                     skipped.push(`${tv} (${sector})`);
+                    continue;
+                }
+                if (isIndex(yahoo)) {
+                    skipped.push(`${tv}→${yahoo} index (${sector})`);
                     continue;
                 }
                 const key = yahoo.toUpperCase();

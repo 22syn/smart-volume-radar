@@ -148,6 +148,7 @@ export interface ParseWatchlistResult {
 /** Known index symbols (Yahoo ^, TASE indices). RVOL not applicable – no volume. */
 const KNOWN_INDEX_SYMBOLS = new Set([
     'TABANKS5.TA', 'TA25.TA', 'TA35.TA', 'TA125.TA', 'TA50.TA', 'TA75.TA', 'TA90.TA', 'TA100.TA',
+    'TASME60.TA', 'TAINSURANCEPLUS.TA',
 ].map((s) => s.toUpperCase()));
 
 /** Detect if symbol is an index (not supported – no volume for RVOL). Skip and report, do not trigger Jules. */

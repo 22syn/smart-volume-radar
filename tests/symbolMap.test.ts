@@ -35,6 +35,10 @@ describe('tvToYahoo', () => {
         expect(tvToYahoo('FX:EURUSD')).toBeNull();
     });
 
+    it('rejects malformed results (a cell holding two symbols)', () => {
+        expect(tvToYahoo('AMEX:SOXX/AMEX:IGV')).toBeNull();
+    });
+
     it('returns null for empty input', () => {
         expect(tvToYahoo('')).toBeNull();
         expect(tvToYahoo('NASDAQ:')).toBeNull();
