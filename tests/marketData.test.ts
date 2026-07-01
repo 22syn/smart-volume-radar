@@ -2,6 +2,8 @@
  * Market Data service tests — mocked fetch
  */
 
+jest.setTimeout(30000);
+
 // Mock p-limit to avoid ESM import issues in Jest
 jest.mock('p-limit', () => () => (fn: () => Promise<unknown>) => fn());
 
@@ -167,7 +169,12 @@ describe('fetchAllStocks', () => {
             ok: false,
             status: 404,
         });
-        // Fourth call for BRK-B (fallback) returns success
+        // Fourth call for BRK.B returns 404 (retry 3)
+        mockFetch.mockResolvedValueOnce({
+            ok: false,
+            status: 404,
+        });
+        // Fifth call for BRK-B (fallback) returns success
         mockFetch.mockResolvedValueOnce({
             ok: true,
             json: () => Promise.resolve(createYahooChartResponse('BRK-B')),
@@ -177,20 +184,23 @@ describe('fetchAllStocks', () => {
         expect(stocks).toHaveLength(1);
         expect(stocks[0].ticker).toBe('BRK-B'); // The data returned is for the fallback ticker
         expect(failedTickers).toHaveLength(0);
-        expect(mockFetch).toHaveBeenCalledTimes(4);
+        expect(mockFetch).toHaveBeenCalledTimes(5);
         expect(mockFetch).toHaveBeenNthCalledWith(1, expect.stringContaining('BRK.B'), expect.any(Object));
         expect(mockFetch).toHaveBeenNthCalledWith(2, expect.stringContaining('BRK.B'), expect.any(Object));
         expect(mockFetch).toHaveBeenNthCalledWith(3, expect.stringContaining('BRK.B'), expect.any(Object));
-        expect(mockFetch).toHaveBeenNthCalledWith(4, expect.stringContaining('BRK-B'), expect.any(Object));
+        expect(mockFetch).toHaveBeenNthCalledWith(4, expect.stringContaining('BRK.B'), expect.any(Object));
+        expect(mockFetch).toHaveBeenNthCalledWith(5, expect.stringContaining('BRK-B'), expect.any(Object));
     });
 
     it('falls back to CBOE when COBE fails (typo fallback)', async () => {
         process.env.TWELVE_DATA_API_KEY = 'test-key';
-        // 1. Yahoo Chart COBE -> 404 (x3 with retry)
+        // 1. Yahoo Chart COBE -> 404 (x4 with retry)
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
-        // 2. Twelve Data COBE -> 404 (x3 with retry)
+        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
+        // 2. Twelve Data COBE -> 404 (x4 with retry)
+        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
@@ -204,20 +214,22 @@ describe('fetchAllStocks', () => {
         expect(stocks).toHaveLength(1);
         expect(stocks[0].ticker).toBe('CBOE');
         expect(failedTickers).toHaveLength(0);
-        // Yahoo(COBE)x3, Twelve(COBE)x3, Yahoo(CBOE)x1 = 7
-        expect(mockFetch).toHaveBeenCalledTimes(7);
+        // Yahoo(COBE)x4, Twelve(COBE)x4, Yahoo(CBOE)x1 = 9
+        expect(mockFetch).toHaveBeenCalledTimes(9);
         expect(mockFetch).toHaveBeenNthCalledWith(1, expect.stringContaining('COBE'), expect.any(Object));
-        expect(mockFetch).toHaveBeenNthCalledWith(7, expect.stringContaining('CBOE'), expect.any(Object));
+        expect(mockFetch).toHaveBeenNthCalledWith(9, expect.stringContaining('CBOE'), expect.any(Object));
 
         delete process.env.TWELVE_DATA_API_KEY;
     });
 
     it('falls back to BA.L when BA..L fails (typo fallback)', async () => {
-        // 1. Yahoo Chart BA..L -> 404 (x3 with retry)
+        // 1. Yahoo Chart BA..L -> 404 (x4 with retry)
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
-        // 2. Yahoo Chart BA--L (dot-to-dash fallback, x3 with retry) -> 404
+        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
+        // 2. Yahoo Chart BA--L (dot-to-dash fallback, x4 with retry) -> 404
+        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
@@ -231,29 +243,21 @@ describe('fetchAllStocks', () => {
         expect(stocks).toHaveLength(1);
         expect(stocks[0].ticker).toBe('BA.L');
         expect(failedTickers).toHaveLength(0);
-        // Calls: Yahoo(BA..L)x3, Yahoo(BA--L)x3, Yahoo(BA.L)x1 = 7
-        expect(mockFetch).toHaveBeenCalledTimes(7);
+        // Calls: Yahoo(BA..L)x4, Yahoo(BA--L)x4, Yahoo(BA.L)x1 = 9
+        expect(mockFetch).toHaveBeenCalledTimes(9);
         expect(mockFetch).toHaveBeenNthCalledWith(1, expect.stringContaining('BA..L'), expect.any(Object));
-        expect(mockFetch).toHaveBeenNthCalledWith(7, expect.stringContaining('BA.L'), expect.any(Object));
+        expect(mockFetch).toHaveBeenNthCalledWith(9, expect.stringContaining('BA.L'), expect.any(Object));
     });
 
     it('falls back to multiple options (BAS.MI then BAS.DE) when BASF.MI fails', async () => {
-        // 1. Yahoo Chart BASF.MI -> 404 (x3 with retry)
-        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
-        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
-        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
-        // 2. Yahoo Chart BASF-MI (dot-to-dash fallback, x3 with retry) -> 404
-        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
-        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
-        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
-        // 3. Yahoo Chart BAS.MI (typo fallback 1, x3 with retry) -> 404
-        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
-        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
-        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
-        // 4. Yahoo Chart BAS-MI (dot-to-dash fallback for fallback 1, x3 with retry) -> 404
-        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
-        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
-        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
+        // 1. Yahoo Chart BASF.MI -> 404 (x4 with retry)
+        for (let i = 0; i < 4; i++) mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
+        // 2. Yahoo Chart BASF-MI (dot-to-dash fallback, x4 with retry) -> 404
+        for (let i = 0; i < 4; i++) mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
+        // 3. Yahoo Chart BAS.MI (typo fallback 1, x4 with retry) -> 404
+        for (let i = 0; i < 4; i++) mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
+        // 4. Yahoo Chart BAS-MI (dot-to-dash fallback for fallback 1, x4 with retry) -> 404
+        for (let i = 0; i < 4; i++) mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
         // 5. Yahoo Chart BAS.DE (typo fallback 2, first try) -> success
         mockFetch.mockResolvedValueOnce({
             ok: true,
@@ -264,26 +268,29 @@ describe('fetchAllStocks', () => {
         expect(stocks).toHaveLength(1);
         expect(stocks[0].ticker).toBe('BAS.DE');
         expect(failedTickers).toHaveLength(0);
-        // Each 404 is retried: BASF.MI (x3), BASF-MI (x3), BAS.MI (x3), BAS-MI (x3), BAS.DE (x1) = 13
-        expect(mockFetch).toHaveBeenCalledTimes(13);
+        // Each 404 is retried: BASF.MI (x4), BASF-MI (x4), BAS.MI (x4), BAS-MI (x4), BAS.DE (x1) = 17
+        expect(mockFetch).toHaveBeenCalledTimes(17);
         expect(mockFetch).toHaveBeenNthCalledWith(1, expect.stringContaining('BASF.MI'), expect.any(Object));
-        expect(mockFetch).toHaveBeenNthCalledWith(4, expect.stringContaining('BASF-MI'), expect.any(Object));
-        expect(mockFetch).toHaveBeenNthCalledWith(7, expect.stringContaining('BAS.MI'), expect.any(Object));
-        expect(mockFetch).toHaveBeenNthCalledWith(13, expect.stringContaining('BAS.DE'), expect.any(Object));
+        expect(mockFetch).toHaveBeenNthCalledWith(5, expect.stringContaining('BASF-MI'), expect.any(Object));
+        expect(mockFetch).toHaveBeenNthCalledWith(9, expect.stringContaining('BAS.MI'), expect.any(Object));
+        expect(mockFetch).toHaveBeenNthCalledWith(17, expect.stringContaining('BAS.DE'), expect.any(Object));
     });
 
     it('falls back from dot to dash for Twelve Data (e.g. BRK.B -> BRK-B)', async () => {
         process.env.TWELVE_DATA_API_KEY = 'test-key';
 
-        // 1. Yahoo Chart BRK.B -> 404 (x3 with retry)
+        // 1. Yahoo Chart BRK.B -> 404 (x4 with retry)
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
-        // 2. Yahoo Chart BRK-B (dot-to-dash fallback) -> 404 (x3 with retry)
+        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
+        // 2. Yahoo Chart BRK-B (dot-to-dash fallback) -> 404 (x4 with retry)
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
-        // 3. Twelve Data BRK.B -> 404 (x3 with retry)
+        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
+        // 3. Twelve Data BRK.B -> 404 (x4 with retry)
+        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
         mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
@@ -307,15 +314,16 @@ describe('fetchAllStocks', () => {
         expect(stocks).toHaveLength(1);
         expect(stocks[0].ticker).toBe('BRK-B');
         expect(failedTickers).toHaveLength(0);
-        // Each Yahoo/Twelve 404 is retried: Yahoo(BRK.B)x3, Yahoo(BRK-B)x3, Twelve(BRK.B)x3, Twelve(BRK-B)x1 = 10
-        expect(mockFetch.mock.calls.length).toBeGreaterThanOrEqual(10);
+        // Each Yahoo/Twelve 404 is retried: Yahoo(BRK.B)x4, Yahoo(BRK-B)x4, Twelve(BRK.B)x4, Twelve(BRK-B)x1 = 13
+        expect(mockFetch.mock.calls.length).toBeGreaterThanOrEqual(13);
         expect(mockFetch).toHaveBeenNthCalledWith(1, expect.stringContaining('BRK.B'), expect.any(Object));
         expect(mockFetch).toHaveBeenNthCalledWith(2, expect.stringContaining('BRK.B'), expect.any(Object));
         expect(mockFetch).toHaveBeenNthCalledWith(3, expect.stringContaining('BRK.B'), expect.any(Object));
-        // Twelve Data call for BRK.B is the 7th fetch call in this sequence
-        expect(mockFetch.mock.calls[6][0]).toContain('BRK.B');
-        // Twelve Data fallback call for BRK-B is the 10th fetch call
-        expect(mockFetch.mock.calls[9][0]).toContain('BRK-B');
+        expect(mockFetch).toHaveBeenNthCalledWith(4, expect.stringContaining('BRK.B'), expect.any(Object));
+        // Twelve Data call for BRK.B is the 9th fetch call in this sequence
+        expect(mockFetch.mock.calls[8][0]).toContain('BRK.B');
+        // Twelve Data fallback call for BRK-B is the 13th fetch call
+        expect(mockFetch.mock.calls[12][0]).toContain('BRK-B');
 
         delete process.env.TWELVE_DATA_API_KEY;
     });
@@ -342,10 +350,15 @@ describe('fetchYahooChartAsOfDate', () => {
             ok: false,
             status: 404,
         });
-        // Fourth call for EMBR3-SA (fallback) returns success
+        // Fourth call for EMBR3.SA returns 404 (retry 3)
+        mockFetch.mockResolvedValueOnce({
+            ok: false,
+            status: 404,
+        });
+        // Fifth call for EMBR3-SA (fallback) returns success
         const response = createYahooChartResponse('EMBR3-SA') as any;
-        // Add timestamps for fetchYahooChartAsOfDate
-        response.chart.result[0].timestamp = [Math.floor(Date.now() / 1000)];
+        // Add timestamps for fetchYahooChartAsOfDate (fixed date to match asOfDate)
+        response.chart.result[0].timestamp = [Date.parse('2026-06-30T12:00:00Z') / 1000];
         mockFetch.mockResolvedValueOnce({
             ok: true,
             json: () => Promise.resolve(response),
@@ -354,11 +367,12 @@ describe('fetchYahooChartAsOfDate', () => {
         const stock = await fetchYahooChartAsOfDate('EMBR3.SA', '2026-06-30');
         expect(stock).not.toBeNull();
         expect(stock?.ticker).toBe('EMBR3-SA');
-        expect(mockFetch).toHaveBeenCalledTimes(4);
+        expect(mockFetch).toHaveBeenCalledTimes(5);
         expect(mockFetch).toHaveBeenNthCalledWith(1, expect.stringContaining('EMBR3.SA'), expect.any(Object));
         expect(mockFetch).toHaveBeenNthCalledWith(2, expect.stringContaining('EMBR3.SA'), expect.any(Object));
         expect(mockFetch).toHaveBeenNthCalledWith(3, expect.stringContaining('EMBR3.SA'), expect.any(Object));
-        expect(mockFetch).toHaveBeenNthCalledWith(4, expect.stringContaining('EMBR3-SA'), expect.any(Object));
+        expect(mockFetch).toHaveBeenNthCalledWith(4, expect.stringContaining('EMBR3.SA'), expect.any(Object));
+        expect(mockFetch).toHaveBeenNthCalledWith(5, expect.stringContaining('EMBR3-SA'), expect.any(Object));
     });
 
     it('retries on transient errors with backoff', async () => {
@@ -372,9 +386,15 @@ describe('fetchYahooChartAsOfDate', () => {
             ok: false,
             status: 429,
         });
-        // Third call succeeds
+        // Third call fails with 503
+        mockFetch.mockResolvedValueOnce({
+            ok: false,
+            status: 503,
+        });
+        // Fourth call succeeds
         const response = createYahooChartResponse('AAPL') as any;
-        response.chart.result[0].timestamp = [Math.floor(Date.now() / 1000)];
+        // Add timestamps for fetchYahooChartAsOfDate (fixed date to match asOfDate)
+        response.chart.result[0].timestamp = [Date.parse('2026-06-30T12:00:00Z') / 1000];
         mockFetch.mockResolvedValueOnce({
             ok: true,
             json: () => Promise.resolve(response),
@@ -382,7 +402,7 @@ describe('fetchYahooChartAsOfDate', () => {
 
         const stock = await fetchYahooChartAsOfDate('AAPL', '2026-06-30');
         expect(stock).not.toBeNull();
-        expect(mockFetch).toHaveBeenCalledTimes(3);
+        expect(mockFetch).toHaveBeenCalledTimes(4);
     });
 
 });
