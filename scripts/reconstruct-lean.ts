@@ -235,6 +235,20 @@ async function main() {
     const outPath = path.join(RESULTS_DIR, `lean-reconstructed-${today}.json`);
     fs.writeFileSync(outPath, JSON.stringify(out, null, 2));
     console.log(`\n📁 Saved: ${outPath}`);
+
+    // Also emit per-day flat dashboard rows for the D1 seed.
+    const { rowsFromReconstructed } = await import('../src/lean/dashboardRows.js');
+    const allRows = rowsFromReconstructed(out as never);
+    const byDate = new Map<string, unknown[]>();
+    for (const row of allRows) {
+        const arr = byDate.get(row.scanDate) ?? [];
+        arr.push(row);
+        byDate.set(row.scanDate, arr);
+    }
+    for (const [d, rows] of byDate) {
+        fs.writeFileSync(path.join(RESULTS_DIR, `dashboard-${d}.json`), JSON.stringify(rows));
+    }
+    console.log(`📊 Emitted ${byDate.size} dashboard-{date}.json files for seed`);
     console.log(`\n📊 Signal totals across ${asOfDates.length} days × ${cache.size - 1} stocks:`);
     for (const [k, v] of Object.entries(summary).sort((a, b) => b[1] - a[1])) {
         console.log(`   ${k.padEnd(18)} ${v}`);

@@ -32,6 +32,7 @@ import {
 import { formatLeanReport, type LeanScanResult } from './lean/format.js';
 import { attachGraduated } from './lean/graduates.js';
 import { writeTradingViewWatchlist } from './lean/tradingViewWatchlist.js';
+import { writeDashboardRows } from './lean/dashboardRows.js';
 import { writeLeanSnapshot } from './utils/snapshotWriter.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -187,6 +188,14 @@ async function main(): Promise<void> {
         // the highest-quality cohort per 2026-05-13 conversion analysis.
         // Degrades to empty if no prior snapshot is available.
         attachGraduated(result, scanDate, path.join(__moduleDir, '..', 'results'));
+
+        // Emit flat dashboard rows for D1 ingestion (independent of Telegram).
+        try {
+            const dashFile = writeDashboardRows(scanDate, result, path.join(__moduleDir, '..', 'results'));
+            logger.info(`📊 Dashboard rows → ${dashFile}`);
+        } catch (e) {
+            logger.warn(`⚠️ dashboard rows emit failed: ${(e as Error).message}`);
+        }
 
         // Format + send (chunked — Telegram's hard limit is 4096 chars per message)
         const message = formatLeanReport(scanDate, result);
