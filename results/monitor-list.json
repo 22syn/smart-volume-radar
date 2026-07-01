@@ -2811,6 +2811,12 @@
           "type": "re-alert-close",
           "price": 53.16999816894531,
           "rvol": 1.5672245293372302
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 53.16999816894531,
+          "rvol": 1.5672245293372302
         }
       ],
       "resolvedDate": "2026-02-16",
@@ -6365,7 +6371,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 57990,
       "firstAlertRvol": 1.9252423495961861,
-      "lastChecked": "2026-05-21",
+      "lastChecked": "2026-06-30",
       "status": "expired",
       "sector": "Others",
       "events": [
@@ -6459,6 +6465,12 @@
           "type": "re-alert-close",
           "price": 59370,
           "rvol": 1.511741841622079
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 60360,
+          "rvol": 1.7092702799856214
         }
       ],
       "resolvedDate": "2026-02-16",
@@ -6793,7 +6805,7 @@
       "firstAlertLevel": "full",
       "firstAlertPrice": 11790,
       "firstAlertRvol": 2.149522006855416,
-      "lastChecked": "2026-06-25",
+      "lastChecked": "2026-06-30",
       "status": "sma21-pullback",
       "sector": "infrastructures",
       "events": [
@@ -6936,6 +6948,12 @@
           "type": "re-alert-close",
           "price": 11700,
           "rvol": 3.5033211888551996
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 11250,
+          "rvol": 4.923650018031929
         }
       ],
       "resolvedDate": "2026-01-22",
@@ -8230,6 +8248,12 @@
           "type": "re-alert-close",
           "price": 41700,
           "rvol": 1.7019118417341552
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 41770,
+          "rvol": 2.0525044171976226
         }
       ],
       "resolvedDate": "2026-01-22",
@@ -11302,6 +11326,12 @@
           "type": "re-alert-close",
           "price": 163.1199951171875,
           "rvol": 1.9779624824434023
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 163.1199951171875,
+          "rvol": 1.9779624824434023
         }
       ],
       "resolvedDate": "2026-01-15",
@@ -11409,6 +11439,12 @@
           "type": "re-alert-close",
           "price": 379.0899963378906,
           "rvol": 1.892574223218368
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 433.3299865722656,
+          "rvol": 1.6029105739792218
         },
         {
           "date": "2026-06-30",
@@ -12283,6 +12319,12 @@
           "type": "re-alert-close",
           "price": 188.14999389648438,
           "rvol": 2.383273565669955
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 179.5800018310547,
+          "rvol": 3.9175167843500405
         },
         {
           "date": "2026-06-30",
@@ -15217,7 +15259,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 7413,
       "firstAlertRvol": 1.58105412783252,
-      "lastChecked": "2026-06-25",
+      "lastChecked": "2026-06-30",
       "status": "sma21-pullback",
       "sector": "Banks",
       "events": [
@@ -15402,6 +15444,12 @@
           "type": "re-alert-close",
           "price": 6640,
           "rvol": 1.5185920872468575
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 6653,
+          "rvol": 1.51201845061086
         }
       ],
       "resolvedDate": "2026-01-30",
@@ -15751,6 +15799,12 @@
           "type": "re-alert-close",
           "price": 384.260009765625,
           "rvol": 1.8125392319185882
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 384.260009765625,
+          "rvol": 1.8125392319185882
         }
       ],
       "resolvedDate": "2026-01-13",
@@ -15915,6 +15969,12 @@
         },
         {
           "date": "2026-06-29",
+          "type": "re-alert-close",
+          "price": 55.650001525878906,
+          "rvol": 1.5073875840794237
+        },
+        {
+          "date": "2026-06-30",
           "type": "re-alert-close",
           "price": 55.650001525878906,
           "rvol": 1.5073875840794237
@@ -19081,6 +19141,12 @@
           "type": "re-alert-close",
           "price": 3195.93994140625,
           "rvol": 1.89066608637795
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 3195.93994140625,
+          "rvol": 1.89066608637795
         }
       ],
       "resolvedDate": "2026-02-18",
@@ -21886,6 +21952,12 @@
           "type": "re-alert-close",
           "price": 91.19000244140625,
           "rvol": 2.27238517678005
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 91.19000244140625,
+          "rvol": 2.27238517678005
         }
       ],
       "resolvedDate": "2026-02-20",
@@ -22381,6 +22453,12 @@
           "type": "re-alert-close",
           "price": 135.39999389648438,
           "rvol": 1.5052350998320503
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 135.39999389648438,
+          "rvol": 1.5052350998320503
         }
       ],
       "resolvedDate": "2026-01-15",
@@ -22475,6 +22553,12 @@
           "type": "re-alert-close",
           "price": 1068.0400390625,
           "rvol": 1.6239825490807103
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 1042.3900146484375,
+          "rvol": 2.0471393989144273
         },
         {
           "date": "2026-06-30",
@@ -25823,6 +25907,12 @@
           "type": "re-alert-close",
           "price": 32.560001373291016,
           "rvol": 7.880501690985191
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 32.560001373291016,
+          "rvol": 7.880501690985191
         }
       ],
       "resolvedDate": "2026-02-03",
@@ -26060,6 +26150,12 @@
           "type": "re-alert-close",
           "price": 61.18000030517578,
           "rvol": 1.7484085704150258
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 62.95000076293945,
+          "rvol": 1.935913358844113
         },
         {
           "date": "2026-06-30",
@@ -26446,6 +26542,12 @@
           "type": "re-alert-close",
           "price": 142.58999633789062,
           "rvol": 1.7343093713020679
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 142.58999633789062,
+          "rvol": 1.7343093713020679
         }
       ],
       "resolvedDate": "2026-01-15",
@@ -26719,6 +26821,12 @@
           "type": "re-alert-close",
           "price": 723,
           "rvol": 1.820786874844465
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 723,
+          "rvol": 1.820786874844465
         }
       ],
       "resolvedDate": "2026-02-13",
@@ -26844,6 +26952,12 @@
           "type": "re-alert-full",
           "price": 259.55999755859375,
           "rvol": 2.4799848180764177
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 301.7099914550781,
+          "rvol": 1.7333791827957357
         },
         {
           "date": "2026-06-30",
@@ -28202,6 +28316,12 @@
           "type": "re-alert-close",
           "price": 21350,
           "rvol": 2.053357900954559
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 21090,
+          "rvol": 3.596104415759149
         }
       ],
       "resolvedDate": "2026-01-22",
@@ -32185,6 +32305,12 @@
           "type": "re-alert-close",
           "price": 165.07000732421875,
           "rvol": 6.11554624467817
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 165.07000732421875,
+          "rvol": 6.11554624467817
         }
       ],
       "resolvedDate": "2026-03-04",
@@ -35363,6 +35489,12 @@
           "type": "re-alert-close",
           "price": 119.13999938964844,
           "rvol": 1.5327315185162123
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 119.13999938964844,
+          "rvol": 1.5327315185162123
         }
       ],
       "resolvedDate": "2026-03-11",
@@ -36166,6 +36298,12 @@
         },
         {
           "date": "2026-06-29",
+          "type": "re-alert-close",
+          "price": 121,
+          "rvol": 1.8193308410512672
+        },
+        {
+          "date": "2026-06-30",
           "type": "re-alert-close",
           "price": 121,
           "rvol": 1.8193308410512672
@@ -38706,7 +38844,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 3853,
       "firstAlertRvol": 1.718146877896229,
-      "lastChecked": "2026-06-29",
+      "lastChecked": "2026-06-30",
       "status": "graduated",
       "sector": "Banks",
       "events": [
@@ -38921,6 +39059,12 @@
           "type": "re-alert-close",
           "price": 2905,
           "rvol": 2.0866288274235223
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 2950,
+          "rvol": 2.174931842019931
         }
       ],
       "resolvedDate": "2026-02-05",
@@ -39181,6 +39325,12 @@
           "type": "re-alert-close",
           "price": 48.40999984741211,
           "rvol": 1.6762861133671894
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 42.66999816894531,
+          "rvol": 1.9385610568366096
         },
         {
           "date": "2026-06-30",
@@ -39669,6 +39819,12 @@
           "type": "re-alert-close",
           "price": 20060,
           "rvol": 1.5587512930627754
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 19700,
+          "rvol": 3.027954890568011
         }
       ],
       "resolvedDate": "2026-02-23",
@@ -42078,6 +42234,12 @@
           "type": "re-alert-close",
           "price": 136.80999755859375,
           "rvol": 1.5306492037335688
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 136.80999755859375,
+          "rvol": 1.5306492037335688
         }
       ],
       "resolvedDate": "2026-03-10",
@@ -42190,6 +42352,12 @@
           "type": "re-alert-close",
           "price": 344.239990234375,
           "rvol": 1.6136645496191206
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-full",
+          "price": 378.45001220703125,
+          "rvol": 2.1753067733576863
         },
         {
           "date": "2026-06-30",
@@ -42715,6 +42883,12 @@
           "type": "re-alert-close",
           "price": 46.22999954223633,
           "rvol": 1.7631306371534214
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 41.04999923706055,
+          "rvol": 2.2565925040507366
         },
         {
           "date": "2026-06-30",
@@ -44894,7 +45068,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 18500,
       "firstAlertRvol": 1.9031845330173096,
-      "lastChecked": "2026-06-19",
+      "lastChecked": "2026-06-30",
       "status": "expired",
       "events": [
         {
@@ -44939,6 +45113,12 @@
           "type": "expired",
           "price": 22000,
           "note": "30 trading days without resolution"
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 21740,
+          "rvol": 1.9923660285478144
         }
       ],
       "resolvedDate": "2026-06-19",
@@ -45378,6 +45558,12 @@
           "type": "re-alert-close",
           "price": 96.43000030517578,
           "rvol": 1.564507021939193
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 96.43000030517578,
+          "rvol": 1.564507021939193
         }
       ]
     },
@@ -45449,7 +45635,7 @@
       "firstAlertPrice": 30600,
       "firstAlertRvol": 1.6461809128544485,
       "lastChecked": "2026-06-30",
-      "status": "monitoring",
+      "status": "sma21-pullback",
       "sector": "TLV - 125",
       "events": [
         {
@@ -45500,8 +45686,18 @@
           "type": "re-alert-close",
           "price": 30600,
           "rvol": 1.6461809128544485
+        },
+        {
+          "date": "2026-06-30",
+          "type": "sma21-pullback",
+          "price": 31060,
+          "rvol": 0.6701046545767387,
+          "note": "Quiet pullback to SMA21 (dist 1.1%, RVOL 0.67, green)"
         }
-      ]
+      ],
+      "resolvedDate": "2026-06-30",
+      "resolvedPrice": 31060,
+      "resolvedReason": "Quiet pullback to SMA21 (dist 1.1%, RVOL 0.67, green)"
     },
     {
       "ticker": "XES",
@@ -45519,6 +45715,12 @@
           "price": 112.08000183105469,
           "rvol": 2.286271127847398,
           "note": "First alert (close)"
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 112.08000183105469,
+          "rvol": 2.286271127847398
         },
         {
           "date": "2026-06-30",
@@ -45622,6 +45824,12 @@
           "type": "re-alert-close",
           "price": 36.459999084472656,
           "rvol": 1.7674426229508198
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 36.459999084472656,
+          "rvol": 1.7674426229508198
         }
       ]
     },
@@ -45641,6 +45849,12 @@
           "price": 51.025001525878906,
           "rvol": 1.5731608024205794,
           "note": "First alert (close)"
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 51.025001525878906,
+          "rvol": 1.5731608024205794
         },
         {
           "date": "2026-06-30",
@@ -45744,6 +45958,12 @@
           "type": "re-alert-close",
           "price": 365.70001220703125,
           "rvol": 1.540147293071916
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 365.70001220703125,
+          "rvol": 1.540147293071916
         }
       ]
     },
@@ -45763,6 +45983,12 @@
           "price": 115.55999755859375,
           "rvol": 1.7725850792941704,
           "note": "First alert (close)"
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 115.55999755859375,
+          "rvol": 1.7725850792941704
         },
         {
           "date": "2026-06-30",
@@ -45866,6 +46092,12 @@
           "type": "re-alert-close",
           "price": 44.029998779296875,
           "rvol": 1.6587845752127268
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 44.029998779296875,
+          "rvol": 1.6587845752127268
         }
       ]
     },
@@ -45885,6 +46117,12 @@
           "price": 18.06999969482422,
           "rvol": 1.8828904579494807,
           "note": "First alert (close)"
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 18.06999969482422,
+          "rvol": 1.8828904579494807
         },
         {
           "date": "2026-06-30",
@@ -45988,6 +46226,12 @@
           "type": "re-alert-close",
           "price": 4.619999885559082,
           "rvol": 2.0300815609435228
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 4.619999885559082,
+          "rvol": 2.0300815609435228
         }
       ]
     },
@@ -46025,6 +46269,88 @@
           "type": "re-alert-close",
           "price": 1912,
           "rvol": 2.568185628980515
+        },
+        {
+          "date": "2026-06-30",
+          "type": "re-alert-close",
+          "price": 1912,
+          "rvol": 2.568185628980515
+        }
+      ]
+    },
+    {
+      "ticker": "ORON.TA",
+      "firstAlertDate": "2026-06-30",
+      "firstAlertLevel": "close",
+      "firstAlertPrice": 3415,
+      "firstAlertRvol": 1.657703891807119,
+      "lastChecked": "2026-06-30",
+      "status": "monitoring",
+      "sector": "מגורים",
+      "events": [
+        {
+          "date": "2026-06-30",
+          "type": "alert-close",
+          "price": 3415,
+          "rvol": 1.657703891807119,
+          "note": "First alert (close)"
+        }
+      ]
+    },
+    {
+      "ticker": "ILCO.TA",
+      "firstAlertDate": "2026-06-30",
+      "firstAlertLevel": "close",
+      "firstAlertPrice": 76090,
+      "firstAlertRvol": 3.3129675213347767,
+      "lastChecked": "2026-06-30",
+      "status": "monitoring",
+      "sector": "TLV - 125",
+      "events": [
+        {
+          "date": "2026-06-30",
+          "type": "alert-close",
+          "price": 76090,
+          "rvol": 3.3129675213347767,
+          "note": "First alert (close)"
+        }
+      ]
+    },
+    {
+      "ticker": "TLSY.TA",
+      "firstAlertDate": "2026-06-30",
+      "firstAlertLevel": "close",
+      "firstAlertPrice": 35840,
+      "firstAlertRvol": 1.8098768171163437,
+      "lastChecked": "2026-06-30",
+      "status": "monitoring",
+      "sector": "TLV - 125",
+      "events": [
+        {
+          "date": "2026-06-30",
+          "type": "alert-close",
+          "price": 35840,
+          "rvol": 1.8098768171163437,
+          "note": "First alert (close)"
+        }
+      ]
+    },
+    {
+      "ticker": "LBRA.TA",
+      "firstAlertDate": "2026-06-30",
+      "firstAlertLevel": "close",
+      "firstAlertPrice": 1984,
+      "firstAlertRvol": 1.5471912269551809,
+      "lastChecked": "2026-06-30",
+      "status": "monitoring",
+      "sector": "Banks",
+      "events": [
+        {
+          "date": "2026-06-30",
+          "type": "alert-close",
+          "price": 1984,
+          "rvol": 1.5471912269551809,
+          "note": "First alert (close)"
         }
       ]
     }
