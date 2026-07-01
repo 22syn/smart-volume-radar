@@ -54,6 +54,8 @@ interface SignalRecord {
     primary: 'breakout' | 'highVolume' | 'pullback' | 'nearBreakout' | 'nearHighVol' | 'nearPullback' | null;
     breakoutWindow: string | null;
     breakoutPivot: number | null;
+    /** For nearBreakout (and breakout=0): % below the pivot. null for non-consolidation signals. */
+    distanceToPivotPct: number | null;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -180,13 +182,20 @@ async function main() {
             let primary: SignalRecord['primary'] = null;
             let breakoutWindow: string | null = null;
             let breakoutPivot: number | null = null;
+            let distanceToPivotPct: number | null = null;
             if (breakout) {
                 primary = 'breakout';
                 breakoutWindow = breakout.window;
                 breakoutPivot = breakout.windowHigh;
+                distanceToPivotPct = 0;
             } else if (highVol) primary = 'highVolume';
             else if (pullback) primary = 'pullback';
-            else if (nearBreakout) primary = 'nearBreakout';
+            else if (nearBreakout) {
+                primary = 'nearBreakout';
+                breakoutWindow = nearBreakout.window;
+                breakoutPivot = nearBreakout.windowHigh;
+                distanceToPivotPct = nearBreakout.distanceToPivotPct;
+            }
             else if (nearHighVol) primary = 'nearHighVol';
             else if (nearPullback) primary = 'nearPullback';
 
@@ -194,7 +203,7 @@ async function main() {
                 summary[primary] = (summary[primary] ?? 0) + 1;
                 dayRecords[t.toUpperCase()] = {
                     sector: stock.sector ?? 'Unknown',
-                    rvol: stock.projectedRvol ?? stock.rvol ?? 0,
+                    rvol: stock.rvol ?? 0, // raw RVOL — matches what the radar classifies & displays (projectedRvol over-inflates in backtest)
                     barGain: stock.priceChange ?? 0,
                     pctFromAth: stock.pctFromAth ?? null,
                     lastPrice: stock.lastPrice,
@@ -202,6 +211,7 @@ async function main() {
                     primary,
                     breakoutWindow,
                     breakoutPivot,
+                    distanceToPivotPct,
                 };
             }
         })));
