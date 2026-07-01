@@ -370,7 +370,7 @@ describe('fetchAllStocks', () => {
         await fetchAllStocks(['FAIL']);
 
         expect(warnSpy).toHaveBeenCalledWith(
-            expect.stringContaining('exchange suffixes (e.g. .L, .SA, .TA, .T, .KS, .DE, .MI, .TO, .V, .AX, .HK, .SI, .AS, .F, .PA, .MC)')
+            expect.stringContaining('exchange suffixes (e.g. .L, .SA, .TA, .T, .KS, .DE, .MI, .TO, .V, .AX, .HK, .SI, .AS, .F, .PA, .MC, .MX, .ST, .OL, .HE, .CPH, .LS, .AT, .IS, .VI)')
         );
         warnSpy.mockRestore();
     });
@@ -382,7 +382,7 @@ describe('fetchAllStocks', () => {
         await fetchAllStocksAsOfDate(['FAIL'], '2026-06-30');
 
         expect(warnSpy).toHaveBeenCalledWith(
-            expect.stringContaining('exchange suffixes (e.g. .L, .SA, .TA, .T, .KS, .DE, .MI, .TO, .V, .AX, .HK, .SI, .AS, .F, .PA, .MC)')
+            expect.stringContaining('exchange suffixes (e.g. .L, .SA, .TA, .T, .KS, .DE, .MI, .TO, .V, .AX, .HK, .SI, .AS, .F, .PA, .MC, .MX, .ST, .OL, .HE, .CPH, .LS, .AT, .IS, .VI)')
         );
         warnSpy.mockRestore();
     });
@@ -540,7 +540,7 @@ describe('fetchAllStocksAsOfDate', () => {
         delete process.env.TWELVE_DATA_API_KEY;
     });
 
-    it('iterates through multiple common typo fallbacks (e.g., EMBR3.SA -> ERJ -> EMBR3 -> EMBR3.SAO -> EMBJ3)', async () => {
+    it('iterates through multiple common typo fallbacks (e.g., EMBR3.SA -> ERJ -> EMBR3 -> EMBR3.SAO -> EMBJ3 -> EMBR3:BVMF)', async () => {
         const todayUtc = new Date().toISOString().slice(0, 10);
 
         // 1. Yahoo(EMBR3.SA)x5 -> 404
@@ -563,8 +563,12 @@ describe('fetchAllStocksAsOfDate', () => {
         for (let i = 0; i < 5; i++) mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
 
         // 7. Typo fallback 4: EMBJ3
-        // Yahoo(EMBJ3) -> Success
-        const response = createYahooChartResponse('EMBJ3') as any;
+        // Yahoo(EMBJ3)x5 -> 404
+        for (let i = 0; i < 5; i++) mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
+
+        // 8. Typo fallback 5: EMBR3:BVMF
+        // Yahoo(EMBR3:BVMF) -> Success
+        const response = createYahooChartResponse('EMBR3:BVMF') as any;
         response.chart.result[0].timestamp = [Date.parse(todayUtc + 'T12:00:00Z') / 1000];
         mockFetch.mockResolvedValueOnce({
             ok: true,
@@ -576,14 +580,15 @@ describe('fetchAllStocksAsOfDate', () => {
         expect(stocks[0].ticker).toBe('EMBR3.SA'); // Mapped back to original
         expect(failedTickers).toHaveLength(0);
 
-        // Total Yahoo calls: 5 (EMBR3.SA) + 5 (EMBR3-SA) + 5 (ERJ) + 5 (EMBR3) + 5 (EMBR3.SAO) + 5 (EMBR3-SAO) + 1 (EMBJ3) = 31
-        expect(mockFetch).toHaveBeenCalledTimes(31);
+        // Total Yahoo calls: 5 (EMBR3.SA) + 5 (EMBR3-SA) + 5 (ERJ) + 5 (EMBR3) + 5 (EMBR3.SAO) + 5 (EMBR3-SAO) + 5 (EMBJ3) + 1 (EMBR3:BVMF) = 36
+        expect(mockFetch).toHaveBeenCalledTimes(36);
         expect(mockFetch).toHaveBeenNthCalledWith(1, expect.stringContaining('EMBR3.SA'), expect.any(Object));
         expect(mockFetch).toHaveBeenNthCalledWith(11, expect.stringContaining('ERJ'), expect.any(Object));
         expect(mockFetch).toHaveBeenNthCalledWith(16, expect.stringContaining('EMBR3'), expect.any(Object));
         expect(mockFetch).toHaveBeenNthCalledWith(21, expect.stringContaining('EMBR3.SAO'), expect.any(Object));
         expect(mockFetch).toHaveBeenNthCalledWith(26, expect.stringContaining('EMBR3-SAO'), expect.any(Object));
         expect(mockFetch).toHaveBeenNthCalledWith(31, expect.stringContaining('EMBJ3'), expect.any(Object));
+        expect(mockFetch).toHaveBeenNthCalledWith(36, expect.stringContaining('EMBR3%3ABVMF'), expect.any(Object));
     });
 
     it('skips Twelve Data fallback for historical asOfDate', async () => {
@@ -600,15 +605,17 @@ describe('fetchAllStocksAsOfDate', () => {
         for (let i = 0; i < 10; i++) mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
         // Typo fallback EMBJ3 also fails on Yahoo x5
         for (let i = 0; i < 5; i++) mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
+        // Typo fallback EMBR3:BVMF also fails on Yahoo x5
+        for (let i = 0; i < 5; i++) mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
 
         // It should NOT call Twelve Data at all because it's a historical date
         const { stocks, failedTickers } = await fetchAllStocksAsOfDate(['EMBR3.SA'], historicalDate);
 
         expect(stocks).toHaveLength(0);
         expect(failedTickers).toContain('EMBR3.SA');
-        // Total Yahoo calls: 10 (EMBR3.SA) + 5 (ERJ) + 5 (EMBR3) + 10 (EMBR3.SAO) + 5 (EMBJ3) = 35. No Twelve Data calls.
-        expect(mockFetch).toHaveBeenCalledTimes(35);
-        for (let i = 1; i <= 35; i++) {
+        // Total Yahoo calls: 10 (EMBR3.SA) + 5 (ERJ) + 5 (EMBR3) + 10 (EMBR3.SAO) + 5 (EMBJ3) + 5 (EMBR3:BVMF) = 40. No Twelve Data calls.
+        expect(mockFetch).toHaveBeenCalledTimes(40);
+        for (let i = 1; i <= 40; i++) {
             expect(mockFetch.mock.calls[i-1][0]).not.toContain('twelvedata');
         }
 
