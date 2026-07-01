@@ -363,26 +363,26 @@ describe('fetchAllStocks', () => {
         delete process.env.TWELVE_DATA_API_KEY;
     });
 
-    it('logs enhanced warning with .T and .KS suffixes when fetchAllStocks fails', async () => {
+    it('logs enhanced warning with extended international suffixes when fetchAllStocks fails', async () => {
         mockFetch.mockResolvedValue({ ok: false, status: 404 });
         const warnSpy = jest.spyOn(logger, 'warn');
 
         await fetchAllStocks(['FAIL']);
 
         expect(warnSpy).toHaveBeenCalledWith(
-            expect.stringContaining('exchange suffixes (e.g. .L, .SA, .TA, .T, .KS)')
+            expect.stringContaining('exchange suffixes (e.g. .L, .SA, .TA, .T, .KS, .DE, .MI, .TO, .V)')
         );
         warnSpy.mockRestore();
     });
 
-    it('logs enhanced warning with .T and .KS suffixes when fetchAllStocksAsOfDate fails', async () => {
+    it('logs enhanced warning with extended international suffixes when fetchAllStocksAsOfDate fails', async () => {
         mockFetch.mockResolvedValue({ ok: false, status: 404 });
         const warnSpy = jest.spyOn(logger, 'warn');
 
         await fetchAllStocksAsOfDate(['FAIL'], '2026-06-30');
 
         expect(warnSpy).toHaveBeenCalledWith(
-            expect.stringContaining('exchange suffixes (e.g. .L, .SA, .TA, .T, .KS)')
+            expect.stringContaining('exchange suffixes (e.g. .L, .SA, .TA, .T, .KS, .DE, .MI, .TO, .V)')
         );
         warnSpy.mockRestore();
     });
@@ -540,7 +540,7 @@ describe('fetchAllStocksAsOfDate', () => {
         delete process.env.TWELVE_DATA_API_KEY;
     });
 
-    it('iterates through multiple common typo fallbacks (e.g., EMBR3.SA -> ERJ -> EMBR3)', async () => {
+    it('iterates through multiple common typo fallbacks (e.g., EMBR3.SA -> ERJ -> EMBR3 -> EMBR3.SAO)', async () => {
         const todayUtc = new Date().toISOString().slice(0, 10);
 
         // 1. Yahoo(EMBR3.SA)x5 -> 404
@@ -553,8 +553,12 @@ describe('fetchAllStocksAsOfDate', () => {
         for (let i = 0; i < 5; i++) mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
 
         // 4. Typo fallback 2: EMBR3
-        // Yahoo(EMBR3) -> Success
-        const response = createYahooChartResponse('EMBR3') as any;
+        // Yahoo(EMBR3)x5 -> 404
+        for (let i = 0; i < 5; i++) mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
+
+        // 5. Typo fallback 3: EMBR3.SAO
+        // Yahoo(EMBR3.SAO) -> Success
+        const response = createYahooChartResponse('EMBR3.SAO') as any;
         response.chart.result[0].timestamp = [Date.parse(todayUtc + 'T12:00:00Z') / 1000];
         mockFetch.mockResolvedValueOnce({
             ok: true,
@@ -566,11 +570,12 @@ describe('fetchAllStocksAsOfDate', () => {
         expect(stocks[0].ticker).toBe('EMBR3.SA'); // Mapped back to original
         expect(failedTickers).toHaveLength(0);
 
-        // Total Yahoo calls: 5 (EMBR3.SA) + 5 (EMBR3-SA) + 5 (ERJ) + 1 (EMBR3) = 16
-        expect(mockFetch).toHaveBeenCalledTimes(16);
+        // Total Yahoo calls: 5 (EMBR3.SA) + 5 (EMBR3-SA) + 5 (ERJ) + 5 (EMBR3) + 1 (EMBR3.SAO) = 21
+        expect(mockFetch).toHaveBeenCalledTimes(21);
         expect(mockFetch).toHaveBeenNthCalledWith(1, expect.stringContaining('EMBR3.SA'), expect.any(Object));
         expect(mockFetch).toHaveBeenNthCalledWith(11, expect.stringContaining('ERJ'), expect.any(Object));
         expect(mockFetch).toHaveBeenNthCalledWith(16, expect.stringContaining('EMBR3'), expect.any(Object));
+        expect(mockFetch).toHaveBeenNthCalledWith(21, expect.stringContaining('EMBR3.SAO'), expect.any(Object));
     });
 
     it('skips Twelve Data fallback for historical asOfDate', async () => {
@@ -587,9 +592,9 @@ describe('fetchAllStocksAsOfDate', () => {
 
         expect(stocks).toHaveLength(0);
         expect(failedTickers).toContain('EMBR3.SA');
-        // Total Yahoo calls: 10 (EMBR3.SA) + 5 (ERJ) + 5 (EMBR3) = 20. No Twelve Data calls.
-        expect(mockFetch).toHaveBeenCalledTimes(20);
-        for (let i = 1; i <= 20; i++) {
+        // Total Yahoo calls: 10 (EMBR3.SA) + 5 (ERJ) + 5 (EMBR3) + 5 (EMBR3.SAO) = 25. No Twelve Data calls.
+        expect(mockFetch).toHaveBeenCalledTimes(25);
+        for (let i = 1; i <= 25; i++) {
             expect(mockFetch.mock.calls[i-1][0]).not.toContain('twelvedata');
         }
 
