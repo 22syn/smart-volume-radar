@@ -6,7 +6,6 @@ const COLS = [
 let rows = [], sortKey = 'score', sortDir = -1;
 
 const $ = (s) => document.querySelector(s);
-const num = (v) => (v == null ? '' : (typeof v === 'number' ? v : v));
 
 async function load() {
   rows = await (await fetch('/api/signals')).json();
@@ -21,14 +20,15 @@ function renderCards(s) {
   if (!s) return;
   const cards = [
     ['Total', s.total], ['📈 Breakout', s.breakout], ['🔥 HighVol', s.high_volume],
-    ['📉 Pullback', s.pullback], ['⏳ Near', s.near_all], ['Score≥70', s.score70],
+    ['📉 Pullback', s.pullback], ['⏳ Near', s.near_all],
+    ['Score≥65', s.score65], ['Score≥70', s.score70],
   ];
   $('#cards').innerHTML = cards.map(([l, v]) => `<div class="card"><span class="big">${v ?? 0}</span><small>${l}</small></div>`).join('');
   $('#day-picker').textContent = `📅 ${s.scan_date}`;
 }
 
 function renderChart(data) {
-  const buckets = [0, 40, 55, 70, 85, 200];
+  const buckets = [-Infinity, 40, 55, 70, 85, 200];
   const labels = ['<40','40-55','55-70','70-85','85+'];
   const counts = labels.map(() => 0);
   for (const r of data) {
@@ -70,7 +70,8 @@ function visibleRows() {
 function scoreColor(s) { return s >= 85 ? '#63BE7B' : s >= 70 ? '#A9D08E' : s >= 55 ? '#FFEB84' : '#F8C9C9'; }
 
 function renderBody() {
-  $('#grid tbody').innerHTML = visibleRows().map((r) => '<tr>' + COLS.map(([k]) => {
+  const vr = visibleRows();
+  $('#grid tbody').innerHTML = vr.map((r) => '<tr>' + COLS.map(([k]) => {
     let v = r[k];
     if (k === 'stage2') v = v ? '✓' : '';
     else if (k === 'rvol') v = v != null ? v.toFixed(1) + 'x' : '';
@@ -78,7 +79,7 @@ function renderBody() {
     const style = k === 'score' ? ` style="background:${scoreColor(r.score)}"` : '';
     return `<td${style}>${v ?? ''}</td>`;
   }).join('') + '</tr>').join('');
-  $('#grid tbody').querySelectorAll('tr').forEach((tr, i) => tr.onclick = () => deepDive(visibleRows()[i]));
+  $('#grid tbody').querySelectorAll('tr').forEach((tr, i) => tr.onclick = () => deepDive(vr[i]));
 }
 
 function deepDive(r) {
