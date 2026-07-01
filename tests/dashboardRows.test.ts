@@ -1,6 +1,7 @@
 import { regionOf, isETFSector } from '../src/lean/dashboardRows.js';
 import { scoreRow } from '../src/lean/dashboardRows.js';
 import { rowsFromLeanResult } from '../src/lean/dashboardRows.js';
+import { rowsFromReconstructed } from '../src/lean/dashboardRows.js';
 
 const base = {
   scanDate: '2026-06-29', ticker: 'X', region: 'US' as const, sector: 'Semis',
@@ -74,5 +75,25 @@ describe('rowsFromLeanResult', () => {
     expect(by.BAR.signal).toBe('nearPullback');
     expect(by.ARM.scanDate).toBe('2026-06-29');
     expect(typeof by.ARM.score).toBe('number');
+  });
+});
+
+describe('rowsFromReconstructed', () => {
+  it('flattens signalsByDate into scored Rows', () => {
+    const recon = {
+      signalsByDate: {
+        '2026-06-29': {
+          ARM: { sector: 'Semis', rvol: 3.6, barGain: 2.8, pctFromAth: -22,
+                 lastPrice: 343, isStage2: true, primary: 'pullback', distanceToPivotPct: null },
+        },
+      },
+    };
+    const rows = rowsFromReconstructed(recon);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].ticker).toBe('ARM');
+    expect(rows[0].signal).toBe('pullback');
+    expect(rows[0].stage2).toBe(1);
+    expect(rows[0].dayPct).toBe(2.8);
+    expect(typeof rows[0].score).toBe('number');
   });
 });

@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import type { StockData } from '../types/index.js';
 
 const FOREIGN_SUFFIXES = [
@@ -80,4 +82,35 @@ export function rowsFromLeanResult(scanDate: string, result: any): Row[] {
   for (const e of result.nearVolume) rows.push(buildRow(scanDate, e.stock, 'nearHighVol', null));
   for (const e of result.nearPullback) rows.push(buildRow(scanDate, e.stock, 'nearPullback', null));
   return rows;
+}
+
+interface ReconRecord {
+  sector: string; rvol: number; barGain: number; pctFromAth: number | null;
+  lastPrice: number; isStage2: boolean; primary: SignalKind; distanceToPivotPct: number | null;
+}
+
+export function rowsFromReconstructed(recon: {
+  signalsByDate: Record<string, Record<string, ReconRecord>>;
+}): Row[] {
+  const rows: Row[] = [];
+  for (const [scanDate, day] of Object.entries(recon.signalsByDate)) {
+    for (const [ticker, rec] of Object.entries(day)) {
+      const r: Omit<Row, 'score'> = {
+        scanDate, ticker: ticker.toUpperCase(), region: regionOf(ticker),
+        sector: rec.sector ?? 'Unknown', signal: rec.primary,
+        rvol: rec.rvol ?? 0, athPct: rec.pctFromAth, dayPct: rec.barGain ?? 0,
+        stage2: rec.isStage2 ? 1 : 0, distPivot: rec.distanceToPivotPct, price: rec.lastPrice ?? 0,
+      };
+      rows.push({ ...r, score: scoreRow(r) });
+    }
+  }
+  return rows;
+}
+
+/** Write results/dashboard-{date}.json (Row[]) next to the lean snapshot. */
+export function writeDashboardRows(scanDate: string, result: unknown, resultsDir: string): string {
+  const rows = rowsFromLeanResult(scanDate, result as never);
+  const file = path.join(resultsDir, `dashboard-${scanDate}.json`);
+  fs.writeFileSync(file, JSON.stringify(rows));
+  return file;
 }
