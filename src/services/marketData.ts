@@ -247,7 +247,7 @@ export async function fetchYahooChartAsOfDate(
     isFallback = false,
     attempt = 1
 ): Promise<StockData | null> {
-    const MAX_ATTEMPTS = 4;
+    const MAX_ATTEMPTS = 5;
     try {
         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5y`;
         const response = await fetch(url, {
@@ -283,7 +283,9 @@ export async function fetchYahooChartAsOfDate(
 
                     if (fallbackTicker) {
                         logger.info(`🔍 Ticker ${ticker} not found on Yahoo Chart (asOfDate) after retry, trying fallback: ${fallbackTicker}`);
-                        return fetchYahooChartAsOfDate(fallbackTicker, asOfDate, true);
+                        const result = await fetchYahooChartAsOfDate(fallbackTicker, asOfDate, true);
+                        if (result) result.ticker = ticker;
+                        return result;
                     }
                 }
                 logger.warn(`❌ Ticker not found on Yahoo Chart (asOfDate): ${ticker}`);
@@ -463,7 +465,7 @@ export async function fetchMarketHealth(asOfDate?: string): Promise<MarketHealth
  * Uses 5y range for price history; 52w high and consolidation use last 252 days
  */
 async function fetchFromYahooChart(ticker: string, isFallback = false, attempt = 1): Promise<StockData | null> {
-    const MAX_ATTEMPTS = 4;
+    const MAX_ATTEMPTS = 5;
     try {
         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5y`;
 
@@ -500,7 +502,9 @@ async function fetchFromYahooChart(ticker: string, isFallback = false, attempt =
 
                     if (fallbackTicker) {
                         logger.info(`🔍 Ticker ${ticker} not found on Yahoo Chart after retry, trying fallback: ${fallbackTicker}`);
-                        return fetchFromYahooChart(fallbackTicker, true);
+                        const result = await fetchFromYahooChart(fallbackTicker, true);
+                        if (result) result.ticker = ticker;
+                        return result;
                     }
                 }
                 logger.warn(`❌ Ticker not found on Yahoo Chart: ${ticker}`);
@@ -610,7 +614,7 @@ async function fetchIndicatorsFromTwelveData(
 async function fetchFromTwelveData(ticker: string, isFallback = false, attempt = 1): Promise<StockData | null> {
     const apiKey = process.env.TWELVE_DATA_API_KEY;
     if (!apiKey) return null;
-    const MAX_ATTEMPTS = 4;
+    const MAX_ATTEMPTS = 5;
 
     try {
         const url = `${TWELVE_DATA_BASE}/quote?symbol=${encodeURIComponent(ticker)}&apikey=${apiKey}`;
@@ -642,7 +646,9 @@ async function fetchFromTwelveData(ticker: string, isFallback = false, attempt =
 
                     if (fallbackTicker) {
                         logger.info(`🔍 Ticker ${ticker} not found on Twelve Data after retry, trying fallback: ${fallbackTicker}`);
-                        return fetchFromTwelveData(fallbackTicker, true);
+                        const result = await fetchFromTwelveData(fallbackTicker, true);
+                        if (result) result.ticker = ticker;
+                        return result;
                     }
                 }
                 logger.warn(`❌ Ticker not found on Twelve Data: ${ticker}`);
@@ -673,7 +679,9 @@ async function fetchFromTwelveData(ticker: string, isFallback = false, attempt =
 
                         if (fallbackTicker) {
                             logger.info(`🔍 Twelve Data error 404 for ${ticker} after retry, trying fallback: ${fallbackTicker}`);
-                            return fetchFromTwelveData(fallbackTicker, true);
+                            const result = await fetchFromTwelveData(fallbackTicker, true);
+                            if (result) result.ticker = ticker;
+                            return result;
                         }
                     }
                 }
@@ -763,7 +771,8 @@ export async function fetchAllStocksAsOfDate(
             let successSource = 'Yahoo Chart (asOfDate)';
 
             // Try Twelve Data as fallback (no asOfDate support; only for today's scan)
-            if (!result) {
+            const todayUtc = new Date().toISOString().slice(0, 10);
+            if (!result && asOfDate === todayUtc) {
                 result = await fetchFromTwelveData(ticker);
                 if (result) successSource = 'Twelve Data (Fallback)';
             }
@@ -781,16 +790,21 @@ export async function fetchAllStocksAsOfDate(
                         break;
                     }
 
-                    result = await fetchFromTwelveData(fallbackTicker);
-                    if (result) {
-                        successSource = 'Twelve Data (Typo Fallback)';
-                        result.ticker = fallbackTicker;
-                        break;
+                    if (asOfDate === todayUtc) {
+                        result = await fetchFromTwelveData(fallbackTicker);
+                        if (result) {
+                            successSource = 'Twelve Data (Typo Fallback)';
+                            result.ticker = fallbackTicker;
+                            break;
+                        }
                     }
                 }
             }
 
             if (result) {
+                // Ensure the returned ticker matches the original watchlist symbol
+                result.ticker = ticker;
+
                 // Low-liquidity filter (skip pump-and-dump candidates).
                 if (result.avgVolume > 0 && result.avgVolume < MIN_AVG_DAILY_VOLUME) {
                     logger.warn(
@@ -801,7 +815,7 @@ export async function fetchAllStocksAsOfDate(
                 logger.info(`✅ ${ticker}: RVOL=${formatRVOL(result.rvol)} (${successSource})`);
                 return { ticker, data: result };
             }
-            logger.warn(`❌ ${ticker}: No data from any source (Yahoo or Twelve Data) as of ${asOfDate}`);
+            logger.warn(`❌ ${ticker}: No data from any source (Yahoo or Twelve Data) as of ${asOfDate}. Check for typos, exchange suffixes (e.g., .L, .SA), or delistings.`);
             return { ticker, data: null };
         })
     );
@@ -869,6 +883,8 @@ export async function fetchAllStocks(tickers: string[]): Promise<FetchAllStocksR
         }
 
         if (result) {
+            // Ensure the returned ticker matches the original watchlist symbol
+            result.ticker = ticker;
             logger.info(`✅ ${ticker}: RVOL=${formatRVOL(result.rvol)} (${successSource})`);
             return { ticker, data: result };
         } else {
