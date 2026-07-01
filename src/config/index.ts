@@ -72,8 +72,8 @@ export const config = {
     } as const,
 } as const;
 
-/** Valid ticker: optional ^, 1-60 alphanumeric chars/dashes/underscores/plus, multiple exchange suffixes (e.g. BT.A.L, SOXX/AMEX:IGV, BA..L) */
-const TICKER_REGEX = /^\^?[A-Za-z0-9_+-]{1,60}([./:]{1,3}[A-Za-z0-9_+-]{0,30})*$/;
+/** Valid ticker: optional ^, 1-100 alphanumeric chars/dashes/underscores/plus, multiple exchange suffixes (e.g. BT.A.L, SOXX/AMEX:IGV, BA..L) */
+const TICKER_REGEX = /^\^?[A-Za-z0-9_+-]{1,100}([./:]{1,3}[A-Za-z0-9_+-]{0,100})*$/;
 
 /**
  * Validate ticker symbol format (prevents URL injection)

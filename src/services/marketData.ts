@@ -246,7 +246,7 @@ export async function fetchYahooChartAsOfDate(
     isFallback = false,
     attempt = 1
 ): Promise<StockData | null> {
-    const MAX_ATTEMPTS = 3;
+    const MAX_ATTEMPTS = 4;
     try {
         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5y`;
         const response = await fetch(url, {
@@ -266,7 +266,7 @@ export async function fetchYahooChartAsOfDate(
                 }
                 logger.warn(`❌ Yahoo Chart (asOfDate) API ${response.status} for ${ticker} after ${MAX_ATTEMPTS} attempts`);
             } else if (response.status === 404) {
-                if (attempt < 3) {
+                if (attempt < MAX_ATTEMPTS) {
                     const delay = 500;
                     logger.warn(`⚠️ Ticker ${ticker} returned 404 on Yahoo Chart (asOfDate), retrying... (attempt ${attempt}/${MAX_ATTEMPTS})`);
                     await new Promise((resolve) => setTimeout(resolve, delay));
@@ -454,7 +454,7 @@ export async function fetchMarketHealth(asOfDate?: string): Promise<MarketHealth
  * Uses 5y range for price history; 52w high and consolidation use last 252 days
  */
 async function fetchFromYahooChart(ticker: string, isFallback = false, attempt = 1): Promise<StockData | null> {
-    const MAX_ATTEMPTS = 3;
+    const MAX_ATTEMPTS = 4;
     try {
         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5y`;
 
@@ -475,7 +475,7 @@ async function fetchFromYahooChart(ticker: string, isFallback = false, attempt =
                 }
                 logger.warn(`❌ Yahoo Chart API ${response.status} for ${ticker} after ${MAX_ATTEMPTS} attempts`);
             } else if (response.status === 404) {
-                if (attempt < 3) {
+                if (attempt < MAX_ATTEMPTS) {
                     const delay = 500;
                     logger.warn(`⚠️ Ticker ${ticker} returned 404 on Yahoo Chart, retrying... (attempt ${attempt}/${MAX_ATTEMPTS})`);
                     await new Promise((resolve) => setTimeout(resolve, delay));
@@ -593,7 +593,7 @@ async function fetchIndicatorsFromTwelveData(
 async function fetchFromTwelveData(ticker: string, isFallback = false, attempt = 1): Promise<StockData | null> {
     const apiKey = process.env.TWELVE_DATA_API_KEY;
     if (!apiKey) return null;
-    const MAX_ATTEMPTS = 3;
+    const MAX_ATTEMPTS = 4;
 
     try {
         const url = `${TWELVE_DATA_BASE}/quote?symbol=${encodeURIComponent(ticker)}&apikey=${apiKey}`;
@@ -609,7 +609,7 @@ async function fetchFromTwelveData(ticker: string, isFallback = false, attempt =
                 }
                 logger.warn(`❌ Twelve Data API ${response.status} for ${ticker} after ${MAX_ATTEMPTS} attempts`);
             } else if (response.status === 404) {
-                if (attempt < 3) {
+                if (attempt < MAX_ATTEMPTS) {
                     const delay = 500;
                     logger.warn(`⚠️ Ticker ${ticker} returned 404 on Twelve Data, retrying... (attempt ${attempt}/${MAX_ATTEMPTS})`);
                     await new Promise((resolve) => setTimeout(resolve, delay));
@@ -632,7 +632,7 @@ async function fetchFromTwelveData(ticker: string, isFallback = false, attempt =
         if (data.status === 'error' || !data.close) {
             if (data.status === 'error') {
                 if (data.code === 404) {
-                    if (attempt < 3) {
+                    if (attempt < MAX_ATTEMPTS) {
                         const delay = 500;
                         logger.warn(`⚠️ Twelve Data error 404 for ${ticker}, retrying... (attempt ${attempt}/${MAX_ATTEMPTS})`);
                         await new Promise((resolve) => setTimeout(resolve, delay));
