@@ -31,7 +31,7 @@ const COMMON_TYPO_FALLBACKS: Record<string, string[]> = {
     'BA..L': ['BA.L'],
     'RR..L': ['RR.L'],
     'BASF.MI': ['BAS.MI', 'BAS.DE'],
-    'EMBR3.SA': ['ERJ', 'EMBR3', 'EMBR3.SAO', 'EMBJ3'],
+    'EMBR3.SA': ['ERJ', 'EMBR3', 'EMBR3.SAO', 'EMBJ3', 'EMBR3:BVMF'],
 };
 
 /** Options for parseYahooChartResult (e.g. replay mode skips Twelve Data) */
@@ -819,7 +819,7 @@ export async function fetchAllStocksAsOfDate(
                 logger.info(`✅ ${ticker}: RVOL=${formatRVOL(result.rvol)} (${successSource})`);
                 return { ticker, data: result };
             }
-            logger.warn(`❌ ${ticker}: No data from any source (Yahoo or Twelve Data) as of ${asOfDate}. Check for typos, exchange suffixes (e.g. .L, .SA, .TA, .T, .KS, .DE, .MI, .TO, .V, .AX, .HK, .SI, .AS, .F, .PA, .MC), or format differences (e.g. BRK-B vs BRK.B).`);
+            logger.warn(`❌ ${ticker}: No data from any source (Yahoo or Twelve Data) as of ${asOfDate}. Check for typos, exchange suffixes (e.g. .L, .SA, .TA, .T, .KS, .DE, .MI, .TO, .V, .AX, .HK, .SI, .AS, .F, .PA, .MC, .MX, .ST, .OL, .HE, .CPH, .LS, .AT, .IS, .VI), or format differences (e.g. BRK-B vs BRK.B).`);
             return { ticker, data: null };
         })
     );
@@ -892,7 +892,7 @@ export async function fetchAllStocks(tickers: string[]): Promise<FetchAllStocksR
             logger.info(`✅ ${ticker}: RVOL=${formatRVOL(result.rvol)} (${successSource})`);
             return { ticker, data: result };
         } else {
-            logger.warn(`❌ ${ticker}: No data from any source (Yahoo or Twelve Data). Check for typos (e.g. COBE vs CBOE), exchange suffixes (e.g. .L, .SA, .TA, .T, .KS, .DE, .MI, .TO, .V, .AX, .HK, .SI, .AS, .F, .PA, .MC), or format differences (e.g. BRK-B vs BRK.B).`);
+            logger.warn(`❌ ${ticker}: No data from any source (Yahoo or Twelve Data). Check for typos (e.g. COBE vs CBOE), exchange suffixes (e.g. .L, .SA, .TA, .T, .KS, .DE, .MI, .TO, .V, .AX, .HK, .SI, .AS, .F, .PA, .MC, .MX, .ST, .OL, .HE, .CPH, .LS, .AT, .IS, .VI), or format differences (e.g. BRK-B vs BRK.B).`);
             return { ticker, data: null };
         }
     }));
