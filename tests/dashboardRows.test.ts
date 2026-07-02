@@ -26,25 +26,36 @@ describe('isETFSector', () => {
 
 describe('scoreRow', () => {
   it('rewards Stage2 + volume for a healthy pullback', () => {
-    const s = scoreRow({ ...base, signal: 'pullback', rvol: 4, stage2: 1 });
-    // 40 base + min(4,6)*5=20 + stage2 20 = 80
+    const s = scoreRow({ ...base, signal: 'pullback', signals: ['pullback'], signalCount: 1, rvol: 4, stage2: 1 });
+    // 40 base + min(4,6)*5=20 + stage2 20 + confluence 0 = 80
     expect(s).toBe(80);
   });
   it('penalizes a high-volume down-day (climax) and deep ATH', () => {
     // RENK-like: highVolume, RVOL 6+, dayPct<0, athPct -52, not stage2
-    const s = scoreRow({ ...base, signal: 'highVolume', rvol: 12, dayPct: -2, athPct: -52, stage2: 0 });
+    const s = scoreRow({ ...base, signal: 'highVolume', signals: ['highVolume'], signalCount: 1, rvol: 12, dayPct: -2, athPct: -52, stage2: 0 });
     // 35 + min(12,6)*5=30 + 0 - 25 (climax) - 20 (deep ATH) = 20
     expect(s).toBe(20);
   });
   it('adds proximity bonus for a near-breakout at the pivot', () => {
-    const s = scoreRow({ ...base, signal: 'nearBreakout', rvol: 0, stage2: 1, distPivot: 0 });
+    const s = scoreRow({ ...base, signal: 'nearBreakout', signals: ['nearBreakout'], signalCount: 1, rvol: 0, stage2: 1, distPivot: 0 });
     // 25 + 0 + 20 + max(0,10-0*4)=10 = 55
     expect(s).toBe(55);
   });
   it('de-prioritizes ETFs', () => {
-    const s = scoreRow({ ...base, signal: 'pullback', rvol: 0, sector: 'ETF - US' });
+    const s = scoreRow({ ...base, signal: 'pullback', signals: ['pullback'], signalCount: 1, rvol: 0, sector: 'ETF - US' });
     // 40 + 0 + 0 - 12 = 28
     expect(s).toBe(28);
+  });
+  it('rewards multi-signal confluence (+12 per extra signal, base = strongest)', () => {
+    // pullback + highVolume: base = max(40,35)=40, +confluence (2-1)*12=12
+    const s = scoreRow({ ...base, signal: 'pullback', signals: ['pullback', 'highVolume'], signalCount: 2, rvol: 0, stage2: 0 });
+    // 40 base + 0 + 0 + 12 confluence = 52
+    expect(s).toBe(52);
+  });
+  it('applies climax penalty when highVolume is present in a multi-signal row on a down day', () => {
+    // pullback + highVolume, down day → base 40 + confluence 12 - climax 25 = 27
+    const s = scoreRow({ ...base, signal: 'pullback', signals: ['pullback', 'highVolume'], signalCount: 2, rvol: 0, dayPct: -1, athPct: -20, stage2: 0 });
+    expect(s).toBe(27);
   });
 });
 
@@ -66,6 +77,8 @@ describe('rowsFromLeanResult', () => {
     const rows = rowsFromLeanResult('2026-06-29', result);
     const by = Object.fromEntries(rows.map((r) => [r.ticker, r]));
     expect(by.MNST.signal).toBe('breakout');
+    expect(by.MNST.signals).toEqual(['breakout']);
+    expect(by.MNST.signalCount).toBe(1);
     expect(by.MNST.distPivot).toBe(0);
     expect(by.MNST.stage2).toBe(1);            // 120>100>90
     expect(by.CTRA.signal).toBe('highVolume');
@@ -76,6 +89,49 @@ describe('rowsFromLeanResult', () => {
     expect(by.ARM.scanDate).toBe('2026-06-29');
     expect(typeof by.ARM.score).toBe('number');
   });
+
+  it('groups a ticker matching multiple signals into ONE row (signals ordered by BASE desc)', () => {
+    const result: any = {
+      consolidationBreakouts: [],
+      highVolume: [{ stock: stub('ZZZ'), signal: { level: 'extreme' } }],
+      pullbacks: [{ stock: stub('ZZZ', { pctFromAth: -22 }), signal: { pctFromAth: -22 } }],
+      nearConsolidation: [],
+      nearVolume: [],
+      nearPullback: [],
+    };
+    const rows = rowsFromLeanResult('2026-06-29', result);
+    expect(rows).toHaveLength(1);              // no duplicate tickers
+    const r = rows[0];
+    expect(r.ticker).toBe('ZZZ');
+    expect(r.signals).toEqual(['pullback', 'highVolume']); // BASE desc: 40 > 35
+    expect(r.signal).toBe('pullback');         // primary = signals[0]
+    expect(r.signalCount).toBe(2);
+    // score should include the +12 confluence bonus vs a single-signal pullback
+    const single = rowsFromLeanResult('2026-06-29', {
+      consolidationBreakouts: [], highVolume: [],
+      pullbacks: [{ stock: stub('ZZZ', { pctFromAth: -22 }), signal: { pctFromAth: -22 } }],
+      nearConsolidation: [], nearVolume: [], nearPullback: [],
+    } as any)[0];
+    expect(r.score).toBe(single.score + 12);
+  });
+
+  it('emits no duplicate tickers when a ticker appears in several category arrays', () => {
+    const result: any = {
+      consolidationBreakouts: [{ stock: stub('DUP', { lastPrice: 120, sma50: 100, sma200: 90 }), signal: { window: '1M', windowHigh: 119, distanceToPivotPct: 0 } }],
+      highVolume: [{ stock: stub('DUP'), signal: { level: 'extreme' } }],
+      pullbacks: [{ stock: stub('DUP', { pctFromAth: -22 }), signal: { pctFromAth: -22 } }],
+      nearConsolidation: [],
+      nearVolume: [],
+      nearPullback: [],
+    };
+    const rows = rowsFromLeanResult('2026-06-29', result);
+    const tickers = rows.map((r) => r.ticker);
+    expect(new Set(tickers).size).toBe(tickers.length);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].signals).toEqual(['breakout', 'pullback', 'highVolume']); // 50 > 40 > 35
+    expect(rows[0].signal).toBe('breakout');
+    expect(rows[0].distPivot).toBe(0);         // carried from breakout entry
+  });
 });
 
 describe('rowsFromReconstructed', () => {
@@ -84,16 +140,36 @@ describe('rowsFromReconstructed', () => {
       signalsByDate: {
         '2026-06-29': {
           ARM: { sector: 'Semis', rvol: 3.6, barGain: 2.8, pctFromAth: -22,
-                 lastPrice: 343, isStage2: true, primary: 'pullback', distanceToPivotPct: null },
+                 lastPrice: 343, isStage2: true, signals: ['pullback'], distanceToPivotPct: null },
         },
       },
     };
-    const rows = rowsFromReconstructed(recon);
+    const rows = rowsFromReconstructed(recon as never);
     expect(rows).toHaveLength(1);
     expect(rows[0].ticker).toBe('ARM');
     expect(rows[0].signal).toBe('pullback');
+    expect(rows[0].signals).toEqual(['pullback']);
+    expect(rows[0].signalCount).toBe(1);
     expect(rows[0].stage2).toBe(1);
     expect(rows[0].dayPct).toBe(2.8);
     expect(typeof rows[0].score).toBe('number');
+  });
+
+  it('builds one row/ticker with signals ordered by BASE desc (primary = strongest)', () => {
+    const recon = {
+      signalsByDate: {
+        '2026-06-29': {
+          MULTI: { sector: 'Semis', rvol: 0, barGain: 1, pctFromAth: -20,
+                   lastPrice: 100, isStage2: false, signals: ['highVolume', 'pullback'], distanceToPivotPct: null },
+        },
+      },
+    };
+    const rows = rowsFromReconstructed(recon as never);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].signals).toEqual(['pullback', 'highVolume']); // re-ordered BASE desc
+    expect(rows[0].signal).toBe('pullback');
+    expect(rows[0].signalCount).toBe(2);
+    // base 40 + confluence 12 = 52
+    expect(rows[0].score).toBe(52);
   });
 });

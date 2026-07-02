@@ -43,6 +43,14 @@ import type { StockData } from '../src/types/index.js';
 
 process.env.BACKTEST_MODE = '1';
 
+type SignalKind = 'breakout' | 'highVolume' | 'pullback' | 'nearBreakout' | 'nearHighVol' | 'nearPullback';
+
+/** BASE weights — must match src/lean/dashboardRows.ts. Used to order `signals` desc. */
+const BASE: Record<SignalKind, number> = {
+    breakout: 50, pullback: 40, highVolume: 35,
+    nearBreakout: 25, nearHighVol: 15, nearPullback: 10,
+};
+
 interface SignalRecord {
     sector: string;
     rvol: number;
@@ -50,8 +58,8 @@ interface SignalRecord {
     pctFromAth: number | null;
     lastPrice: number;
     isStage2: boolean;
-    /** Primary signal classification — first match wins. */
-    primary: 'breakout' | 'highVolume' | 'pullback' | 'nearBreakout' | 'nearHighVol' | 'nearPullback' | null;
+    /** ALL matched signals for this (ticker, day), ordered by BASE desc. signals[0] = primary. */
+    signals: SignalKind[];
     breakoutWindow: string | null;
     breakoutPivot: number | null;
     /** For nearBreakout (and breakout=0): % below the pivot. null for non-consolidation signals. */
@@ -178,28 +186,30 @@ async function main() {
             const pullback = qualifiesAsHealthyPullback(stock);
             const nearPullback = pullback ? null : qualifiesAsPullbackNearMiss(stock);
 
-            // Pick primary (firstmatch in priority order)
-            let primary: SignalRecord['primary'] = null;
+            // Collect ALL matched signals for this (ticker, day).
+            const matched: SignalKind[] = [];
             let breakoutWindow: string | null = null;
             let breakoutPivot: number | null = null;
             let distanceToPivotPct: number | null = null;
             if (breakout) {
-                primary = 'breakout';
+                matched.push('breakout');
                 breakoutWindow = breakout.window;
                 breakoutPivot = breakout.windowHigh;
                 distanceToPivotPct = 0;
-            } else if (highVol) primary = 'highVolume';
-            else if (pullback) primary = 'pullback';
-            else if (nearBreakout) {
-                primary = 'nearBreakout';
+            } else if (nearBreakout) {
+                matched.push('nearBreakout');
                 breakoutWindow = nearBreakout.window;
                 breakoutPivot = nearBreakout.windowHigh;
                 distanceToPivotPct = nearBreakout.distanceToPivotPct;
             }
-            else if (nearHighVol) primary = 'nearHighVol';
-            else if (nearPullback) primary = 'nearPullback';
+            if (highVol) matched.push('highVolume');
+            else if (nearHighVol) matched.push('nearHighVol');
+            if (pullback) matched.push('pullback');
+            else if (nearPullback) matched.push('nearPullback');
 
-            if (primary) {
+            if (matched.length) {
+                const signals = [...matched].sort((a, b) => BASE[b] - BASE[a]);
+                const primary = signals[0]!;
                 summary[primary] = (summary[primary] ?? 0) + 1;
                 dayRecords[t.toUpperCase()] = {
                     sector: stock.sector ?? 'Unknown',
@@ -208,7 +218,7 @@ async function main() {
                     pctFromAth: stock.pctFromAth ?? null,
                     lastPrice: stock.lastPrice,
                     isStage2: stage2,
-                    primary,
+                    signals,
                     breakoutWindow,
                     breakoutPivot,
                     distanceToPivotPct,

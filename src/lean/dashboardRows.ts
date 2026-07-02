@@ -26,7 +26,9 @@ export interface Row {
   ticker: string;
   region: 'US' | 'TASE' | 'Foreign';
   sector: string;
-  signal: SignalKind;
+  signal: SignalKind;         // PRIMARY = signals[0] (strongest BASE)
+  signals: SignalKind[];      // ALL matched signals, ordered by BASE desc
+  signalCount: number;        // signals.length
   rvol: number;
   athPct: number | null;
   dayPct: number;
@@ -41,14 +43,21 @@ const BASE: Record<SignalKind, number> = {
   nearBreakout: 25, nearHighVol: 15, nearPullback: 10,
 };
 
+/** Sort a set of signals by BASE descending (strongest first). */
+function orderByBase(signals: SignalKind[]): SignalKind[] {
+  return [...signals].sort((a, b) => BASE[b] - BASE[a]);
+}
+
 type ScoreInput = Omit<Row, 'score'>;
 
 export function scoreRow(r: ScoreInput): number {
-  let s = BASE[r.signal];
+  const base = Math.max(...r.signals.map((sig) => BASE[sig]));
+  let s = base;
   s += Math.min(r.rvol || 0, 6) * 5;
   if (r.stage2) s += 20;
   if (r.distPivot != null) s += Math.max(0, 10 - r.distPivot * 4);
-  if (r.signal === 'highVolume' && (r.dayPct || 0) < 0) s -= 25;
+  s += (r.signalCount - 1) * 12; // CONFLUENCE BONUS (+12 per extra signal)
+  if (r.signals.includes('highVolume') && (r.dayPct || 0) < 0) s -= 25; // climax
   if (r.athPct != null && r.athPct < -30) s -= 20;
   if (isETFSector(r.sector)) s -= 12;
   return Math.round(s);
@@ -59,12 +68,15 @@ function isStage2(s: StockData): 0 | 1 {
     s.lastPrice > s.sma50 && s.sma50 > s.sma200 ? 1 : 0;
 }
 
+/** Build one Row for a ticker given ALL its matched signals + the stock object. */
 function buildRow(
-  scanDate: string, stock: StockData, signal: SignalKind, distPivot: number | null,
+  scanDate: string, stock: StockData, signals: SignalKind[], distPivot: number | null,
 ): Row {
+  const ordered = orderByBase(signals);
   const r: Omit<Row, 'score'> = {
     scanDate, ticker: stock.ticker.toUpperCase(), region: regionOf(stock.ticker),
-    sector: stock.sector ?? 'Unknown', signal,
+    sector: stock.sector ?? 'Unknown', signal: ordered[0]!, signals: ordered,
+    signalCount: ordered.length,
     rvol: stock.rvol ?? 0, athPct: stock.pctFromAth ?? null,
     dayPct: stock.priceChange ?? 0, stage2: isStage2(stock),
     distPivot, price: stock.lastPrice ?? 0,
@@ -74,19 +86,46 @@ function buildRow(
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function rowsFromLeanResult(scanDate: string, result: any): Row[] {
+  // Group every matched signal by ticker so each ticker yields ONE row.
+  interface Acc { stock: StockData; signals: Set<SignalKind>; distPivot: number | null; }
+  const byTicker = new Map<string, Acc>();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const add = (stock: StockData, signal: SignalKind, distPivot: number | null) => {
+    const key = stock.ticker.toUpperCase();
+    const acc = byTicker.get(key);
+    if (acc) {
+      acc.signals.add(signal);
+      // Carry distPivot from a consolidation entry when present.
+      if (distPivot != null && acc.distPivot == null) acc.distPivot = distPivot;
+    } else {
+      byTicker.set(key, { stock, signals: new Set([signal]), distPivot });
+    }
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const e of result.consolidationBreakouts) add(e.stock, 'breakout', 0);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const e of result.highVolume) add(e.stock, 'highVolume', null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const e of result.pullbacks) add(e.stock, 'pullback', null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const e of result.nearConsolidation) add(e.stock, 'nearBreakout', e.signal.distanceToPivotPct);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const e of result.nearVolume) add(e.stock, 'nearHighVol', null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const e of result.nearPullback) add(e.stock, 'nearPullback', null);
+
   const rows: Row[] = [];
-  for (const e of result.consolidationBreakouts) rows.push(buildRow(scanDate, e.stock, 'breakout', 0));
-  for (const e of result.highVolume) rows.push(buildRow(scanDate, e.stock, 'highVolume', null));
-  for (const e of result.pullbacks) rows.push(buildRow(scanDate, e.stock, 'pullback', null));
-  for (const e of result.nearConsolidation) rows.push(buildRow(scanDate, e.stock, 'nearBreakout', e.signal.distanceToPivotPct));
-  for (const e of result.nearVolume) rows.push(buildRow(scanDate, e.stock, 'nearHighVol', null));
-  for (const e of result.nearPullback) rows.push(buildRow(scanDate, e.stock, 'nearPullback', null));
+  for (const acc of byTicker.values()) {
+    rows.push(buildRow(scanDate, acc.stock, [...acc.signals], acc.distPivot));
+  }
   return rows;
 }
 
 interface ReconRecord {
   sector: string; rvol: number; barGain: number; pctFromAth: number | null;
-  lastPrice: number; isStage2: boolean; primary: SignalKind; distanceToPivotPct: number | null;
+  lastPrice: number; isStage2: boolean; signals: SignalKind[]; distanceToPivotPct: number | null;
 }
 
 export function rowsFromReconstructed(recon: {
@@ -95,9 +134,11 @@ export function rowsFromReconstructed(recon: {
   const rows: Row[] = [];
   for (const [scanDate, day] of Object.entries(recon.signalsByDate)) {
     for (const [ticker, rec] of Object.entries(day)) {
+      const ordered = orderByBase(rec.signals);
       const r: Omit<Row, 'score'> = {
         scanDate, ticker: ticker.toUpperCase(), region: regionOf(ticker),
-        sector: rec.sector ?? 'Unknown', signal: rec.primary,
+        sector: rec.sector ?? 'Unknown', signal: ordered[0]!, signals: ordered,
+        signalCount: ordered.length,
         rvol: rec.rvol ?? 0, athPct: rec.pctFromAth, dayPct: rec.barGain ?? 0,
         stage2: rec.isStage2 ? 1 : 0, distPivot: rec.distanceToPivotPct, price: rec.lastPrice ?? 0,
       };
