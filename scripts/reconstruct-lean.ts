@@ -48,8 +48,8 @@ type SignalKind = 'breakout' | 'highVolume' | 'pullback' | 'nearBreakout' | 'nea
 
 /** BASE weights — must match src/lean/dashboardRows.ts. Used to order `signals` desc. */
 const BASE: Record<SignalKind, number> = {
-    breakout: 50, pullback: 40, highVolume: 35,
-    nearBreakout: 25, nearHighVol: 15, nearPullback: 10,
+    pullback: 50, nearPullback: 38, highVolume: 30,
+    nearHighVol: 18, breakout: 12, nearBreakout: 8,
 };
 
 interface SignalRecord {

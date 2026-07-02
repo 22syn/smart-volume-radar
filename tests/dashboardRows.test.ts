@@ -27,35 +27,35 @@ describe('isETFSector', () => {
 describe('scoreRow', () => {
   it('rewards Stage2 + volume for a healthy pullback', () => {
     const s = scoreRow({ ...base, signal: 'pullback', signals: ['pullback'], signalCount: 1, rvol: 4, stage2: 1 });
-    // 40 base + min(4,6)*5=20 + stage2 20 + confluence 0 = 80
-    expect(s).toBe(80);
+    // 50 base + min(4,6)*5=20 + stage2 20 + confluence 0 = 90
+    expect(s).toBe(90);
   });
   it('penalizes a high-volume down-day (climax) and deep ATH', () => {
     // RENK-like: highVolume, RVOL 6+, dayPct<0, athPct -52, not stage2
     const s = scoreRow({ ...base, signal: 'highVolume', signals: ['highVolume'], signalCount: 1, rvol: 12, dayPct: -2, athPct: -52, stage2: 0 });
-    // 35 + min(12,6)*5=30 + 0 - 25 (climax) - 20 (deep ATH) = 20
-    expect(s).toBe(20);
+    // 30 + min(12,6)*5=30 + 0 - 25 (climax) - 20 (deep ATH) = 15
+    expect(s).toBe(15);
   });
   it('adds proximity bonus for a near-breakout at the pivot', () => {
     const s = scoreRow({ ...base, signal: 'nearBreakout', signals: ['nearBreakout'], signalCount: 1, rvol: 0, stage2: 1, distPivot: 0 });
-    // 25 + 0 + 20 + max(0,10-0*4)=10 = 55
-    expect(s).toBe(55);
+    // 8 + 0 + 20 + max(0,10-0*4)=10 = 38
+    expect(s).toBe(38);
   });
   it('de-prioritizes ETFs', () => {
     const s = scoreRow({ ...base, signal: 'pullback', signals: ['pullback'], signalCount: 1, rvol: 0, sector: 'ETF - US' });
-    // 40 + 0 + 0 - 12 = 28
-    expect(s).toBe(28);
+    // 50 + 0 + 0 - 12 = 38
+    expect(s).toBe(38);
   });
   it('rewards multi-signal confluence (+12 per extra signal, base = strongest)', () => {
-    // pullback + highVolume: base = max(40,35)=40, +confluence (2-1)*12=12
+    // pullback + highVolume: base = max(50,30)=50, +confluence (2-1)*12=12
     const s = scoreRow({ ...base, signal: 'pullback', signals: ['pullback', 'highVolume'], signalCount: 2, rvol: 0, stage2: 0 });
-    // 40 base + 0 + 0 + 12 confluence = 52
-    expect(s).toBe(52);
+    // 50 base + 0 + 0 + 12 confluence = 62
+    expect(s).toBe(62);
   });
   it('applies climax penalty when highVolume is present in a multi-signal row on a down day', () => {
-    // pullback + highVolume, down day → base 40 + confluence 12 - climax 25 = 27
+    // pullback + highVolume, down day → base 50 + confluence 12 - climax 25 = 37
     const s = scoreRow({ ...base, signal: 'pullback', signals: ['pullback', 'highVolume'], signalCount: 2, rvol: 0, dayPct: -1, athPct: -20, stage2: 0 });
-    expect(s).toBe(27);
+    expect(s).toBe(37);
   });
 });
 
@@ -128,8 +128,8 @@ describe('rowsFromLeanResult', () => {
     const tickers = rows.map((r) => r.ticker);
     expect(new Set(tickers).size).toBe(tickers.length);
     expect(rows).toHaveLength(1);
-    expect(rows[0].signals).toEqual(['breakout', 'pullback', 'highVolume']); // 50 > 40 > 35
-    expect(rows[0].signal).toBe('breakout');
+    expect(rows[0].signals).toEqual(['pullback', 'highVolume', 'breakout']); // 50 > 30 > 12
+    expect(rows[0].signal).toBe('pullback');
     expect(rows[0].distPivot).toBe(0);         // carried from breakout entry
   });
 });
@@ -169,7 +169,7 @@ describe('rowsFromReconstructed', () => {
     expect(rows[0].signals).toEqual(['pullback', 'highVolume']); // re-ordered BASE desc
     expect(rows[0].signal).toBe('pullback');
     expect(rows[0].signalCount).toBe(2);
-    // base 40 + confluence 12 = 52
-    expect(rows[0].score).toBe(52);
+    // base 50 + confluence 12 = 62
+    expect(rows[0].score).toBe(62);
   });
 });
