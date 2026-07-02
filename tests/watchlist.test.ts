@@ -22,9 +22,9 @@ describe('parseWatchlistCsv', () => {
         const csv = 'Symbol,Sector\nAAPL,Technology\nMETA,Technology\nXOM,Energy';
         const result = parseWatchlistCsv(csv);
         expect(result.tickers).toHaveLength(3);
-        expect(result.tickers[0]).toEqual({ symbol: 'AAPL', sector: 'Technology' });
-        expect(result.tickers[1]).toEqual({ symbol: 'META', sector: 'Technology' });
-        expect(result.tickers[2]).toEqual({ symbol: 'XOM', sector: 'Energy' });
+        expect(result.tickers[0]).toEqual({ symbol: 'AAPL', sector: 'Technology', status: 'ok' });
+        expect(result.tickers[1]).toEqual({ symbol: 'META', sector: 'Technology', status: 'ok' });
+        expect(result.tickers[2]).toEqual({ symbol: 'XOM', sector: 'Energy', status: 'ok' });
         expect(result.invalidSkipped).toHaveLength(0);
     });
 
@@ -32,14 +32,14 @@ describe('parseWatchlistCsv', () => {
         const csv = 'symbol,sector\nGOOGL,Technology';
         const result = parseWatchlistCsv(csv);
         expect(result.tickers).toHaveLength(1);
-        expect(result.tickers[0]).toEqual({ symbol: 'GOOGL', sector: 'Technology' });
+        expect(result.tickers[0]).toEqual({ symbol: 'GOOGL', sector: 'Technology', status: 'ok' });
     });
 
     it('defaults sector to Other when column B is empty', () => {
         const csv = 'NVDA,\nAMD,Technology';
         const result = parseWatchlistCsv(csv);
-        expect(result.tickers[0]).toEqual({ symbol: 'NVDA', sector: 'Other' });
-        expect(result.tickers[1]).toEqual({ symbol: 'AMD', sector: 'Technology' });
+        expect(result.tickers[0]).toEqual({ symbol: 'NVDA', sector: 'Other', status: 'ok' });
+        expect(result.tickers[1]).toEqual({ symbol: 'AMD', sector: 'Technology', status: 'ok' });
     });
 
     it('skips empty symbol rows', () => {
@@ -54,13 +54,13 @@ describe('parseWatchlistCsv', () => {
         const csv = 'AAPL,Technology\nMETA,Technology';
         const result = parseWatchlistCsv(csv);
         expect(result.tickers).toHaveLength(2);
-        expect(result.tickers[0]).toEqual({ symbol: 'AAPL', sector: 'Technology' });
+        expect(result.tickers[0]).toEqual({ symbol: 'AAPL', sector: 'Technology', status: 'ok' });
     });
 
     it('trims whitespace from cells', () => {
         const csv = '  AAPL  ,  Technology  ';
         const result = parseWatchlistCsv(csv);
-        expect(result.tickers[0]).toEqual({ symbol: 'AAPL', sector: 'Technology' });
+        expect(result.tickers[0]).toEqual({ symbol: 'AAPL', sector: 'Technology', status: 'ok' });
     });
 
     it('throws on empty CSV', () => {
@@ -79,6 +79,15 @@ describe('parseWatchlistCsv', () => {
         expect(result.tickers[0].symbol).toBe('AAPL');
         expect(result.tickers[1].symbol).toBe('META');
         expect(result.invalidSkipped).toEqual(['../../etc']);
+    });
+
+    it('skips tickers with Status = disabled and returns them in disabledSkipped', () => {
+        const csv = 'Symbol,Sector,Status\nAAPL,Tech,ok\nEMBR3.SA,Industrials,disabled\nMETA,Tech,';
+        const result = parseWatchlistCsv(csv);
+        expect(result.tickers).toHaveLength(2);
+        expect(result.tickers.map((t) => t.symbol)).toEqual(['AAPL', 'META']);
+        expect(result.disabledSkipped).toEqual(['EMBR3.SA']);
+        expect(result.invalidSkipped).not.toContain('EMBR3.SA');
     });
 
     it('skips indices and returns them in indexSkipped (not invalidSkipped)', () => {
