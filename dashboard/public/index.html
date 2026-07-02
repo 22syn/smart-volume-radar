@@ -1,26 +1,115 @@
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>🪶 Lean Radar Dashboard</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lean Radar — Dashboard</title>
   <link rel="stylesheet" href="styles.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 </head>
 <body>
-  <header>
-    <h1>🪶 Lean Radar</h1>
-    <div id="day-picker"></div>
+
+  <!-- ════════════════════════════════════════
+       HEADER
+  ════════════════════════════════════════ -->
+  <header class="site-header" role="banner">
+    <div class="header-brand">
+      <span class="brand-icon" aria-hidden="true">🪶</span>
+      <span class="brand-name">Lean Radar</span>
+      <span class="brand-sub" id="selected-date" aria-live="polite"></span>
+    </div>
+    <div class="header-meta" id="header-meta" aria-live="polite"></div>
   </header>
-  <section id="cards"></section>
-  <section id="chart-wrap"><canvas id="dist-chart" height="90"></canvas></section>
-  <section id="controls">
-    <input id="search" placeholder="חיפוש טיקר…">
-    <select id="f-region"><option value="">כל האזורים</option><option>US</option><option>TASE</option><option>Foreign</option></select>
-    <select id="f-signal"><option value="">כל הסיגנלים</option><option>breakout</option><option>highVolume</option><option>pullback</option><option>nearBreakout</option><option>nearHighVol</option><option>nearPullback</option></select>
-    <label><input type="checkbox" id="f-stage2"> Stage2 בלבד</label>
-  </section>
-  <table id="grid"><thead></thead><tbody></tbody></table>
-  <aside id="deepdive" hidden></aside>
+
+  <!-- ════════════════════════════════════════
+       DAY STRIP
+  ════════════════════════════════════════ -->
+  <nav class="day-strip" aria-label="בחירת תאריך">
+    <div class="day-strip-inner" id="day-strip" role="list"></div>
+  </nav>
+
+  <!-- ════════════════════════════════════════
+       SUMMARY SECTION: cards + chart
+  ════════════════════════════════════════ -->
+  <main>
+    <section class="summary-section" aria-label="סיכום יומי">
+      <div class="summary-cards" id="cards" role="list"></div>
+      <div class="chart-wrap" id="chart-wrap">
+        <p class="chart-title">התפלגות ציונים</p>
+        <canvas id="dist-chart" height="130" aria-label="היסטוגרמת ציונים" role="img"></canvas>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════════════════
+         CONTROLS
+    ════════════════════════════════════════ -->
+    <section class="controls" role="search" aria-label="סינון וחיפוש">
+      <input
+        type="search"
+        id="search"
+        class="ctrl-input"
+        placeholder="חיפוש טיקר…"
+        aria-label="חיפוש לפי טיקר"
+        autocomplete="off"
+        spellcheck="false"
+      >
+      <select id="f-region" class="ctrl-select" aria-label="סינון לפי אזור">
+        <option value="">כל האזורים</option>
+        <option>US</option>
+        <option>TASE</option>
+        <option>Foreign</option>
+      </select>
+      <select id="f-signal" class="ctrl-select" aria-label="סינון לפי סיגנל">
+        <option value="">כל הסיגנלים</option>
+        <option value="breakout">Breakout</option>
+        <option value="highVolume">High Volume</option>
+        <option value="pullback">Pullback</option>
+        <option value="nearBreakout">Near Breakout</option>
+        <option value="nearHighVol">Near High Vol</option>
+        <option value="nearPullback">Near Pullback</option>
+      </select>
+      <label class="ctrl-checkbox" for="f-stage2">
+        <input type="checkbox" id="f-stage2">
+        <span>Stage 2 בלבד</span>
+      </label>
+      <span class="ctrl-count" id="row-count" aria-live="polite" aria-atomic="true"></span>
+    </section>
+
+    <!-- ════════════════════════════════════════
+         TABLE (desktop)
+    ════════════════════════════════════════ -->
+    <div class="table-wrap" role="region" aria-label="טבלת סיגנלים">
+      <table id="grid" aria-live="polite">
+        <thead id="grid-head"></thead>
+        <tbody id="grid-body"></tbody>
+      </table>
+    </div>
+
+    <!-- ════════════════════════════════════════
+         CARD LIST (mobile, same data)
+    ════════════════════════════════════════ -->
+    <div class="card-list" id="card-list" aria-live="polite" aria-label="רשימת סיגנלים"></div>
+
+    <!-- loading / empty states -->
+    <div class="state-msg" id="state-msg" hidden></div>
+  </main>
+
+  <!-- ════════════════════════════════════════
+       DEEP-DIVE PANEL
+  ════════════════════════════════════════ -->
+  <aside
+    id="deepdive"
+    class="deepdive"
+    hidden
+    aria-modal="true"
+    aria-label="פרטי טיקר"
+    role="dialog"
+  >
+    <div class="deepdive-inner" id="deepdive-inner"></div>
+  </aside>
+  <!-- overlay for mobile bottom-sheet -->
+  <div class="deepdive-overlay" id="deepdive-overlay" hidden aria-hidden="true"></div>
+
   <script src="app.js"></script>
 </body>
 </html>
