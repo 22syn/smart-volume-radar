@@ -5,5 +5,4 @@ compatibility_date = "2024-11-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "lean-radar"
-# fill in after: wrangler d1 create lean-radar
-database_id = "REPLACE_AFTER_wrangler_d1_create"
+database_id = "9c00a708-2b4f-40c8-85ce-23e3cb9a256c"
