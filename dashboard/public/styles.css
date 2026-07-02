@@ -12,6 +12,7 @@
   --down:     #f85149;
   --accent:   #2f81f7;
   --amber:    #d29922;
+  --gold:     #e3b341;
 
   /* score band backgrounds (dark-appropriate, not neon) */
   --score-red:    rgba(248, 81,  73,  0.20);
@@ -27,7 +28,6 @@
   --radius-lg: 12px;
 
   --panel-w: 340px;
-  --strip-h: 56px;
 }
 
 /* ═══════════════════════════════════════════════
@@ -61,12 +61,13 @@ button { font-family: inherit; }
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 20px;
+  padding: 10px 20px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
-  z-index: 100;
+  z-index: 200;
+  flex-wrap: wrap;
 }
 
 .header-brand {
@@ -84,16 +85,6 @@ button { font-family: inherit; }
   color: var(--text);
 }
 
-.brand-sub {
-  font-family: var(--mono);
-  font-size: 0.78rem;
-  color: var(--muted);
-  padding: 2px 7px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-}
-
 .header-meta {
   font-family: var(--mono);
   font-size: 0.78rem;
@@ -101,82 +92,230 @@ button { font-family: inherit; }
 }
 
 /* ═══════════════════════════════════════════════
-   DAY STRIP
+   DATE PICKER GROUP
 ═══════════════════════════════════════════════ */
-.day-strip {
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  height: var(--strip-h);
+.date-picker-group {
   display: flex;
   align-items: center;
-  overflow: hidden;
+  gap: 4px;
+  position: relative;
 }
 
-.day-strip-inner {
-  display: flex;
-  gap: 6px;
-  padding: 0 16px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  height: 100%;
-  align-items: center;
-  /* RTL: newest chip is visually first (rightmost) */
-}
-
-.day-strip-inner::-webkit-scrollbar { display: none; }
-
-.day-chip {
+.date-picker-btn {
   display: inline-flex;
-  flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: 5px 11px;
+  gap: 6px;
+  padding: 6px 12px;
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  flex-shrink: 0;
-  transition: background 0.15s, border-color 0.15s;
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  color: var(--muted);
-  min-width: 64px;
-  text-align: center;
+  transition: border-color 0.15s, background 0.15s;
+  min-height: 36px;
 }
 
-.day-chip:hover {
+.date-picker-btn:hover,
+.date-picker-btn[aria-expanded="true"] {
+  border-color: var(--accent);
+  background: rgba(47, 129, 247, 0.08);
+}
+
+.date-picker-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.date-picker-caret {
+  font-size: 0.65rem;
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+
+.date-picker-btn[aria-expanded="true"] .date-picker-caret {
+  transform: rotate(180deg);
+}
+
+.date-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 36px;
   background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+
+.date-nav-btn:hover {
   border-color: var(--accent);
   color: var(--text);
 }
 
-.day-chip[aria-selected="true"] {
+.date-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.date-nav-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ═══════════════════════════════════════════════
+   CALENDAR POPOVER
+═══════════════════════════════════════════════ */
+.cal-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  /* RTL: align to right side of the date-picker group */
+  inset-inline-end: 0;
+  width: 280px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+  z-index: 500;
+  padding: 14px;
+  /* Anchored relative to the date-picker-group */
+}
+
+.date-picker-group { position: relative; }
+
+.cal-popover[hidden] { display: none; }
+
+.cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.cal-month-label {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.cal-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+
+.cal-nav:hover { border-color: var(--accent); color: var(--text); }
+.cal-nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 4px;
+}
+
+.cal-wd {
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 0.63rem;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 3px 0;
+  letter-spacing: 0.03em;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.cal-day {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: default;
+  transition: background 0.1s, color 0.1s;
+  padding: 2px 1px;
+  line-height: 1.2;
+  gap: 1px;
+}
+
+/* Days with data */
+.cal-day[data-has-data="true"] {
+  color: var(--text);
+  cursor: pointer;
+  background: var(--surface2);
+}
+
+.cal-day[data-has-data="true"]:hover {
   background: rgba(47, 129, 247, 0.15);
-  border-color: var(--accent);
   color: var(--accent);
 }
 
-.day-chip-date { font-weight: 600; font-size: 0.75rem; }
+.cal-day[data-has-data="true"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 
-.day-chip-meta {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.68rem;
+/* Selected day */
+.cal-day[data-selected="true"] {
+  background: rgba(47, 129, 247, 0.25);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Empty grid cells (padding before month starts) */
+.cal-day--empty {
+  pointer-events: none;
+}
+
+/* Small count label under the day number */
+.cal-day-count {
+  font-size: 0.58rem;
+  color: var(--muted);
+  font-weight: 400;
+  line-height: 1;
+}
+
+.cal-day[data-has-data="true"] .cal-day-count {
   color: var(--muted);
 }
 
-.day-chip[aria-selected="true"] .day-chip-meta { color: var(--accent); opacity: 0.8; }
-
-.day-chip-70 {
-  background: rgba(63, 185, 80, 0.22);
-  color: var(--up);
-  padding: 1px 4px;
-  border-radius: 3px;
-  font-size: 0.65rem;
-  font-weight: 700;
+/* Green dot when score70 > 0 */
+.cal-day-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--up);
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 /* ═══════════════════════════════════════════════
@@ -351,9 +490,14 @@ main {
 
 #grid tbody tr:hover { background: var(--surface2); }
 
-/* confluence accent */
+/* confluence accent — blue left border */
 #grid tbody tr[data-conf="true"] {
   border-inline-start: 3px solid var(--accent);
+}
+
+/* graduation accent — gold left border, overrides confluence */
+#grid tbody tr[data-grad="true"] {
+  border-inline-start: 3px solid var(--gold);
 }
 
 #grid tbody td {
@@ -432,7 +576,39 @@ td.col-signals { text-align: start; white-space: nowrap; }
   padding: 1px 5px;
   margin-inline-start: 2px;
   vertical-align: middle;
+  cursor: help;
 }
+
+/* graduation badge — gold, prominent */
+.badge--grad {
+  background: rgba(227, 179, 65, 0.18);
+  color: var(--gold);
+  border-color: rgba(227, 179, 65, 0.45);
+  font-size: 0.73rem;
+  padding: 3px 9px;
+}
+
+/* streak chip — muted, compact */
+.streak-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 5px;
+  border-radius: 10px;
+  background: rgba(139, 149, 165, 0.12);
+  border: 1px solid rgba(139, 149, 165, 0.20);
+  font-family: var(--mono);
+  font-size: 0.63rem;
+  color: var(--muted);
+  vertical-align: middle;
+  margin-inline-start: 3px;
+  white-space: nowrap;
+}
+
+/* score delta */
+.delta-up  { color: var(--up);   font-family: var(--mono); font-size: 0.72rem; margin-inline-start: 4px; }
+.delta-down { color: var(--down); font-family: var(--mono); font-size: 0.72rem; margin-inline-start: 4px; }
+.delta-new { color: var(--muted); font-family: var(--mono); font-size: 0.70rem; margin-inline-start: 4px; letter-spacing: -0.02em; }
 
 /* ═══════════════════════════════════════════════
    SCORE CELL (inline style sets --sc-bg via JS attr)
@@ -440,6 +616,7 @@ td.col-signals { text-align: start; white-space: nowrap; }
 td.col-score {
   font-weight: 700;
   border-radius: 0;
+  white-space: nowrap;
 }
 
 /* ═══════════════════════════════════════════════
@@ -478,6 +655,11 @@ td.col-score {
   border-inline-start: 3px solid var(--accent);
 }
 
+/* graduation wins over confluence on card too */
+.signal-card[data-grad="true"] {
+  border-inline-start: 3px solid var(--gold);
+}
+
 .sc-top {
   display: flex;
   align-items: center;
@@ -499,6 +681,7 @@ td.col-score {
   font-weight: 700;
   padding: 3px 9px;
   border-radius: var(--radius-sm);
+  white-space: nowrap;
 }
 
 .sc-badges { margin-bottom: 8px; }
@@ -619,6 +802,21 @@ td.col-score {
 .dd-k { font-size: 0.68rem; color: var(--muted); margin-bottom: 2px; }
 .dd-v { font-family: var(--mono); font-size: 0.9rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 
+/* graduation highlight in deep-dive */
+.dd-grad-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(227, 179, 65, 0.12);
+  border: 1px solid rgba(227, 179, 65, 0.35);
+  border-radius: var(--radius);
+  margin-bottom: 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--gold);
+}
+
 .dd-tv-link {
   display: block;
   text-align: center;
@@ -667,6 +865,19 @@ td.col-score {
     font-size: 1rem;
   }
   .ctrl-checkbox { min-height: 44px; font-size: 1rem; }
+
+  /* date picker full-width on mobile */
+  .date-picker-group { width: 100%; order: 3; }
+  .date-picker-btn { flex: 1; justify-content: center; }
+
+  /* calendar popover becomes centered sheet on mobile */
+  .cal-popover {
+    position: fixed;
+    inset-inline: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: auto;
+  }
 
   /* deep-dive becomes bottom sheet */
   .deepdive {

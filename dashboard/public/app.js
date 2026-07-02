@@ -31,8 +31,11 @@ const COLS = [
   ['price',     'מחיר',      'col-mono'],
 ];
 
-const SCORE_BUCKETS   = [-Infinity, 40, 55, 70, 85, Infinity];
-const SCORE_LABELS    = ['<40', '40-55', '55-70', '70-85', '85+'];
+const SCORE_BUCKETS = [-Infinity, 40, 55, 70, 85, Infinity];
+const SCORE_LABELS  = ['<40', '40-55', '55-70', '70-85', '85+'];
+
+/** Weekday labels, Sunday-first, Hebrew abbreviated */
+const WEEKDAY_LABELS = ['אח', 'שנ', 'של', 'רב', 'חמ', 'שש', 'שב'];
 
 /* ─── State ──────────────────────────────────────────────────────────────── */
 
@@ -46,6 +49,9 @@ let sortKey = 'score';
 let sortDir = -1; // -1 = descending
 /** @type {Chart|null} */
 let chart = null;
+/** Calendar view state: which month/year the popover is currently showing */
+let calViewYear  = 0;
+let calViewMonth = 0; // 0-11
 
 /* ─── DOM helpers ─────────────────────────────────────────────────────────── */
 
@@ -74,6 +80,15 @@ function showState(msg) {
 /* ─── Signal badge helpers ────────────────────────────────────────────────── */
 
 /**
+ * Human-readable label for a signal key.
+ * @param {string} name
+ * @returns {string}
+ */
+function readableSignal(name) {
+  return (SIGNAL_META[name] && SIGNAL_META[name].label) || name;
+}
+
+/**
  * Build badge HTML for a single signal name.
  * @param {string} name - signal key
  * @param {boolean} primary - true if this is the primary signal
@@ -87,6 +102,7 @@ function badgeHTML(name, primary) {
 
 /**
  * Render the full badge group for a row.
+ * Includes graduation badge, streak chip, and ×N tooltip.
  * @param {object} row
  * @returns {string}
  */
@@ -101,11 +117,45 @@ function signalBadgesHTML(row) {
   const count = row.signal_count || allSigs.length;
 
   let html = '<span class="badges">';
+
+  // Graduation badge first — highest priority
+  if (row.graduated_from) {
+    const fromLabel = readableSignal(row.graduated_from);
+    html += `<span class="badge badge--grad" title="Graduated from ${fromLabel}">🎓 ← ${fromLabel}</span>`;
+  }
+
   if (primary) html += badgeHTML(primary, true);
   for (const s of extras) html += badgeHTML(s, false);
-  if (count > 1) html += `<span class="conf-tag" title="${count} סיגנלים">×${count}</span>`;
+
+  // ×N confluence tag with full signal list in title
+  if (count > 1) {
+    const sigList = allSigs.map(readableSignal).join(' · ');
+    html += `<span class="conf-tag" title="${sigList}">×${count}</span>`;
+  }
+
+  // Streak chip (streak > 1 only)
+  if (row.streak && row.streak > 1) {
+    html += `<span class="streak-chip" title="${row.streak} ימים ברצף">📅 ${row.streak}d</span>`;
+  }
+
   html += '</span>';
   return html;
+}
+
+/* ─── Score delta ─────────────────────────────────────────────────────────── */
+
+/**
+ * Render score delta indicator HTML.
+ * @param {number|null|undefined} delta
+ * @returns {string}
+ */
+function scoreDeltaHTML(delta) {
+  if (delta === null || delta === undefined) {
+    return '<span class="delta-new" title="סיגנל חדש היום">🆕</span>';
+  }
+  if (delta > 0)  return `<span class="delta-up" title="עלייה ב-${delta} נק׳">▲${delta}</span>`;
+  if (delta < 0)  return `<span class="delta-down" title="ירידה ב-${Math.abs(delta)} נק׳">▼${Math.abs(delta)}</span>`;
+  return '';
 }
 
 /* ─── Score color ─────────────────────────────────────────────────────────── */
@@ -167,35 +217,166 @@ function fmtPrice(v) {
   return Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
-/* ─── Day strip ───────────────────────────────────────────────────────────── */
+/* ─── Calendar popover ────────────────────────────────────────────────────── */
 
-function renderDayStrip() {
-  const strip = $('#day-strip');
-  if (!summaryDays.length) { strip.innerHTML = ''; return; }
+/**
+ * Build a Set of dates that have data, and a Map of date → summary row.
+ * Populated once summaryDays is loaded.
+ * @type {Map<string, object>}
+ */
+let summaryByDate = new Map();
 
-  strip.innerHTML = summaryDays.map((d) => {
-    const shortDate = d.scan_date.slice(5); // MM-DD
-    const score70 = d.score70 || 0;
-    const selected = d.scan_date === selectedDate;
-    return `
-      <button
-        class="day-chip"
-        role="listitem"
-        data-date="${d.scan_date}"
-        aria-selected="${selected}"
-        aria-label="${d.scan_date}, סה\"כ ${d.total} סיגנלים"
-      >
-        <span class="day-chip-date">${shortDate}</span>
-        <span class="day-chip-meta">
-          <span>${d.total}</span>
-          ${score70 > 0 ? `<span class="day-chip-70">${score70}</span>` : ''}
-        </span>
-      </button>`;
-  }).join('');
+function buildSummaryIndex() {
+  summaryByDate = new Map();
+  for (const d of summaryDays) {
+    summaryByDate.set(d.scan_date, d);
+  }
+}
 
-  strip.querySelectorAll('.day-chip').forEach((btn) => {
-    btn.addEventListener('click', () => selectDay(btn.dataset.date));
+/**
+ * Render the calendar grid for calViewYear / calViewMonth.
+ */
+function renderCalendar() {
+  const popover = $('#cal-popover');
+  const grid    = $('#cal-grid');
+  const label   = $('#cal-month-label');
+
+  const monthNames = [
+    'ינואר','פברואר','מרץ','אפריל','מאי','יוני',
+    'יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר',
+  ];
+  label.textContent = `${monthNames[calViewMonth]} ${calViewYear}`;
+
+  // Render weekday header if not yet done (idempotent)
+  const wdRow = popover.querySelector('.cal-weekdays');
+  if (wdRow && !wdRow.children.length) {
+    wdRow.innerHTML = WEEKDAY_LABELS.map(
+      (d) => `<span class="cal-wd">${d}</span>`
+    ).join('');
+  }
+
+  // First day of month (0=Sun)
+  const firstDow = new Date(calViewYear, calViewMonth, 1).getDay();
+  // Total days in month
+  const daysInMonth = new Date(calViewYear, calViewMonth + 1, 0).getDate();
+
+  let html = '';
+
+  // Leading empty cells
+  for (let i = 0; i < firstDow; i++) {
+    html += '<div class="cal-day cal-day--empty" aria-hidden="true"></div>';
+  }
+
+  // Day cells
+  for (let d = 1; d <= daysInMonth; d++) {
+    const mm   = String(calViewMonth + 1).padStart(2, '0');
+    const dd   = String(d).padStart(2, '0');
+    const iso  = `${calViewYear}-${mm}-${dd}`;
+    const summ = summaryByDate.get(iso);
+    const hasData  = !!summ;
+    const selected = iso === selectedDate;
+    const has70    = hasData && (summ.score70 || 0) > 0;
+
+    if (hasData) {
+      html += `
+        <div
+          class="cal-day"
+          data-has-data="true"
+          data-date="${iso}"
+          data-selected="${selected}"
+          role="gridcell"
+          tabindex="${selected ? '0' : '-1'}"
+          aria-label="${iso}, ${summ.total} סיגנלים${has70 ? `, Score≥70: ${summ.score70}` : ''}"
+          aria-pressed="${selected}"
+        >
+          <span>${d}</span>
+          <span class="cal-day-count">${summ.total}</span>
+          ${has70 ? '<span class="cal-day-dot" aria-hidden="true"></span>' : ''}
+        </div>`;
+    } else {
+      html += `
+        <div
+          class="cal-day"
+          data-has-data="false"
+          aria-hidden="true"
+          aria-label="${iso} — אין נתונים"
+        ><span>${d}</span></div>`;
+    }
+  }
+
+  grid.innerHTML = html;
+
+  // Attach click handlers
+  grid.querySelectorAll('.cal-day[data-has-data="true"]').forEach((cell) => {
+    cell.addEventListener('click', () => {
+      closeCalPopover();
+      selectDay(cell.dataset.date);
+    });
+    cell.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        closeCalPopover();
+        selectDay(cell.dataset.date);
+      }
+    });
   });
+}
+
+function openCalPopover() {
+  const popover = $('#cal-popover');
+  const btn     = $('#btn-date-picker');
+  popover.hidden = false;
+  btn.setAttribute('aria-expanded', 'true');
+  // Ensure we're viewing the month of the selected date
+  if (selectedDate) {
+    const parts = selectedDate.split('-');
+    calViewYear  = parseInt(parts[0], 10);
+    calViewMonth = parseInt(parts[1], 10) - 1;
+  }
+  renderCalendar();
+  // Focus the selected day or first data day in view
+  const selected = popover.querySelector('.cal-day[data-selected="true"]');
+  if (selected) selected.focus();
+}
+
+function closeCalPopover() {
+  const popover = $('#cal-popover');
+  const btn     = $('#btn-date-picker');
+  popover.hidden = true;
+  btn.setAttribute('aria-expanded', 'false');
+}
+
+function toggleCalPopover() {
+  const popover = $('#cal-popover');
+  if (popover.hidden) {
+    openCalPopover();
+  } else {
+    closeCalPopover();
+  }
+}
+
+/**
+ * Move to the adjacent data-day (offset = -1 for prev, +1 for next).
+ * @param {number} offset
+ */
+function stepDay(offset) {
+  if (!summaryDays.length) return;
+  // summaryDays is newest-first per API contract
+  const idx = summaryDays.findIndex((d) => d.scan_date === selectedDate);
+  if (idx === -1) return;
+  const next = idx - offset; // newest-first means subtract to go forward
+  if (next < 0 || next >= summaryDays.length) return;
+  selectDay(summaryDays[next].scan_date);
+}
+
+function updateNavButtons() {
+  const idx = summaryDays.findIndex((d) => d.scan_date === selectedDate);
+  const btnPrev = $('#btn-prev-day');
+  const btnNext = $('#btn-next-day');
+  // prev = older day = higher index (newest-first array)
+  btnPrev.disabled = idx === -1 || idx >= summaryDays.length - 1;
+  // next = newer day = lower index
+  btnNext.disabled = idx <= 0;
 }
 
 /* ─── Summary cards ───────────────────────────────────────────────────────── */
@@ -285,16 +466,18 @@ function renderChart() {
 /* ─── Filtering / sorting ─────────────────────────────────────────────────── */
 
 function visibleRows() {
-  const q   = ($('#search').value || '').trim().toUpperCase();
-  const reg = $('#f-region').value;
-  const sig = $('#f-signal').value;
-  const s2  = $('#f-stage2').checked;
+  const q    = ($('#search').value || '').trim().toUpperCase();
+  const reg  = $('#f-region').value;
+  const sig  = $('#f-signal').value;
+  const s2   = $('#f-stage2').checked;
+  const grad = $('#f-grad').checked;
 
   const filtered = allRows.filter((r) => {
-    if (q   && !(r.ticker || '').toUpperCase().includes(q)) return false;
-    if (reg && r.region !== reg)   return false;
-    if (sig && r.signal !== sig)   return false;
-    if (s2  && r.stage2 !== 1)     return false;
+    if (q    && !(r.ticker || '').toUpperCase().includes(q)) return false;
+    if (reg  && r.region !== reg)   return false;
+    if (sig  && r.signal !== sig)   return false;
+    if (s2   && r.stage2 !== 1)     return false;
+    if (grad && !r.graduated_from)  return false;
     return true;
   });
 
@@ -343,6 +526,8 @@ function renderTable() {
   const tbody = $('#grid-body');
   tbody.innerHTML = vr.map((r, i) => {
     const conf = (r.signal_count > 1) || false;
+    const grad = !!r.graduated_from;
+
     const tds = COLS.map(([k, , cls]) => {
       let inner = '';
       let extraCls = cls;
@@ -373,8 +558,9 @@ function renderTable() {
           inner = r.stage2 ? '<span class="num-up" title="Stage 2">✓</span>' : '';
           break;
         case 'score': {
-          const bg = scoreBg(r.score);
-          return `<td class="${cls}" style="background:${bg}" data-v="${r.score ?? -1}">${r.score ?? '—'}</td>`;
+          const bg    = scoreBg(r.score);
+          const delta = scoreDeltaHTML(r.score_delta);
+          return `<td class="${cls}" style="background:${bg}" data-v="${r.score ?? -1}">${r.score ?? '—'}${delta}</td>`;
         }
         case 'price':
           inner = fmtPrice(r.price);
@@ -385,7 +571,8 @@ function renderTable() {
       return `<td class="${extraCls}">${inner}</td>`;
     }).join('');
 
-    return `<tr data-i="${i}" data-conf="${conf}" tabindex="0" role="row">${tds}</tr>`;
+    // grad wins over conf for the data attribute — CSS uses data-grad first
+    return `<tr data-i="${i}" data-conf="${conf}" data-grad="${grad}" tabindex="0" role="row">${tds}</tr>`;
   }).join('');
 
   /* attach row click handlers */
@@ -398,22 +585,25 @@ function renderTable() {
   /* — mobile card list — */
   const cardList = $('#card-list');
   cardList.innerHTML = vr.map((r, i) => {
-    const conf = (r.signal_count > 1) || false;
-    const sc   = r.score ?? null;
+    const conf  = (r.signal_count > 1) || false;
+    const grad  = !!r.graduated_from;
+    const sc    = r.score ?? null;
     const scBg  = scoreBg(sc);
     const scClr = scoreColor(sc);
+    const delta = scoreDeltaHTML(r.score_delta);
     return `
       <div
         class="signal-card"
         data-i="${i}"
         data-conf="${conf}"
+        data-grad="${grad}"
         tabindex="0"
         role="button"
         aria-label="${r.ticker}, ציון ${sc ?? '—'}"
       >
         <div class="sc-top">
           <span class="sc-ticker">${r.ticker || ''}</span>
-          <span class="sc-score-badge" style="background:${scBg};color:${scClr}">Score ${sc ?? '—'}</span>
+          <span class="sc-score-badge" style="background:${scBg};color:${scClr}">Score ${sc ?? '—'}${delta}</span>
         </div>
         <div class="sc-badges">${signalBadgesHTML(r)}</div>
         <div class="sc-grid">
@@ -440,8 +630,23 @@ function openDeepDive(r) {
   const tvSymbol = (r.ticker || '').replace(/\./g, '-');
   const tvUrl    = `https://www.tradingview.com/symbols/${tvSymbol}/`;
 
+  // Graduation banner
+  const gradBanner = r.graduated_from
+    ? `<div class="dd-grad-banner" role="note" aria-label="Graduation">
+        🎓 Graduated from: ${readableSignal(r.graduated_from)}
+       </div>`
+    : '';
+
+  // Score delta for deep-dive
+  const deltaHtml = scoreDeltaHTML(r.score_delta);
+
+  // Streak note
+  const streakNote = (r.streak && r.streak > 1)
+    ? `<span class="streak-chip" title="${r.streak} ימים ברצף">📅 ${r.streak}d ברצף</span>`
+    : '';
+
   const pairs = [
-    ['Score',  r.score ?? '—'],
+    ['Score',  `${r.score ?? '—'}${deltaHtml ? ' ' + deltaHtml.replace(/class="delta-/g, 'class="delta-') : ''}`],
     ['RVOL',   fmtRvol(r.rvol)],
     ['ATH%',   fmtPct(r.ath_pct)],
     ['יום%',   fmtPct(r.day_pct)],
@@ -451,6 +656,14 @@ function openDeepDive(r) {
     ['אזור',   r.region || '—'],
   ];
 
+  if (r.streak && r.streak > 1) {
+    pairs.push(['Streak', `${r.streak} ימים`]);
+  }
+
+  if (r.graduated_from) {
+    pairs.push(['Graduated', readableSignal(r.graduated_from)]);
+  }
+
   const gridHTML = pairs.map(([k, v]) => `
     <div class="dd-kv">
       <div class="dd-k">${k}</div>
@@ -459,7 +672,8 @@ function openDeepDive(r) {
 
   $('#deepdive-inner').innerHTML = `
     <button class="btn-close" id="btn-close-dd" aria-label="סגור פאנל">✕</button>
-    <div class="dd-ticker">${r.ticker || ''}</div>
+    ${gradBanner}
+    <div class="dd-ticker">${r.ticker || ''} ${streakNote}</div>
     <div class="dd-sub">${r.sector || ''} · ${r.region || ''}</div>
     <div class="dd-badges">${signalBadgesHTML(r)}</div>
     <div class="dd-grid">${gridHTML}</div>
@@ -500,13 +714,11 @@ async function selectDay(date) {
   if (date === selectedDate) return;
   selectedDate = date;
 
-  // update strip selection state
-  $$('#day-strip .day-chip').forEach((btn) => {
-    btn.setAttribute('aria-selected', btn.dataset.date === date ? 'true' : 'false');
-  });
+  // Update date picker button label
+  $('#selected-date').textContent = date || '—';
 
-  // update header date label
-  $('#selected-date').textContent = date || '';
+  // Update nav button states
+  updateNavButtons();
 
   showState('טוען…');
   try {
@@ -536,10 +748,53 @@ function updateHeaderMeta() {
 /* ─── Boot ────────────────────────────────────────────────────────────────── */
 
 async function boot() {
-  // wire filter controls
-  ['#search', '#f-region', '#f-signal', '#f-stage2'].forEach((sel) =>
+  // Wire filter controls
+  ['#search', '#f-region', '#f-signal', '#f-stage2', '#f-grad'].forEach((sel) =>
     $(sel).addEventListener('input', renderTable)
   );
+
+  // Calendar popover — open/close
+  $('#btn-date-picker').addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleCalPopover();
+  });
+
+  // Month navigation
+  $('#cal-prev-month').addEventListener('click', () => {
+    calViewMonth--;
+    if (calViewMonth < 0) { calViewMonth = 11; calViewYear--; }
+    renderCalendar();
+  });
+
+  $('#cal-next-month').addEventListener('click', () => {
+    calViewMonth++;
+    if (calViewMonth > 11) { calViewMonth = 0; calViewYear++; }
+    renderCalendar();
+  });
+
+  // Prev/next day arrows
+  $('#btn-prev-day').addEventListener('click', () => stepDay(-1));
+  $('#btn-next-day').addEventListener('click', () => stepDay(1));
+
+  // Close popover on outside click
+  document.addEventListener('click', (e) => {
+    const popover = $('#cal-popover');
+    const group   = $('.date-picker-group');
+    if (!popover.hidden && !group.contains(e.target)) {
+      closeCalPopover();
+    }
+  });
+
+  // Close popover on Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const popover = $('#cal-popover');
+      if (!popover.hidden) {
+        closeCalPopover();
+        $('#btn-date-picker').focus();
+      }
+    }
+  });
 
   showState('טוען נתוני היסטוריה…');
 
@@ -557,11 +812,15 @@ async function boot() {
     return;
   }
 
-  // render the day strip (selection happens in selectDay)
-  renderDayStrip();
+  buildSummaryIndex();
 
-  // select most recent day (index 0 = newest first per API contract)
+  // Initialize calendar view month to the latest data day
   const latestDate = summaryDays[0].scan_date;
+  const parts = latestDate.split('-');
+  calViewYear  = parseInt(parts[0], 10);
+  calViewMonth = parseInt(parts[1], 10) - 1;
+
+  // Select most recent day (index 0 = newest first per API contract)
   await selectDay(latestDate);
 }
 

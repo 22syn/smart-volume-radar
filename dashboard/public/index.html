@@ -16,17 +16,59 @@
     <div class="header-brand">
       <span class="brand-icon" aria-hidden="true">🪶</span>
       <span class="brand-name">Lean Radar</span>
-      <span class="brand-sub" id="selected-date" aria-live="polite"></span>
     </div>
+
+    <!-- Date picker control group -->
+    <div class="date-picker-group">
+      <button
+        class="date-nav-btn"
+        id="btn-prev-day"
+        aria-label="יום קודם"
+        title="יום קודם"
+      >‹</button>
+
+      <button
+        class="date-picker-btn"
+        id="btn-date-picker"
+        aria-haspopup="true"
+        aria-expanded="false"
+        aria-controls="cal-popover"
+      >
+        <span aria-hidden="true">📅</span>
+        <span id="selected-date">—</span>
+        <span class="date-picker-caret" aria-hidden="true">▾</span>
+      </button>
+
+      <button
+        class="date-nav-btn"
+        id="btn-next-day"
+        aria-label="יום הבא"
+        title="יום הבא"
+      >›</button>
+    </div>
+
+    <!-- Calendar popover -->
+    <div
+      id="cal-popover"
+      class="cal-popover"
+      role="dialog"
+      aria-modal="false"
+      aria-label="בחירת תאריך"
+      hidden
+    >
+      <div class="cal-header">
+        <button class="cal-nav" id="cal-prev-month" aria-label="חודש קודם">‹</button>
+        <span class="cal-month-label" id="cal-month-label" aria-live="polite"></span>
+        <button class="cal-nav" id="cal-next-month" aria-label="חודש הבא">›</button>
+      </div>
+      <div class="cal-weekdays" aria-hidden="true">
+        <!-- injected by JS: Sun Mon Tue … in RTL order -->
+      </div>
+      <div class="cal-grid" id="cal-grid" role="grid" aria-label="לוח חודש"></div>
+    </div>
+
     <div class="header-meta" id="header-meta" aria-live="polite"></div>
   </header>
-
-  <!-- ════════════════════════════════════════
-       DAY STRIP
-  ════════════════════════════════════════ -->
-  <nav class="day-strip" aria-label="בחירת תאריך">
-    <div class="day-strip-inner" id="day-strip" role="list"></div>
-  </nav>
 
   <!-- ════════════════════════════════════════
        SUMMARY SECTION: cards + chart
@@ -71,6 +113,10 @@
       <label class="ctrl-checkbox" for="f-stage2">
         <input type="checkbox" id="f-stage2">
         <span>Stage 2 בלבד</span>
+      </label>
+      <label class="ctrl-checkbox" for="f-grad">
+        <input type="checkbox" id="f-grad">
+        <span>🎓 Grad בלבד</span>
       </label>
       <span class="ctrl-count" id="row-count" aria-live="polite" aria-atomic="true"></span>
     </section>
