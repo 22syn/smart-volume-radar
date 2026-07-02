@@ -11,6 +11,29 @@ export function buildSignalsQuery(p: SignalParams): Query {
   return { sql: `${SELECT} WHERE scan_date = (SELECT MAX(scan_date) FROM lean_signals) ORDER BY score DESC`, params: [] };
 }
 
+/** Recent DISTINCT scan_dates on/before `day`, most recent first. */
+export function buildRecentDatesQuery(day: string, limit = 12): Query {
+  return {
+    sql: 'SELECT DISTINCT scan_date FROM lean_signals WHERE scan_date <= ? ORDER BY scan_date DESC LIMIT ?',
+    params: [day, limit],
+  };
+}
+
+/** History rows (for enrichment) across the given dates. One placeholder per date. */
+export function buildHistoryRowsQuery(dates: string[]): Query {
+  if (dates.length === 0) {
+    return {
+      sql: 'SELECT scan_date,ticker,signal,signals,score FROM lean_signals WHERE scan_date IN (SELECT NULL WHERE 0)',
+      params: [],
+    };
+  }
+  const placeholders = dates.map(() => '?').join(',');
+  return {
+    sql: `SELECT scan_date,ticker,signal,signals,score FROM lean_signals WHERE scan_date IN (${placeholders})`,
+    params: [...dates],
+  };
+}
+
 export function buildSummaryQuery(_p: SignalParams): Query {
   return {
     sql: `SELECT scan_date,
