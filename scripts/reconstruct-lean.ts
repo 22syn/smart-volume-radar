@@ -37,11 +37,20 @@ import {
     qualifiesAsVolumeNearMiss,
     qualifiesAsHealthyPullback,
     qualifiesAsPullbackNearMiss,
+    passesLeaderGate,
     isStage2,
 } from '../src/lean/signals.js';
 import type { StockData } from '../src/types/index.js';
 
 process.env.BACKTEST_MODE = '1';
+
+type SignalKind = 'breakout' | 'highVolume' | 'pullback' | 'nearBreakout' | 'nearHighVol' | 'nearPullback';
+
+/** BASE weights — must match src/lean/dashboardRows.ts. Used to order `signals` desc. */
+const BASE: Record<SignalKind, number> = {
+    pullback: 50, nearPullback: 38, highVolume: 30,
+    nearHighVol: 18, breakout: 12, nearBreakout: 8,
+};
 
 interface SignalRecord {
     sector: string;
@@ -50,10 +59,12 @@ interface SignalRecord {
     pctFromAth: number | null;
     lastPrice: number;
     isStage2: boolean;
-    /** Primary signal classification — first match wins. */
-    primary: 'breakout' | 'highVolume' | 'pullback' | 'nearBreakout' | 'nearHighVol' | 'nearPullback' | null;
+    /** ALL matched signals for this (ticker, day), ordered by BASE desc. signals[0] = primary. */
+    signals: SignalKind[];
     breakoutWindow: string | null;
     breakoutPivot: number | null;
+    /** For nearBreakout (and breakout=0): % below the pivot. null for non-consolidation signals. */
+    distanceToPivotPct: number | null;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -173,35 +184,46 @@ async function main() {
             const nearBreakout = breakout ? null : detectConsolidationNearMiss(stock, closes, highs, lows);
             const highVol = qualifiesAsHighVolume(stock);
             const nearHighVol = highVol ? null : qualifiesAsVolumeNearMiss(stock);
-            const pullback = qualifiesAsHealthyPullback(stock);
+            const rawPb = qualifiesAsHealthyPullback(stock);
+            const pullback = rawPb && passesLeaderGate(stock, closes) ? rawPb : null;
             const nearPullback = pullback ? null : qualifiesAsPullbackNearMiss(stock);
 
-            // Pick primary (firstmatch in priority order)
-            let primary: SignalRecord['primary'] = null;
+            // Collect ALL matched signals for this (ticker, day).
+            const matched: SignalKind[] = [];
             let breakoutWindow: string | null = null;
             let breakoutPivot: number | null = null;
+            let distanceToPivotPct: number | null = null;
             if (breakout) {
-                primary = 'breakout';
+                matched.push('breakout');
                 breakoutWindow = breakout.window;
                 breakoutPivot = breakout.windowHigh;
-            } else if (highVol) primary = 'highVolume';
-            else if (pullback) primary = 'pullback';
-            else if (nearBreakout) primary = 'nearBreakout';
-            else if (nearHighVol) primary = 'nearHighVol';
-            else if (nearPullback) primary = 'nearPullback';
+                distanceToPivotPct = 0;
+            } else if (nearBreakout) {
+                matched.push('nearBreakout');
+                breakoutWindow = nearBreakout.window;
+                breakoutPivot = nearBreakout.windowHigh;
+                distanceToPivotPct = nearBreakout.distanceToPivotPct;
+            }
+            if (highVol) matched.push('highVolume');
+            else if (nearHighVol) matched.push('nearHighVol');
+            if (pullback) matched.push('pullback');
+            else if (nearPullback) matched.push('nearPullback');
 
-            if (primary) {
+            if (matched.length) {
+                const signals = [...matched].sort((a, b) => BASE[b] - BASE[a]);
+                const primary = signals[0]!;
                 summary[primary] = (summary[primary] ?? 0) + 1;
                 dayRecords[t.toUpperCase()] = {
                     sector: stock.sector ?? 'Unknown',
-                    rvol: stock.projectedRvol ?? stock.rvol ?? 0,
+                    rvol: stock.rvol ?? 0, // raw RVOL — matches what the radar classifies & displays (projectedRvol over-inflates in backtest)
                     barGain: stock.priceChange ?? 0,
                     pctFromAth: stock.pctFromAth ?? null,
                     lastPrice: stock.lastPrice,
                     isStage2: stage2,
-                    primary,
+                    signals,
                     breakoutWindow,
                     breakoutPivot,
+                    distanceToPivotPct,
                 };
             }
         })));
@@ -225,6 +247,20 @@ async function main() {
     const outPath = path.join(RESULTS_DIR, `lean-reconstructed-${today}.json`);
     fs.writeFileSync(outPath, JSON.stringify(out, null, 2));
     console.log(`\n📁 Saved: ${outPath}`);
+
+    // Also emit per-day flat dashboard rows for the D1 seed.
+    const { rowsFromReconstructed } = await import('../src/lean/dashboardRows.js');
+    const allRows = rowsFromReconstructed(out as never);
+    const byDate = new Map<string, unknown[]>();
+    for (const row of allRows) {
+        const arr = byDate.get(row.scanDate) ?? [];
+        arr.push(row);
+        byDate.set(row.scanDate, arr);
+    }
+    for (const [d, rows] of byDate) {
+        fs.writeFileSync(path.join(RESULTS_DIR, `dashboard-${d}.json`), JSON.stringify(rows));
+    }
+    console.log(`📊 Emitted ${byDate.size} dashboard-{date}.json files for seed`);
     console.log(`\n📊 Signal totals across ${asOfDates.length} days × ${cache.size - 1} stocks:`);
     for (const [k, v] of Object.entries(summary).sort((a, b) => b[1] - a[1])) {
         console.log(`   ${k.padEnd(18)} ${v}`);
