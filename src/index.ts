@@ -3,7 +3,7 @@
  * Orchestrates the daily stock volume scan and reporting
  */
 
-import { loadWatchlist, validateConfig, config, getSectorForTicker, fetchAndCacheWatchlist, getInvalidTickersFromWatchlist, getIndexSkippedFromWatchlist } from './config/index.js';
+import { loadWatchlist, validateConfig, config, getSectorForTicker, fetchAndCacheWatchlist, getInvalidTickersFromWatchlist, getIndexSkippedFromWatchlist, getDisabledTickersFromWatchlist } from './config/index.js';
 import { classifyTickersWithGroq } from './services/llmSummary.js';
 import { fetchAllStocksAsOfDate, fetchMarketRegime, fetchSpy63dReturn, fetchMarketHealth } from './services/marketData.js';
 import { evaluateMomentumSetup } from './utils/setup.js';
@@ -281,7 +281,11 @@ async function main(): Promise<void> {
         const fixableInvalid = invalidTickers.filter((t) => !llmIndicesSet.has(t));
         const fixableFailed = failedTickers.filter((t) => !llmIndicesSet.has(t));
 
-        const totalInSheet = tickers.length + invalidTickers.length + getIndexSkippedFromWatchlist().length;
+        const disabledTickers = getDisabledTickersFromWatchlist();
+        if (disabledTickers.length > 0) {
+            logger.info(`⛔ ${disabledTickers.length} ticker(s) disabled in watchlist (Status = "disabled"): ${disabledTickers.join(', ')}`);
+        }
+        const totalInSheet = tickers.length + invalidTickers.length + getIndexSkippedFromWatchlist().length + disabledTickers.length;
         const notAnalyzed = fixableInvalid.length + indexTickers.length + fixableFailed.length;
         // SMA21 skip check covers everything we evaluated (so the diagnostic catches issues even
         // for stocks that never made the momentum cut).
