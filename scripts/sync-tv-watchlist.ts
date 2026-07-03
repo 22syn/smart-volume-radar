@@ -140,7 +140,7 @@ function recordFirstSeen(watchlistName: string, symbols: string[]): Record<strin
 }
 
 // Accumulated snapshot of what is actually in each TV list after the sync run.
-// Written to ~/telegram-mcp/data/tv-state.json for the health-check.
+// Written to results/tv-state.json (symlinked into tools/tg-radar/data/ for the health-check).
 const STATE_SNAPSHOT: Record<string, Array<{ ticker: string; signalDate: string; exchange?: string }>> = {};
 
 function exchangeOf(rawTarget: string): string | undefined {
@@ -167,7 +167,7 @@ function saveExchangeRegistry(reg: Record<string, string>): void {
     fs.writeFileSync(EXCHANGE_REGISTRY_PATH, JSON.stringify(reg, null, 2));
 }
 
-// Prune queue — written by the watchlist health-check (telegram-mcp/
+// Prune queue — written by the watchlist health-check (tools/tg-radar/
 // watchlist-health.js) with tickers that broke down (≥8% below signal entry).
 // We consume it here: any queued ticker that is currently in TV and is NOT in
 // today's fresh target (i.e. the radar did not re-flag it) gets removed.
@@ -1143,9 +1143,12 @@ async function main() {
         // Persist TV-state snapshot for the watchlist health-check.
         // Only write in full 4-list mode (single-list runs would clobber siblings).
         if (!SINGLE_LIST_MODE && Object.keys(STATE_SNAPSHOT).length > 0) {
+            // Always write into this repo's own results/ — tg-radar's watchlist-health.js
+            // reads it via a symlink at tools/tg-radar/data/tv-state.json. Local runs used
+            // to write into ~/telegram-mcp/data/, an unrelated public repo — fixed.
             const tvStatePath = IS_CI
                 ? path.join(process.env.GITHUB_WORKSPACE ?? process.cwd(), 'results', 'tv-state.json')
-                : path.join(os.homedir(), 'telegram-mcp', 'data', 'tv-state.json');
+                : path.join(PROJECT_ROOT, 'results', 'tv-state.json');
             try {
                 fs.mkdirSync(path.dirname(tvStatePath), { recursive: true });
                 fs.writeFileSync(
