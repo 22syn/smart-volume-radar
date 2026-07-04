@@ -7,14 +7,14 @@ Stock volume monitoring bot. Identifies unusual trading (RVOL), enriches with ne
 **Stack:** Node.js ≥20, TypeScript 5.9, ESM, tsx
 **APIs:** Yahoo Finance (primary), Twelve Data (fallback), Finnhub (news), Telegram Bot
 **CI/CD:** GitHub Actions — daily scan + weekly performance evaluation
-**Project path:** `~/.gemini/antigravity/projects/smart-volume-radar`
+**Project path:** `~/Documents/Claude/Projects/smart-volume-radar-engine`
 
 ---
 
 ## How to Run
 
 ```sh
-cd ~/.gemini/antigravity/projects/smart-volume-radar
+cd ~/Documents/Claude/Projects/smart-volume-radar-engine
 npm install
 npm run start           # daily scan
 npm run evaluate-setups # weekly performance report
