@@ -79,6 +79,20 @@ const IN_TREND_THRESHOLD = 2;
 // volume don't deserve a Telegram line.
 const MIN_RVOL_FOR_NO_VOL_WARNING = 1.0;
 
+// ─── TD-27 (2026-07-02) — BUY requires momentum tier "full" or "recovery" ─
+// Backtest (4,556 flags, Dec 2025–Jun 2026): tier "close" BUY = 43.1% win,
+// tier "full" BUY = 56.9%. 75/229 BUY flags were tier "close" and dragged the
+// label average down to 51.5%. Demoting tier "close" BUY → WATCH preserves the
+// signal without silencing it — WATCH still surfaces in the daily report.
+const BUY_REQUIRES_FULL_TIER = true;
+
+// ─── TD-28 (2026-07-02) — CAUTION_NO_VOL + score ≥ 85 → WATCH ──────────
+// Backtest: 438 CAUTION_NO_VOL flags with score ≥ 85 achieved 59.6% win rate —
+// higher than BUY average (51.5%). These are high-quality setups where RVOL
+// confirmation is the only missing criterion. TD-22 already does this for top-3
+// sectors; TD-28 extends it unconditionally to any sector when score ≥ 85.
+const CAUTION_NO_VOL_PROMOTE_SCORE = 85;
+
 // ─── TD-25 (2026-06-02) — Entry-Quality Grade (flag-only) ───────────────
 // From the entry-precision study (scripts/entry-precision-study.ts over 2,762
 // historical flags), four dials independently isolate the highest-precision
@@ -364,6 +378,17 @@ export function determineAction(
         action = 'WATCH';
     }
 
+    // ─── TD-27: BUY requires momentum tier "full" or "recovery" ───────
+    // Tier "close" on BUY = 43.1% win (backtest 4,556 flags). Demote to WATCH
+    // so the setup remains visible but is not declared actionable.
+    if (
+        BUY_REQUIRES_FULL_TIER &&
+        action === 'BUY' &&
+        stock.momentum?.level === 'close'
+    ) {
+        action = 'WATCH';
+    }
+
     // ─── TD-22: Sector-override promotion ─────────────────────────────
     // In a top-3 sector, when a ticker is in an established uptrend (≥2
     // BUY/WATCH flags in last 10 td), promote its CAUTION_NO_VOL to WATCH.
@@ -378,6 +403,14 @@ export function determineAction(
     ) {
         action = 'WATCH';
         stock.sectorOverrideApplied = true;
+    }
+
+    // ─── TD-28: CAUTION_NO_VOL + score ≥ 85 → WATCH ──────────────────
+    // High-quality setup (score ≥ 85) where only RVOL confirmation is missing.
+    // Backtest: 438 flags, 59.6% win rate — above BUY average. Extends TD-22
+    // unconditionally beyond top-3 sectors.
+    if (action === 'CAUTION_NO_VOL' && score >= CAUTION_NO_VOL_PROMOTE_SCORE) {
+        action = 'WATCH';
     }
 
     // ─── TD-13: Distribution-pressure demotion (only on actionable) ───

@@ -37,6 +37,7 @@ interface FlagWithOutcome {
     date: string;
     ticker: string;
     sector: string;
+    action: string;
     isWin: boolean;
     outcome: string;
     peak21d: number | null;
@@ -142,6 +143,11 @@ console.log('\n📊 Computing per-sector outcomes...');
 const bySector = new Map<string, FlagWithOutcome[]>();
 for (const f of data.flags) {
     if (f.outcome === 'no_data' || !f.sector) continue;
+    // Sector blacklist (TD-15) is calibrated on actionable signals only.
+    // CAUTION_NO_VOL dominates flag volume and has structurally lower win rates
+    // even in strong sectors (OIL, Semis) — including it skews sectors into the
+    // blacklist incorrectly. We ask: "when the radar said BUY or WATCH, was it right?"
+    if (f.action !== 'BUY' && f.action !== 'WATCH') continue;
     const arr = bySector.get(f.sector) ?? [];
     arr.push(f);
     bySector.set(f.sector, arr);
