@@ -13,7 +13,7 @@ const SYMBOLS = {
 
 const TOOL_DEFINITIONS = [
   {
-    name: 'tv_sync',
+    name: 'svr_sync',
     description:
       'Sync Smart Volume Radar watchlists to TradingView via the repo\'s `npm run tv-sync`. ' +
       'Identical to a manual run. Use dryRun to preview the add/remove diff without writing.',
@@ -31,7 +31,7 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: 'tv_read_watchlist',
+    name: 'svr_read_watchlist',
     description: 'Read the current symbols in one TradingView watchlist (read-only, no writes).',
     inputSchema: {
       type: 'object',
@@ -41,7 +41,7 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: 'tv_add_symbols',
+    name: 'svr_add_symbols',
     description: 'Add specific symbols to one TradingView watchlist (creates the list if missing).',
     inputSchema: {
       type: 'object',
@@ -51,7 +51,7 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: 'tv_remove_symbols',
+    name: 'svr_remove_symbols',
     description: 'Remove specific symbols from one TradingView watchlist.',
     inputSchema: {
       type: 'object',
@@ -61,7 +61,7 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: 'tv_screenshot',
+    name: 'svr_screenshot',
     description:
       'Open a symbol on TradingView (your saved chart layout) and return a screenshot of the chart as an image. ' +
       'Use to visually inspect a stock\'s chart.',
@@ -77,7 +77,7 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: 'tv_deep_dive',
+    name: 'svr_deep_dive',
     description:
       'Deep dive on a ticker: returns its TradingView chart image(s) PLUS a text block of its ' +
       'current Smart/Lean Radar state (price, RVOL, action, momentum criteria, champion score, ' +
@@ -93,7 +93,7 @@ const TOOL_DEFINITIONS = [
     },
   },
   {
-    name: 'tv_session_status',
+    name: 'svr_session_status',
     description:
       'Check whether the local TradingView session (saved Chromium profile) is still logged in. ' +
       'Returns { loggedIn, profileDir }. If loggedIn is false, run `npm run tv-sync -- --login` once to re-authenticate.',
@@ -103,13 +103,13 @@ const TOOL_DEFINITIONS = [
 
 // name -> how to build its flags and what kind of result it returns.
 const TOOL_SPECS = {
-  tv_sync: { build: buildArgs, kind: 'sync' },
-  tv_read_watchlist: { build: buildReadArgs, kind: 'granular' },
-  tv_add_symbols: { build: buildAddArgs, kind: 'granular' },
-  tv_remove_symbols: { build: buildRemoveArgs, kind: 'granular' },
-  tv_screenshot: { build: buildScreenshotArgs, kind: 'image' },
-  tv_deep_dive: { build: buildScreenshotArgs, kind: 'deepdive' },
-  tv_session_status: { build: buildSessionStatusArgs, kind: 'granular' },
+  svr_sync: { build: buildArgs, kind: 'sync' },
+  svr_read_watchlist: { build: buildReadArgs, kind: 'granular' },
+  svr_add_symbols: { build: buildAddArgs, kind: 'granular' },
+  svr_remove_symbols: { build: buildRemoveArgs, kind: 'granular' },
+  svr_screenshot: { build: buildScreenshotArgs, kind: 'image' },
+  svr_deep_dive: { build: buildScreenshotArgs, kind: 'deepdive' },
+  svr_session_status: { build: buildSessionStatusArgs, kind: 'granular' },
 };
 
 module.exports = { TOOL_DEFINITIONS, TOOL_SPECS };

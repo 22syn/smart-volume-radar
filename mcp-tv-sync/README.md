@@ -1,7 +1,7 @@
 # svr-tv-sync MCP
 
 Local stdio MCP server wrapping the repo's TradingView sync. Exposes one tool,
-`tv_sync`, which runs `npm run tv-sync -- <flags>` in the repo root — identical
+`svr_sync`, which runs `npm run tv-sync -- <flags>` in the repo root — identical
 behavior to a manual run, using the persistent Chromium profile at
 `~/.cache/svr-tv-sync/chromium-profile`. It re-implements no sync logic.
 
@@ -11,10 +11,10 @@ behavior to a manual run, using the persistent Chromium profile at
   `npm run tv-sync -- --login`).
 - `npm` and `node` must be on the `PATH` of the process that launches this MCP
   server. Note: GUI-launched Claude clients (e.g. Claude Desktop) may not inherit
-  your shell `PATH` under nvm/fnm — if `tv_sync` returns a spawn/ENOENT error,
+  your shell `PATH` under nvm/fnm — if `svr_sync` returns a spawn/ENOENT error,
   that's the cause. The Claude Code CLI launched from a normal shell is fine.
 
-## tv_sync parameters
+## svr_sync parameters
 | Param | Maps to | Default |
 |-------|---------|---------|
 | `dryRun` | `--dry-run` (preview diff, no writes) | false |
@@ -39,9 +39,9 @@ claude mcp add svr-tv-sync --scope project -- \
 
 `--scope project` writes a `.mcp.json` entry scoped to the current project.
 Use `--scope user` instead to make it available in every project. Reload Claude
-Code after registering so it picks up the new server, then call `tv_sync`.
+Code after registering so it picks up the new server, then call `svr_sync`.
 
 ## Verify (no writes)
-Call `tv_sync({ "dryRun": true })` — it reads TradingView and prints the
+Call `svr_sync({ "dryRun": true })` — it reads TradingView and prints the
 add/remove diff without changing anything. This should match running
 `npm run tv-sync -- --dry-run` by hand.

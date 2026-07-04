@@ -3,8 +3,8 @@
 /**
  * svr-tv-sync MCP server
  * Shells out to the repo's `npm run tv-sync` so behavior matches a manual run.
- * No sync logic here. tv_sync runs the full/single sync; tv_read_watchlist /
- * tv_add_symbols / tv_remove_symbols use the script's granular modes (JSON on stdout).
+ * No sync logic here. svr_sync runs the full/single sync; svr_read_watchlist /
+ * svr_add_symbols / svr_remove_symbols use the script's granular modes (JSON on stdout).
  */
 const path = require('path');
 const fs = require('fs');
@@ -194,7 +194,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     throw new Error(`Unhandled kind '${spec.kind}' for tool ${request.params.name}`);
   }
 
-  // tv_sync — full/single sync summary.
+  // svr_sync — full/single sync summary.
   let statePath = null;
   try {
     const st = fs.statSync(STATE_PATH);
@@ -202,8 +202,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   } catch (_) { /* not written */ }
   const ok = result.exitCode === 0 && !result.timedOut;
   const header = result.timedOut
-    ? `tv_sync TIMED OUT after ${minutes} min (TV_SYNC_TIMEOUT_MS=${TIMEOUT_MS}); child killed.`
-    : `tv_sync exited ${result.exitCode} in ${minutes} min. flags: [${flags.join(' ')}]`;
+    ? `svr_sync TIMED OUT after ${minutes} min (TV_SYNC_TIMEOUT_MS=${TIMEOUT_MS}); child killed.`
+    : `svr_sync exited ${result.exitCode} in ${minutes} min. flags: [${flags.join(' ')}]`;
   const body =
     `${header}\nstatePath: ${statePath || '(not updated)'}\n` +
     `--- stdout (tail) ---\n${tail(result.stdout)}\n--- stderr (tail) ---\n${tail(result.stderr)}`;
