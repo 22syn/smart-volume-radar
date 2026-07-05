@@ -55,8 +55,13 @@ jobs:
         id: scan
         env:
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          # Smart's daily report goes to the "Alpha Engine" Telegram group
+          # (NOT the Lean-only daily channel). Same bot (@RonMarketBot) — it's a
+          # member of that group. The Engine's own curated report still posts
+          # there separately via local launchd; this is an additional message.
+          # Lean continues to own secrets.TELEGRAM_CHAT_ID untouched.
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_ENGINE_CHAT_ID }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           # Groq is used only for ticker classification (STOCK/INDEX/ETF/BOND/OTHER)
@@ -120,7 +125,9 @@ jobs:
         continue-on-error: true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Smart's ops notices go to the Alpha Engine group (same target as its
+          # daily report). Lean's channel (secrets.TELEGRAM_CHAT_ID) is untouched.
+          TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_ENGINE_CHAT_ID }}
         run: |
           if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
             MSG="🔧 Run issues detected (invalid tickers / fetch failures). Jules invoked to fix. Check GitHub Actions."
@@ -174,7 +181,9 @@ jobs:
         if: failure()
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Failure notice goes to the Alpha Engine group (same target as Smart's
+          # daily report). Lean's channel (secrets.TELEGRAM_CHAT_ID) is untouched.
+          TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_ENGINE_CHAT_ID }}
         run: |
           if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
             curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \

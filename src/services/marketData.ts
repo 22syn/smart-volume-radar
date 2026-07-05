@@ -26,8 +26,12 @@ import {
 import { marketSessionMinutesElapsed, projectedRvol as computeProjectedRvol } from './rvolCalculator.js';
 
 /** Common ticker typos and their correct symbols */
-const COMMON_TYPO_FALLBACKS: Record<string, string> = {
-    'COBE': 'CBOE',
+const COMMON_TYPO_FALLBACKS: Record<string, string[]> = {
+    'COBE': ['CBOE'],
+    'BA..L': ['BA.L'],
+    'RR..L': ['RR.L'],
+    'BASF.MI': ['BAS.MI', 'BAS.DE'],
+    'EMBR3.SA': ['ERJ', 'EMBR3', 'EMBR3.SAO', 'EMBJ3', 'EMBR3:BVMF'],
 };
 
 /** Options for parseYahooChartResult (e.g. replay mode skips Twelve Data) */
@@ -237,54 +241,122 @@ export async function parseYahooChartResult(
  * Fetch Yahoo chart data as of a specific date. Fetches full history, slices to asOfDate,
  * then runs production parseYahooChartResult (same buggy volume logic). For replay/investigation.
  */
-export async function fetchYahooChartAsOfDate(ticker: string, asOfDate: string): Promise<StockData | null> {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5y`;
-    const response = await fetch(url, {
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json',
-        },
-    });
-    if (!response.ok) return null;
+export async function fetchYahooChartAsOfDate(
+    ticker: string,
+    asOfDate: string,
+    isFallback = false,
+    attempt = 1
+): Promise<StockData | null> {
+    const MAX_ATTEMPTS = 5;
+    try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5y`;
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                'Accept': 'application/json',
+            },
+        });
 
-    const data = (await response.json()) as { chart?: { result?: unknown[] } };
-    const result = data?.chart?.result?.[0] as { meta?: unknown; timestamp?: number[]; indicators?: { quote?: Array<{ open?: (number | null)[]; close?: (number | null)[]; high?: (number | null)[]; low?: (number | null)[]; volume?: (number | null)[] }> } } | undefined;
-    if (!result?.timestamp?.length) return null;
+        if (!response.ok) {
+            if (response.status === 429 || response.status >= 500) {
+                if (attempt < MAX_ATTEMPTS) {
+                    const delay = attempt * 500;
+                    logger.warn(`⚠️ Yahoo Chart (asOfDate) API ${response.status} for ${ticker}, retrying in ${delay}ms... (attempt ${attempt}/${MAX_ATTEMPTS})`);
+                    await new Promise((resolve) => setTimeout(resolve, delay));
+                    return fetchYahooChartAsOfDate(ticker, asOfDate, isFallback, attempt + 1);
+                }
+                logger.warn(`❌ Yahoo Chart (asOfDate) API ${response.status} for ${ticker} after ${MAX_ATTEMPTS} attempts`);
+            } else if (response.status === 404) {
+                if (attempt < MAX_ATTEMPTS) {
+                    const delay = 500;
+                    logger.warn(`⚠️ Ticker ${ticker} returned 404 on Yahoo Chart (asOfDate), retrying... (attempt ${attempt}/${MAX_ATTEMPTS})`);
+                    await new Promise((resolve) => setTimeout(resolve, delay));
+                    return fetchYahooChartAsOfDate(ticker, asOfDate, isFallback, attempt + 1);
+                }
+                if (!isFallback) {
+                    let fallbackTicker: string | null = null;
+                    if (ticker.includes('.')) {
+                        fallbackTicker = ticker.replace(/\./g, '-');
+                    } else if (ticker.includes('-')) {
+                        fallbackTicker = ticker.replace(/-/g, '.');
+                    }
 
-    const ts = result.timestamp;
-    const quote = result.indicators?.quote?.[0];
-    if (!quote) return null;
+                    if (fallbackTicker) {
+                        logger.info(`🔍 Ticker ${ticker} not found on Yahoo Chart (asOfDate) after retry, trying fallback: ${fallbackTicker}`);
+                        const result = await fetchYahooChartAsOfDate(fallbackTicker, asOfDate, true);
+                        if (result) result.ticker = ticker;
+                        return result;
+                    }
+                }
+                logger.warn(`❌ Ticker not found on Yahoo Chart (asOfDate): ${ticker}`);
+            } else {
+                logger.warn(`❌ Yahoo Chart (asOfDate) API error ${response.status} for ${ticker}`);
+            }
+            return null;
+        }
 
-    const asOfEnd = new Date(asOfDate + 'T23:59:59Z').getTime() / 1000;
-    let lastIdx = -1;
-    for (let i = 0; i < ts.length; i++) {
-        if (ts[i]! <= asOfEnd) lastIdx = i;
+        const data = (await response.json()) as { chart?: { result?: unknown[] } };
+        const result = data?.chart?.result?.[0] as {
+            meta?: unknown;
+            timestamp?: number[];
+            indicators?: {
+                quote?: Array<{
+                    open?: (number | null)[];
+                    close?: (number | null)[];
+                    high?: (number | null)[];
+                    low?: (number | null)[];
+                    volume?: (number | null)[];
+                }>;
+            };
+        } | undefined;
+        if (!result?.timestamp?.length) return null;
+
+        const ts = result.timestamp;
+        const quote = result.indicators?.quote?.[0];
+        if (!quote) return null;
+
+        const asOfEnd = new Date(asOfDate + 'T23:59:59Z').getTime() / 1000;
+        let lastIdx = -1;
+        for (let i = 0; i < ts.length; i++) {
+            if (ts[i]! <= asOfEnd) lastIdx = i;
+        }
+        if (lastIdx < 0) return null;
+
+        const slice = <T>(arr: T[] | undefined): T[] => (arr ? arr.slice(0, lastIdx + 1) : []);
+
+        // Strip regularMarketPrice so parseYahooChartResult uses the historical close (currentClose),
+        // not today's live price which Yahoo always returns in meta regardless of slice date.
+        const metaWithoutLive = result.meta
+            ? { ...(result.meta as Record<string, unknown>), regularMarketPrice: undefined }
+            : undefined;
+
+        const sliced: typeof result = {
+            meta: metaWithoutLive as typeof result.meta,
+            timestamp: slice(ts),
+            indicators: {
+                quote: [
+                    {
+                        open: slice(quote.open),
+                        close: slice(quote.close),
+                        high: slice(quote.high),
+                        low: slice(quote.low),
+                        volume: slice(quote.volume),
+                    },
+                ],
+            },
+        };
+
+        return parseYahooChartResult(sliced as YahooChartResult, ticker, { skipTwelveData: true });
+    } catch (error) {
+        if (attempt < MAX_ATTEMPTS) {
+            const delay = attempt * 500;
+            logger.warn(`⚠️ Chart (asOfDate) fetch failed for ${ticker} (${(error as Error).message}), retrying in ${delay}ms... (attempt ${attempt}/${MAX_ATTEMPTS})`);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            return fetchYahooChartAsOfDate(ticker, asOfDate, isFallback, attempt + 1);
+        }
+        logger.error(`❌ Chart (asOfDate) fetch failed for ${ticker} after ${MAX_ATTEMPTS} attempts:`, (error as Error).message);
+        return null;
     }
-    if (lastIdx < 0) return null;
-
-    const slice = <T>(arr: T[] | undefined): T[] => (arr ? arr.slice(0, lastIdx + 1) : []);
-
-    // Strip regularMarketPrice so parseYahooChartResult uses the historical close (currentClose),
-    // not today's live price which Yahoo always returns in meta regardless of slice date.
-    const metaWithoutLive = result.meta
-        ? { ...(result.meta as Record<string, unknown>), regularMarketPrice: undefined }
-        : undefined;
-
-    const sliced: typeof result = {
-        meta: metaWithoutLive as typeof result.meta,
-        timestamp: slice(ts),
-        indicators: {
-            quote: [{
-                open: slice(quote.open),
-                close: slice(quote.close),
-                high: slice(quote.high),
-                low: slice(quote.low),
-                volume: slice(quote.volume),
-            }],
-        },
-    };
-
-    return parseYahooChartResult(sliced as YahooChartResult, ticker, { skipTwelveData: true });
 }
 
 /**
@@ -393,6 +465,7 @@ export async function fetchMarketHealth(asOfDate?: string): Promise<MarketHealth
  * Uses 5y range for price history; 52w high and consolidation use last 252 days
  */
 async function fetchFromYahooChart(ticker: string, isFallback = false, attempt = 1): Promise<StockData | null> {
+    const MAX_ATTEMPTS = 5;
     try {
         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5y`;
 
@@ -404,21 +477,38 @@ async function fetchFromYahooChart(ticker: string, isFallback = false, attempt =
         });
 
         if (!response.ok) {
-            if (response.status === 429) {
-                logger.warn(`⚠️ Yahoo Chart API rate limited for ${ticker}`);
+            if (response.status === 429 || response.status >= 500) {
+                if (attempt < MAX_ATTEMPTS) {
+                    const delay = attempt * 500;
+                    logger.warn(`⚠️ Yahoo Chart API ${response.status} for ${ticker}, retrying in ${delay}ms... (attempt ${attempt}/${MAX_ATTEMPTS})`);
+                    await new Promise((resolve) => setTimeout(resolve, delay));
+                    return fetchFromYahooChart(ticker, isFallback, attempt + 1);
+                }
+                logger.warn(`❌ Yahoo Chart API ${response.status} for ${ticker} after ${MAX_ATTEMPTS} attempts`);
             } else if (response.status === 404) {
-                if (!isFallback && ticker.includes('.')) {
-                    const fallbackTicker = ticker.replace(/\./g, '-');
-                    logger.info(`🔍 Ticker ${ticker} not found on Yahoo Chart, trying fallback: ${fallbackTicker}`);
-                    return fetchFromYahooChart(fallbackTicker, true);
+                if (attempt < MAX_ATTEMPTS) {
+                    const delay = 500;
+                    logger.warn(`⚠️ Ticker ${ticker} returned 404 on Yahoo Chart, retrying... (attempt ${attempt}/${MAX_ATTEMPTS})`);
+                    await new Promise((resolve) => setTimeout(resolve, delay));
+                    return fetchFromYahooChart(ticker, isFallback, attempt + 1);
+                }
+                if (!isFallback) {
+                    let fallbackTicker: string | null = null;
+                    if (ticker.includes('.')) {
+                        fallbackTicker = ticker.replace(/\./g, '-');
+                    } else if (ticker.includes('-')) {
+                        fallbackTicker = ticker.replace(/-/g, '.');
+                    }
+
+                    if (fallbackTicker) {
+                        logger.info(`🔍 Ticker ${ticker} not found on Yahoo Chart after retry, trying fallback: ${fallbackTicker}`);
+                        const result = await fetchFromYahooChart(fallbackTicker, true);
+                        if (result) result.ticker = ticker;
+                        return result;
+                    }
                 }
                 logger.warn(`❌ Ticker not found on Yahoo Chart: ${ticker}`);
             } else {
-                if (attempt === 1) {
-                    logger.warn(`⚠️ Yahoo Chart API error ${response.status} for ${ticker}, retrying...`);
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    return fetchFromYahooChart(ticker, isFallback, attempt + 1);
-                }
                 logger.warn(`❌ Yahoo Chart API error ${response.status} for ${ticker}`);
             }
             return null;
@@ -439,12 +529,13 @@ async function fetchFromYahooChart(ticker: string, isFallback = false, attempt =
 
         return parseYahooChartResult(result, ticker, { skipTwelveData: false });
     } catch (error) {
-        if (attempt === 1) {
-            logger.warn(`⚠️ Chart fetch failed for ${ticker} (${(error as Error).message}), retrying...`);
-            await new Promise(resolve => setTimeout(resolve, 500));
+        if (attempt < MAX_ATTEMPTS) {
+            const delay = attempt * 500;
+            logger.warn(`⚠️ Chart fetch failed for ${ticker} (${(error as Error).message}), retrying in ${delay}ms... (attempt ${attempt}/${MAX_ATTEMPTS})`);
+            await new Promise((resolve) => setTimeout(resolve, delay));
             return fetchFromYahooChart(ticker, isFallback, attempt + 1);
         }
-        logger.error(`❌ Chart fetch failed for ${ticker}:`, (error as Error).message);
+        logger.error(`❌ Chart fetch failed for ${ticker} after ${MAX_ATTEMPTS} attempts:`, (error as Error).message);
         return null;
     }
 }
@@ -464,6 +555,12 @@ interface YahooChartApiResponse {
 interface TwelveDataIndicatorResponse {
     status?: string;
     values?: Array<{ rsi?: string; sma?: string; datetime?: string }>;
+}
+
+/** Twelve Data time_series (OHLCV history) response. */
+interface TwelveDataTimeSeriesResponse {
+    status?: string;
+    values?: Array<{ datetime?: string; close?: string }>;
 }
 
 /** Twelve Data quote/price response. Includes both success + error variants. */
@@ -518,32 +615,77 @@ async function fetchIndicatorsFromTwelveData(
 }
 
 /**
+ * Fetch the trailing daily close series from Twelve Data (up to ~1 year).
+ * Returned ascending (oldest → newest) so the last element is the most recent
+ * close, matching the Yahoo `closes` convention. Used to compute a CLOSE-BASED
+ * 52-week high — the same definition as the primary Yahoo path — rather than
+ * relying on the provider's intraday `fifty_two_week.high`. Returns [] on failure.
+ */
+async function fetchClosesFromTwelveData(
+    ticker: string,
+    apiKey: string
+): Promise<number[]> {
+    try {
+        const encodedTicker = encodeURIComponent(ticker);
+        const res = await fetch(
+            `${TWELVE_DATA_BASE}/time_series?symbol=${encodedTicker}&interval=1day&outputsize=252&order=ASC&apikey=${apiKey}`
+        );
+        const data = (await res.json()) as TwelveDataTimeSeriesResponse;
+        if (data?.status !== 'ok' || !Array.isArray(data.values)) return [];
+        return data.values
+            .map((v) => parseFloat(v.close ?? ''))
+            .filter((c) => Number.isFinite(c) && c > 0);
+    } catch {
+        // Silently fall back — caller treats [] as "no close-based ATH available".
+        return [];
+    }
+}
+
+/**
  * Fetch from Twelve Data API – fetches RSI, SMA21, 52w high when available
  */
 async function fetchFromTwelveData(ticker: string, isFallback = false, attempt = 1): Promise<StockData | null> {
     const apiKey = process.env.TWELVE_DATA_API_KEY;
     if (!apiKey) return null;
+    const MAX_ATTEMPTS = 5;
 
     try {
         const url = `${TWELVE_DATA_BASE}/quote?symbol=${encodeURIComponent(ticker)}&apikey=${apiKey}`;
         const response = await fetch(url);
 
         if (!response.ok) {
-            if (response.status === 429) {
-                logger.warn(`⚠️ Twelve Data API rate limited for ${ticker}`);
+            if (response.status === 429 || response.status >= 500) {
+                if (attempt < MAX_ATTEMPTS) {
+                    const delay = attempt * 500;
+                    logger.warn(`⚠️ Twelve Data API ${response.status} for ${ticker}, retrying in ${delay}ms... (attempt ${attempt}/${MAX_ATTEMPTS})`);
+                    await new Promise((resolve) => setTimeout(resolve, delay));
+                    return fetchFromTwelveData(ticker, isFallback, attempt + 1);
+                }
+                logger.warn(`❌ Twelve Data API ${response.status} for ${ticker} after ${MAX_ATTEMPTS} attempts`);
             } else if (response.status === 404) {
-                if (!isFallback && ticker.includes('.')) {
-                    const fallbackTicker = ticker.replace(/\./g, '-');
-                    logger.info(`🔍 Ticker ${ticker} not found on Twelve Data, trying fallback: ${fallbackTicker}`);
-                    return fetchFromTwelveData(fallbackTicker, true);
+                if (attempt < MAX_ATTEMPTS) {
+                    const delay = 500;
+                    logger.warn(`⚠️ Ticker ${ticker} returned 404 on Twelve Data, retrying... (attempt ${attempt}/${MAX_ATTEMPTS})`);
+                    await new Promise((resolve) => setTimeout(resolve, delay));
+                    return fetchFromTwelveData(ticker, isFallback, attempt + 1);
+                }
+                if (!isFallback) {
+                    let fallbackTicker: string | null = null;
+                    if (ticker.includes('.')) {
+                        fallbackTicker = ticker.replace(/\./g, '-');
+                    } else if (ticker.includes('-')) {
+                        fallbackTicker = ticker.replace(/-/g, '.');
+                    }
+
+                    if (fallbackTicker) {
+                        logger.info(`🔍 Ticker ${ticker} not found on Twelve Data after retry, trying fallback: ${fallbackTicker}`);
+                        const result = await fetchFromTwelveData(fallbackTicker, true);
+                        if (result) result.ticker = ticker;
+                        return result;
+                    }
                 }
                 logger.warn(`❌ Ticker not found on Twelve Data: ${ticker}`);
             } else {
-                if (attempt === 1) {
-                    logger.warn(`⚠️ Twelve Data API error ${response.status} for ${ticker}, retrying...`);
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    return fetchFromTwelveData(ticker, isFallback, attempt + 1);
-                }
                 logger.warn(`❌ Twelve Data API error ${response.status} for ${ticker}`);
             }
             return null;
@@ -553,10 +695,28 @@ async function fetchFromTwelveData(ticker: string, isFallback = false, attempt =
 
         if (data.status === 'error' || !data.close) {
             if (data.status === 'error') {
-                if (data.code === 404 && !isFallback && ticker.includes('.')) {
-                    const fallbackTicker = ticker.replace(/\./g, '-');
-                    logger.info(`🔍 Twelve Data error 404 for ${ticker}, trying fallback: ${fallbackTicker}`);
-                    return fetchFromTwelveData(fallbackTicker, true);
+                if (data.code === 404) {
+                    if (attempt < MAX_ATTEMPTS) {
+                        const delay = 500;
+                        logger.warn(`⚠️ Twelve Data error 404 for ${ticker}, retrying... (attempt ${attempt}/${MAX_ATTEMPTS})`);
+                        await new Promise((resolve) => setTimeout(resolve, delay));
+                        return fetchFromTwelveData(ticker, isFallback, attempt + 1);
+                    }
+                    if (!isFallback) {
+                        let fallbackTicker: string | null = null;
+                        if (ticker.includes('.')) {
+                            fallbackTicker = ticker.replace(/\./g, '-');
+                        } else if (ticker.includes('-')) {
+                            fallbackTicker = ticker.replace(/-/g, '.');
+                        }
+
+                        if (fallbackTicker) {
+                            logger.info(`🔍 Twelve Data error 404 for ${ticker} after retry, trying fallback: ${fallbackTicker}`);
+                            const result = await fetchFromTwelveData(fallbackTicker, true);
+                            if (result) result.ticker = ticker;
+                            return result;
+                        }
+                    }
                 }
                 logger.warn(`❌ Twelve Data error for ${ticker}: ${data.message || 'Unknown error'}`);
             } else if (!data.close) {
@@ -571,23 +731,29 @@ async function fetchFromTwelveData(ticker: string, isFallback = false, attempt =
         const volume = parseFloat(data.volume ?? '') || 0;
         const avgVolume = parseFloat(data.average_volume ?? '') || parseFloat(data.volume ?? '') || 1;
         const lastPrice = parseFloat(data.close ?? '') || 0;
-        const fiftyTwoWeek = data.fifty_two_week;
-        const high52w = fiftyTwoWeek?.high != null ? parseFloat(fiftyTwoWeek.high) : undefined;
 
-        let rsi: number | undefined;
-        let sma21: number | undefined;
-        const indicators = await fetchIndicatorsFromTwelveData(ticker, apiKey);
-        rsi = indicators.rsi;
-        sma21 = indicators.sma21;
+        const [indicators, closes] = await Promise.all([
+            fetchIndicatorsFromTwelveData(ticker, apiKey),
+            fetchClosesFromTwelveData(ticker, apiKey),
+        ]);
+        const rsi = indicators.rsi;
+        const sma21 = indicators.sma21;
 
-        const ath = high52w;
-        const pctFromAth = ath != null && ath > 0 ? ((lastPrice - ath) / ath) * 100 : undefined;
+        // CLOSE-BASED 52w high — same definition as the Yahoo path. We deliberately
+        // ignore the provider's `fifty_two_week.high` (an intraday extreme), because
+        // a close-based reference filters intraday wick spikes that never held and
+        // matches the O'Neil/Minervini pattern-detection convention used everywhere
+        // else in the engine (SMA, tightness, daysSinceLastHigh). If history is
+        // unavailable we leave ATH undefined rather than emit an inconsistent value.
+        const athData = calculate52wHighAndConsolidation(closes);
+        const ath = athData?.ath;
+        const pctFromAth = athData?.pctFromAth;
         const tags = computeNewlogicTags({
             sma21,
             lastClose: lastPrice,
             sma21TouchThresholdPct: config.sma21TouchThresholdPct,
             pctFromAth,
-            closes: [], // Twelve Data quote has no history; only Pullback 15% can apply
+            closes, // close history (may be []); enables the same close-based tags as the Yahoo path
         });
 
         return {
@@ -605,12 +771,13 @@ async function fetchFromTwelveData(ticker: string, isFallback = false, attempt =
             tags,
         };
     } catch (error) {
-        if (attempt === 1) {
-            logger.warn(`⚠️ Twelve Data fetch failed for ${ticker} (${(error as Error).message}), retrying...`);
-            await new Promise(resolve => setTimeout(resolve, 500));
+        if (attempt < MAX_ATTEMPTS) {
+            const delay = attempt * 500;
+            logger.warn(`⚠️ Twelve Data fetch failed for ${ticker} (${(error as Error).message}), retrying in ${delay}ms... (attempt ${attempt}/${MAX_ATTEMPTS})`);
+            await new Promise((resolve) => setTimeout(resolve, delay));
             return fetchFromTwelveData(ticker, isFallback, attempt + 1);
         }
-        logger.error(`❌ Twelve Data fetch failed for ${ticker}:`, (error as Error).message);
+        logger.error(`❌ Twelve Data fetch failed for ${ticker} after ${MAX_ATTEMPTS} attempts:`, (error as Error).message);
         return null;
     }
 }
@@ -638,17 +805,49 @@ export async function fetchAllStocksAsOfDate(
         limit(async () => {
             logger.info(`[${index + 1}/${tickers.length}] Fetching ${ticker}...`);
 
+            // Try Yahoo Chart API first (supports asOfDate)
             let result = await fetchYahooChartAsOfDate(ticker, asOfDate);
             let successSource = 'Yahoo Chart (asOfDate)';
 
+            // Try Twelve Data as fallback (no asOfDate support; only for recent scans)
+            const asOfTs = new Date(asOfDate).getTime();
+            const nowTs = Date.now();
+            const daysDiff = (nowTs - asOfTs) / (1000 * 60 * 60 * 24);
+            const isRecent = daysDiff <= 3; // within 3 days
+
+            if (!result && isRecent) {
+                result = await fetchFromTwelveData(ticker);
+                if (result) successSource = 'Twelve Data (Fallback)';
+            }
+
+            // Try common typo fallback if still no result
             if (!result && COMMON_TYPO_FALLBACKS[ticker.toUpperCase()]) {
-                const fallbackTicker = COMMON_TYPO_FALLBACKS[ticker.toUpperCase()];
-                logger.info(`🔍 Ticker ${ticker} failed, trying common typo fallback: ${fallbackTicker}`);
-                result = await fetchYahooChartAsOfDate(fallbackTicker, asOfDate);
-                if (result) result.ticker = fallbackTicker;
+                const fallbacks = COMMON_TYPO_FALLBACKS[ticker.toUpperCase()]!;
+                for (const fallbackTicker of fallbacks) {
+                    logger.info(`🔍 Ticker ${ticker} failed, trying common typo fallback: ${fallbackTicker}`);
+
+                    result = await fetchYahooChartAsOfDate(fallbackTicker, asOfDate);
+                    if (result) {
+                        successSource = 'Yahoo Chart (asOfDate Typo Fallback)';
+                        result.ticker = fallbackTicker;
+                        break;
+                    }
+
+                    if (isRecent) {
+                        result = await fetchFromTwelveData(fallbackTicker);
+                        if (result) {
+                            successSource = 'Twelve Data (Typo Fallback)';
+                            result.ticker = fallbackTicker;
+                            break;
+                        }
+                    }
+                }
             }
 
             if (result) {
+                // Ensure the returned ticker matches the original watchlist symbol
+                result.ticker = ticker;
+
                 // Low-liquidity filter (skip pump-and-dump candidates).
                 if (result.avgVolume > 0 && result.avgVolume < MIN_AVG_DAILY_VOLUME) {
                     logger.warn(
@@ -659,7 +858,7 @@ export async function fetchAllStocksAsOfDate(
                 logger.info(`✅ ${ticker}: RVOL=${formatRVOL(result.rvol)} (${successSource})`);
                 return { ticker, data: result };
             }
-            logger.warn(`❌ ${ticker}: No data from Yahoo as of ${asOfDate}`);
+            logger.warn(`❌ ${ticker}: No data from any source (Yahoo or Twelve Data) as of ${asOfDate}. Check for typos, exchange suffixes (e.g. .L, .SA, .TA, .T, .KS, .DE, .MI, .TO, .V, .AX, .HK, .SI, .AS, .F, .PA, .MC, .MX, .ST, .OL, .HE, .CPH, .LS, .AT, .IS, .VI), or format differences (e.g. BRK-B vs BRK.B).`);
             return { ticker, data: null };
         })
     );
@@ -706,29 +905,33 @@ export async function fetchAllStocks(tickers: string[]): Promise<FetchAllStocksR
 
         // Try common typo fallback if still no result
         if (!result && COMMON_TYPO_FALLBACKS[ticker.toUpperCase()]) {
-            const fallbackTicker = COMMON_TYPO_FALLBACKS[ticker.toUpperCase()];
-            logger.info(`🔍 Ticker ${ticker} failed, trying common typo fallback: ${fallbackTicker}`);
+            const fallbacks = COMMON_TYPO_FALLBACKS[ticker.toUpperCase()]!;
+            for (const fallbackTicker of fallbacks) {
+                logger.info(`🔍 Ticker ${ticker} failed, trying common typo fallback: ${fallbackTicker}`);
 
-            result = await fetchFromYahooChart(fallbackTicker);
-            successSource = 'Yahoo Chart (Typo Fallback)';
+                result = await fetchFromYahooChart(fallbackTicker);
+                if (result) {
+                    successSource = 'Yahoo Chart (Typo Fallback)';
+                    result.ticker = fallbackTicker;
+                    break;
+                }
 
-            if (!result) {
                 result = await fetchFromTwelveData(fallbackTicker);
-                successSource = 'Twelve Data (Typo Fallback)';
-            }
-
-            if (result) {
-                // Return result but keep original ticker for tracking if preferred,
-                // but here we update it to the correct one so future logic uses the valid symbol.
-                result.ticker = fallbackTicker;
+                if (result) {
+                    successSource = 'Twelve Data (Typo Fallback)';
+                    result.ticker = fallbackTicker;
+                    break;
+                }
             }
         }
 
         if (result) {
+            // Ensure the returned ticker matches the original watchlist symbol
+            result.ticker = ticker;
             logger.info(`✅ ${ticker}: RVOL=${formatRVOL(result.rvol)} (${successSource})`);
             return { ticker, data: result };
         } else {
-            logger.warn(`❌ ${ticker}: No data from any source (Yahoo or Twelve Data). Check for typos (e.g. COBE vs CBOE), if the symbol is delisted, or if it requires a specific exchange suffix (e.g. .L, .TA) or format (e.g. BRK-B vs BRK.B).`);
+            logger.warn(`❌ ${ticker}: No data from any source (Yahoo or Twelve Data). Check for typos (e.g. COBE vs CBOE), exchange suffixes (e.g. .L, .SA, .TA, .T, .KS, .DE, .MI, .TO, .V, .AX, .HK, .SI, .AS, .F, .PA, .MC, .MX, .ST, .OL, .HE, .CPH, .LS, .AT, .IS, .VI), or format differences (e.g. BRK-B vs BRK.B).`);
             return { ticker, data: null };
         }
     }));

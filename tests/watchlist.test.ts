@@ -22,9 +22,9 @@ describe('parseWatchlistCsv', () => {
         const csv = 'Symbol,Sector\nAAPL,Technology\nMETA,Technology\nXOM,Energy';
         const result = parseWatchlistCsv(csv);
         expect(result.tickers).toHaveLength(3);
-        expect(result.tickers[0]).toEqual({ symbol: 'AAPL', sector: 'Technology' });
-        expect(result.tickers[1]).toEqual({ symbol: 'META', sector: 'Technology' });
-        expect(result.tickers[2]).toEqual({ symbol: 'XOM', sector: 'Energy' });
+        expect(result.tickers[0]).toEqual({ symbol: 'AAPL', sector: 'Technology', status: 'ok' });
+        expect(result.tickers[1]).toEqual({ symbol: 'META', sector: 'Technology', status: 'ok' });
+        expect(result.tickers[2]).toEqual({ symbol: 'XOM', sector: 'Energy', status: 'ok' });
         expect(result.invalidSkipped).toHaveLength(0);
     });
 
@@ -32,14 +32,14 @@ describe('parseWatchlistCsv', () => {
         const csv = 'symbol,sector\nGOOGL,Technology';
         const result = parseWatchlistCsv(csv);
         expect(result.tickers).toHaveLength(1);
-        expect(result.tickers[0]).toEqual({ symbol: 'GOOGL', sector: 'Technology' });
+        expect(result.tickers[0]).toEqual({ symbol: 'GOOGL', sector: 'Technology', status: 'ok' });
     });
 
     it('defaults sector to Other when column B is empty', () => {
         const csv = 'NVDA,\nAMD,Technology';
         const result = parseWatchlistCsv(csv);
-        expect(result.tickers[0]).toEqual({ symbol: 'NVDA', sector: 'Other' });
-        expect(result.tickers[1]).toEqual({ symbol: 'AMD', sector: 'Technology' });
+        expect(result.tickers[0]).toEqual({ symbol: 'NVDA', sector: 'Other', status: 'ok' });
+        expect(result.tickers[1]).toEqual({ symbol: 'AMD', sector: 'Technology', status: 'ok' });
     });
 
     it('skips empty symbol rows', () => {
@@ -54,13 +54,13 @@ describe('parseWatchlistCsv', () => {
         const csv = 'AAPL,Technology\nMETA,Technology';
         const result = parseWatchlistCsv(csv);
         expect(result.tickers).toHaveLength(2);
-        expect(result.tickers[0]).toEqual({ symbol: 'AAPL', sector: 'Technology' });
+        expect(result.tickers[0]).toEqual({ symbol: 'AAPL', sector: 'Technology', status: 'ok' });
     });
 
     it('trims whitespace from cells', () => {
         const csv = '  AAPL  ,  Technology  ';
         const result = parseWatchlistCsv(csv);
-        expect(result.tickers[0]).toEqual({ symbol: 'AAPL', sector: 'Technology' });
+        expect(result.tickers[0]).toEqual({ symbol: 'AAPL', sector: 'Technology', status: 'ok' });
     });
 
     it('throws on empty CSV', () => {
@@ -81,6 +81,15 @@ describe('parseWatchlistCsv', () => {
         expect(result.invalidSkipped).toEqual(['../../etc']);
     });
 
+    it('skips tickers with Status = disabled and returns them in disabledSkipped', () => {
+        const csv = 'Symbol,Sector,Status\nAAPL,Tech,ok\nEMBR3.SA,Industrials,disabled\nMETA,Tech,';
+        const result = parseWatchlistCsv(csv);
+        expect(result.tickers).toHaveLength(2);
+        expect(result.tickers.map((t) => t.symbol)).toEqual(['AAPL', 'META']);
+        expect(result.disabledSkipped).toEqual(['EMBR3.SA']);
+        expect(result.invalidSkipped).not.toContain('EMBR3.SA');
+    });
+
     it('skips indices and returns them in indexSkipped (not invalidSkipped)', () => {
         const csv = 'Symbol,Sector\nAAPL,Tech\n^TNX,Treasury\nTABANKS5.TA,Banks\nMETA,Tech';
         const result = parseWatchlistCsv(csv);
@@ -98,12 +107,13 @@ describe('parseWatchlistCsv', () => {
         const longBase = 'A'.repeat(50);
         const longSuffix = 'B'.repeat(15);
         const longTicker = `${longBase}.${longSuffix}`;
-        const csv = `Symbol,Sector\n000660.KS,Tech\n8035.T,Tech\nBA.L,Ind\nBRK-B,Fin\n^TNX,Yield\nTABANKS5.TA,Fin\nVERY-LONG-TICKER-NAME.SUFFIX,Other\nCOBE,Other\nBT.A.L,Ind\nLONGER-TICKER-NAME-UP-TO-30-CHARS.US,Tech\nAAPL.O-Q,Tech\n${longTicker},Long`;
+        const csv = `Symbol,Sector\n 000660.KS ,Tech\n8035.T,Tech\nBA.L,Ind\nBRK-B,Fin\n^TNX,Yield\nTABANKS5.TA,Fin\nVERY-LONG-TICKER-NAME.SUFFIX,Other\nCOBE,Other\nBT.A.L,Ind\nLONGER-TICKER-NAME-UP-TO-30-CHARS.US,Tech\nAAPL.O-Q,Tech\nSOXX/AMEX:IGV,Ind\nBA..L,Ind\n${longTicker},Long\nBA.....L,Other\nBAS.DE,Other\nBASF.MI,Other\nSHOP.TO,Other\nLGO.V,Other`;
         const result = parseWatchlistCsv(csv);
         expect(result.indexSkipped).toContain('^TNX');
         expect(result.indexSkipped).toContain('TABANKS5.TA');
-        expect(result.tickers).toHaveLength(10);
-        expect(result.tickers[0].symbol).toBe('000660.KS');
+        expect(result.indexSkipped).toContain('SOXX/AMEX:IGV');
+        expect(result.tickers).toHaveLength(16); // 19 total lines - 3 indices = 16
+        expect(result.tickers[0].symbol).toBe('000660.KS'); // trim check
         expect(result.tickers[1].symbol).toBe('8035.T');
         expect(result.tickers[2].symbol).toBe('BA.L');
         expect(result.tickers[3].symbol).toBe('BRK-B');
@@ -112,7 +122,24 @@ describe('parseWatchlistCsv', () => {
         expect(result.tickers[6].symbol).toBe('BT.A.L');
         expect(result.tickers[7].symbol).toBe('LONGER-TICKER-NAME-UP-TO-30-CHARS.US');
         expect(result.tickers[8].symbol).toBe('AAPL.O-Q');
-        expect(result.tickers[9].symbol).toBe(longTicker);
+        expect(result.tickers[9].symbol).toBe('BA..L');
+        expect(result.tickers[10].symbol).toBe(longTicker);
+        expect(result.tickers[11].symbol).toBe('BA.....L');
+        expect(result.tickers[12].symbol).toBe('BAS.DE');
+        expect(result.tickers[13].symbol).toBe('BASF.MI');
+        expect(result.tickers[14].symbol).toBe('SHOP.TO');
+        expect(result.tickers[15].symbol).toBe('LGO.V');
+        expect(result.invalidSkipped).toHaveLength(0);
+    });
+
+    it('accepts specific reported tickers like 000660.KS, 8035.T, and BA.L', () => {
+        const csv = 'Symbol\n000660.KS\n8035.T\nBA.L\nEMBR3';
+        const result = parseWatchlistCsv(csv);
+        expect(result.tickers).toHaveLength(4);
+        expect(result.tickers[0].symbol).toBe('000660.KS');
+        expect(result.tickers[1].symbol).toBe('8035.T');
+        expect(result.tickers[2].symbol).toBe('BA.L');
+        expect(result.tickers[3].symbol).toBe('EMBR3');
         expect(result.invalidSkipped).toHaveLength(0);
     });
 });
@@ -125,6 +152,9 @@ describe('isIndex', () => {
     it('returns true for known TASE indices', () => {
         expect(isIndex('TABANKS5.TA')).toBe(true);
         expect(isIndex('TA25.TA')).toBe(true);
+        expect(isIndex('TACONSTRUCTION.TA')).toBe(true);
+        expect(isIndex('TASME60.TA')).toBe(true);
+        expect(isIndex('TAINSURANCEPLUS.TA')).toBe(true);
     });
     it('returns false for stocks', () => {
         expect(isIndex('AAPL')).toBe(false);
