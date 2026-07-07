@@ -9,5 +9,5 @@ Cloudflare Pages app over D1 (`lean-radar`). Data from the Lean Radar daily scan
 
 ## Schema:  `wrangler d1 execute lean-radar --remote --file schema.sql`
 ## Seed:    `npx tsx scripts/seed.ts ../results`
-## Deploy:  `wrangler pages deploy public --project-name lean-dashboard`
+## Deploy:  `wrangler pages deploy public --project-name radar-dashboard`  (live: https://radar-dashboard-c9o.pages.dev)
 ## Access:  Cloudflare Zero Trust → Access → email allowlist (Kobi + friend).
