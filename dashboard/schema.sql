@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS lean_signals (
   dist_pivot  REAL,
   score       INTEGER,
   price       REAL,
+  ingested_at TEXT,
   PRIMARY KEY (scan_date, ticker)
 );
 CREATE INDEX IF NOT EXISTS idx_lean_date  ON lean_signals(scan_date);

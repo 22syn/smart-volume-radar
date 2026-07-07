@@ -788,10 +788,24 @@ async function selectDay(date) {
 
 /* ─── Header meta ─────────────────────────────────────────────────────────── */
 
+/** Format an ISO run timestamp for display in Israel time, e.g. "23:15 07.07". */
+function fmtRunTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = new Intl.DateTimeFormat('he-IL', {
+    timeZone: 'Asia/Jerusalem', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+  }).formatToParts(d);
+  const g = (t) => p.find((x) => x.type === t)?.value ?? '';
+  return `${g('hour')}:${g('minute')} ${g('day')}.${g('month')}`;
+}
+
 function updateHeaderMeta() {
   const s = summaryDays.find((d) => d.scan_date === selectedDate);
   if (!s) { $('#header-meta').textContent = ''; return; }
-  $('#header-meta').textContent = `${s.total} סיגנלים · Score≥70: ${s.score70 ?? 0}`;
+  const run = fmtRunTime(s.last_run);
+  const runPart = run ? ` · ריצה אחרונה: ${run}` : '';
+  $('#header-meta').textContent = `${s.total} סיגנלים · Score≥70: ${s.score70 ?? 0}${runPart}`;
 }
 
 /* ─── Tab switching ───────────────────────────────────────────────────────── */
