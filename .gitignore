@@ -9,6 +9,10 @@ dist/
 .env.local
 .env.*.local
 
+# Friend-watchlist sync: private links + service-account key
+watchlist-sources.json
+*.gserviceaccount.json
+
 # IDE
 .vscode/
 .idea/

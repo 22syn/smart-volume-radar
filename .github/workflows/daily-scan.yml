@@ -34,7 +34,23 @@ jobs:
       
       - name: Install dependencies
         run: npm ci
-      
+
+      # Refresh the universe sheet from the friend's shared TradingView watchlists
+      # before the scan reads it. Self-guards: if the secrets aren't configured yet,
+      # it skips cleanly and the scan proceeds with the existing sheet.
+      - name: Sync friend watchlists → universe sheet
+        env:
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_SHEETS_CREDENTIALS_JSON: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON }}
+          WATCHLIST_SOURCES_JSON: ${{ secrets.WATCHLIST_SOURCES_JSON }}
+        run: |
+          if [ -z "$WATCHLIST_SOURCES_JSON" ] || [ -z "$GOOGLE_SHEETS_CREDENTIALS_JSON" ]; then
+            echo "Friend-watchlist sync not configured (missing secrets) — skipping."
+            exit 0
+          fi
+          printf '%s' "$WATCHLIST_SOURCES_JSON" > watchlist-sources.json
+          npm run sync-friend-watchlists
+
       - name: Run Smart Volume Radar
         id: scan
         env:
