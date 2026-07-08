@@ -12,6 +12,12 @@ on:
   schedule:
     # 20:15 UTC, Mon–Fri — same window as the experimental main scan.
     - cron: '15 20 * * 1-5'
+    # 23:45 UTC refresh, Mon–Fri — same trading day (19:45 ET → same
+    # getLastTradingDay). Yahoo settles TASE (.TA) closes hours late; the
+    # 20:15 run can record the PREVIOUS day's close (e.g. HGG.TA 2434 instead
+    # of 2381 on 2026-07-07). This re-run replaces the day's D1 rows
+    # (delete-first ingest) with the corrected closing prices.
+    - cron: '45 23 * * 1-5'
   workflow_dispatch:
 
 jobs:
@@ -106,6 +112,9 @@ jobs:
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
           # Force scan because Sundays-Fridays may be holidays / weekends in TASE.
           FORCE_SCAN: 'true'
+          # 23:45 UTC refresh run: recompute with settled closes but do NOT
+          # re-send the Telegram report (DRY_RUN only gates the send).
+          DRY_RUN: ${{ github.event.schedule == '45 23 * * 1-5' && '1' || '' }}
         run: npm run start:lean
 
       # Ingest today's dashboard rows into Cloudflare D1. CF_* come from the
@@ -117,7 +126,9 @@ jobs:
           npx tsx scripts/seed.ts ../results
 
       - name: Telegram dashboard pointer
-        if: success() && env.CF_API_TOKEN != ''
+        # Skip on the 23:45 refresh run — it silently replaces the day's D1
+        # rows with settled closes; only the primary 20:15 run notifies.
+        if: success() && env.CF_API_TOKEN != '' && github.event.schedule != '45 23 * * 1-5'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
