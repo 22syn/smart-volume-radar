@@ -59,6 +59,71 @@ type YahooChartResult = {
     };
 };
 
+/**
+ * Detect and repair mid-series unit discontinuities in a Yahoo price series.
+ *
+ * Yahoo intermittently switches the reporting unit of a ticker partway through
+ * history — most notably TASE (.TA) names reported in shekels for older bars and
+ * agorot (×100) for newer ones — producing a ~100× step in the raw close series.
+ * Consumed as-is, that step corrupts SMA200, momentum-63 and every setup
+ * detector, and manufactures phantom Pullback signals (observed on NXSN.TA).
+ *
+ * A unit switch is identified by a bar-over-bar close ratio far larger than any
+ * real single-day move. Yahoo already split-adjusts, so genuine daily ratios stay
+ * near 1; a ratio past {@link UNIT_JUMP_RATIO} is therefore a unit artefact, not
+ * price action. Every bar before such a step is rescaled — walking from the end,
+ * so the most recent unit (the one matching `meta.regularMarketPrice`) is
+ * canonical — using the raw step ratio, which yields a seamless join with no
+ * residual gap on the switch day. highs/lows/opens share each bar's unit and are
+ * rescaled with it; volumes are untouched, since a price-unit switch does not
+ * change share counts.
+ *
+ * Pure and length-preserving. Mutates the passed arrays in place and returns the
+ * number of discontinuities repaired so the caller can emit an observability log.
+ */
+const UNIT_JUMP_RATIO = 25;
+
+export function normalizePriceUnitJumps(
+    series: { closes: number[]; highs: number[]; lows: number[]; opens: number[] }
+): number {
+    const { closes, highs, lows, opens } = series;
+    const n = closes.length;
+    if (n < 2) return 0;
+
+    // Per-bar multiplier that brings each bar into the unit of the final bar.
+    // Walk backwards: at a unit step between i-1 and i, every earlier bar must be
+    // multiplied by closes[i]/closes[i-1] to match bar i's unit. Non-step bars
+    // inherit the running scale, so daily price action never compounds into it.
+    const scale = new Array<number>(n).fill(1);
+    let jumps = 0;
+    for (let i = n - 1; i >= 1; i--) {
+        const prev = closes[i - 1];
+        const curr = closes[i];
+        let inherited = scale[i];
+        if (prev > 0 && curr > 0) {
+            const ratio = curr / prev;
+            if (ratio >= UNIT_JUMP_RATIO || ratio <= 1 / UNIT_JUMP_RATIO) {
+                inherited = scale[i] * ratio;
+                jumps++;
+            }
+        }
+        scale[i - 1] = inherited;
+    }
+
+    if (jumps === 0) return 0;
+
+    for (let i = 0; i < n; i++) {
+        const s = scale[i];
+        if (s !== 1) {
+            closes[i] *= s;
+            highs[i] *= s;
+            lows[i] *= s;
+            opens[i] *= s;
+        }
+    }
+    return jumps;
+}
+
 export async function parseYahooChartResult(
     result: YahooChartResult,
     ticker: string,
@@ -97,6 +162,16 @@ export async function parseYahooChartResult(
             dates.push(ts != null ? new Date(ts * 1000).toISOString().slice(0, 10) : '');
         }
     }
+    // Repair Yahoo mid-series unit switches (e.g. TASE shekel↔agora ×100) before
+    // any indicator consumes the series. See normalizePriceUnitJumps.
+    const unitJumps = normalizePriceUnitJumps({ closes, highs, lows, opens });
+    if (unitJumps > 0) {
+        logger.warn(
+            `⚠️ ${ticker}: repaired ${unitJumps} mid-series price-unit ${unitJumps === 1 ? 'discontinuity' : 'discontinuities'} ` +
+            `(likely Yahoo shekel↔agora ×100 unit switch); prices rescaled to the latest unit.`
+        );
+    }
+
     // Volume-only series (legacy RVOL) — drops zero-volume days.
     const volumes = alignedVolumes.filter((v) => v > 0);
 

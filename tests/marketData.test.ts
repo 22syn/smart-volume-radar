@@ -28,7 +28,7 @@ jest.mock('../src/config/index.js', () => ({
 const mockFetch = jest.fn();
 global.fetch = mockFetch as typeof fetch;
 
-import { fetchAllStocks, fetchYahooChartAsOfDate, fetchAllStocksAsOfDate } from '../src/services/marketData.js';
+import { fetchAllStocks, fetchYahooChartAsOfDate, fetchAllStocksAsOfDate, normalizePriceUnitJumps } from '../src/services/marketData.js';
 import logger from '../src/utils/logger.js';
 
 function createYahooChartResponse(ticker: string): object {
@@ -674,5 +674,112 @@ describe('fetchAllStocksAsOfDate', () => {
         }
 
         delete process.env.TWELVE_DATA_API_KEY;
+    });
+});
+
+describe('normalizePriceUnitJumps', () => {
+    function series(closes: number[]) {
+        // highs/lows/opens seeded off closes so we can verify they rescale together.
+        return {
+            closes: [...closes],
+            highs: closes.map((c) => c * 1.02),
+            lows: closes.map((c) => c * 0.98),
+            opens: closes.map((c) => c * 1.01),
+        };
+    }
+
+    it('leaves a clean series untouched', () => {
+        const s = series([100, 98, 102, 101, 99]);
+        const before = JSON.parse(JSON.stringify(s));
+        expect(normalizePriceUnitJumps(s)).toBe(0);
+        expect(s).toEqual(before);
+    });
+
+    it('does not trigger on a large-but-legal daily move (2× gap)', () => {
+        const s = series([15, 16, 32, 33]); // 2× gap, ratio 2 « 25
+        const before = JSON.parse(JSON.stringify(s));
+        expect(normalizePriceUnitJumps(s)).toBe(0);
+        expect(s).toEqual(before);
+    });
+
+    it('repairs an upward shekel→agora (×100) switch, seamlessly', () => {
+        // Older bars in shekels (~15), newer in agorot (~1850).
+        const s = series([15, 16, 1850, 1900]);
+        expect(normalizePriceUnitJumps(s)).toBe(1);
+        // Earlier bars scaled up by the raw step ratio (1850/16) → seamless join.
+        const factor = 1850 / 16;
+        expect(s.closes[0]).toBeCloseTo(15 * factor, 6);
+        expect(s.closes[1]).toBeCloseTo(16 * factor, 6);
+        // Newer bars (canonical unit) untouched.
+        expect(s.closes[2]).toBe(1850);
+        expect(s.closes[3]).toBe(1900);
+        // No residual gap across the switch day.
+        expect(s.closes[2] / s.closes[1]).toBeCloseTo(1, 6);
+    });
+
+    it('repairs a downward agora→shekel switch', () => {
+        const s = series([1850, 1900, 16, 15.5]);
+        expect(normalizePriceUnitJumps(s)).toBe(1);
+        const factor = 16 / 1900;
+        expect(s.closes[0]).toBeCloseTo(1850 * factor, 6);
+        expect(s.closes[1]).toBeCloseTo(1900 * factor, 6);
+        expect(s.closes[2]).toBe(16);
+        expect(s.closes[3]).toBe(15.5);
+    });
+
+    it('rescales highs/lows/opens with the same per-bar factor as closes', () => {
+        const s = series([15, 16, 1850, 1900]);
+        normalizePriceUnitJumps(s);
+        // OHLC ratios preserved on every bar after rescale.
+        for (let i = 0; i < s.closes.length; i++) {
+            expect(s.highs[i] / s.closes[i]).toBeCloseTo(1.02, 6);
+            expect(s.lows[i] / s.closes[i]).toBeCloseTo(0.98, 6);
+            expect(s.opens[i] / s.closes[i]).toBeCloseTo(1.01, 6);
+        }
+    });
+
+    it('returns 0 for series shorter than 2 bars', () => {
+        expect(normalizePriceUnitJumps(series([100]))).toBe(0);
+        expect(normalizePriceUnitJumps(series([]))).toBe(0);
+    });
+});
+
+describe('parseYahooChartResult unit-jump integration', () => {
+    beforeEach(() => {
+        mockFetch.mockReset();
+    });
+
+    it('normalizes a TASE unit switch end-to-end and logs a warning', async () => {
+        // 63 shekel bars (~15) then 7 agora bars (~1850): a ×~123 mid-series step.
+        const closes = [
+            ...Array(63).fill(15),
+            ...Array(7).fill(1850),
+        ];
+        const volumes = Array(70).fill(1_000_000);
+        const response = {
+            chart: {
+                result: [{
+                    meta: { regularMarketPrice: 1850 },
+                    indicators: { quote: [{ volume: volumes, close: closes }] },
+                }],
+            },
+        };
+        mockFetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(response) });
+        const warnSpy = jest.spyOn(logger, 'warn');
+
+        const { stocks } = await fetchAllStocks(['NXSN.TA']);
+        expect(stocks).toHaveLength(1);
+
+        // ATH is close-based over the normalized series. Pre-fix it would be 1850
+        // while the shekel bars (15) polluted SMA200; post-fix the whole series is
+        // in agorot, so the 52w high sits at ~1845 (15 rescaled) ≈ 1850.
+        expect(stocks[0].ath).toBeGreaterThan(1000);
+        // Live price (agorot) sits right at the ATH, not 100× below it.
+        expect(stocks[0].pctFromAth).toBeGreaterThan(-5);
+
+        expect(warnSpy).toHaveBeenCalledWith(
+            expect.stringContaining('repaired 1 mid-series price-unit discontinuity')
+        );
+        warnSpy.mockRestore();
     });
 });
