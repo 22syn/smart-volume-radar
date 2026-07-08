@@ -2,7 +2,7 @@
 export interface Query { sql: string; params: unknown[]; }
 export interface SignalParams { from?: string; to?: string; }
 
-const SELECT = 'SELECT scan_date,ticker,region,sector,signal,signals,signal_count,rvol,ath_pct,day_pct,stage2,dist_pivot,score,price FROM lean_signals';
+const SELECT = 'SELECT scan_date,ticker,region,sector,signal,signals,signal_count,rvol,ath_pct,day_pct,stage2,dist_pivot,score,price,ingested_at FROM lean_signals';
 
 export function buildSignalsQuery(p: SignalParams): Query {
   if (p.from && p.to) {
@@ -43,7 +43,8 @@ export function buildSummaryQuery(_p: SignalParams): Query {
       SUM(signal='pullback') AS pullback,
       SUM(signal LIKE 'near%') AS near_all,
       SUM(score>=70) AS score70,
-      SUM(score>=65) AS score65
+      SUM(score>=65) AS score65,
+      MAX(ingested_at) AS last_run
       FROM lean_signals GROUP BY scan_date ORDER BY scan_date DESC`,
     params: [],
   };

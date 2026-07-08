@@ -1,5 +1,7 @@
 // dashboard/tests/ingestD1.test.ts
-import { buildUpsertBatches } from '../src/ingestD1.js';
+import { buildUpsertBatches, buildDeleteBatches } from '../src/ingestD1.js';
+
+const STAMP = '2026-07-07T23:45:00.000Z';
 
 const row = {
   scanDate: '2026-06-29', ticker: 'ARM', region: 'US', sector: 'Semis',
@@ -9,21 +11,47 @@ const row = {
 };
 
 describe('buildUpsertBatches', () => {
-  it('produces INSERT OR REPLACE with 14 params per row', () => {
-    const batches = buildUpsertBatches([row as never], 100);
+  it('produces INSERT OR REPLACE with 15 params per row (incl. ingested_at)', () => {
+    const batches = buildUpsertBatches([row as never], STAMP, 100);
     expect(batches).toHaveLength(1);
     expect(batches[0].sql).toMatch(/INSERT OR REPLACE INTO lean_signals/);
     expect(batches[0].sql).toMatch(/signals,signal_count/);
-    expect(batches[0].params).toHaveLength(14);
+    expect(batches[0].sql).toMatch(/ingested_at/);
+    expect(batches[0].params).toHaveLength(15);
     expect(batches[0].params[1]).toBe('ARM');
     // signals is stored as a comma-joined string; signal_count follows it
     expect(batches[0].params[5]).toBe('pullback,highVolume');
     expect(batches[0].params[6]).toBe(2);
+    // ingested_at is the last param of the row
+    expect(batches[0].params[14]).toBe(STAMP);
   });
   it('splits into multiple batches by size', () => {
     const rows = Array.from({ length: 250 }, () => row);
-    const batches = buildUpsertBatches(rows as never, 100);
+    const batches = buildUpsertBatches(rows as never, STAMP, 100);
     expect(batches).toHaveLength(3); // 100 + 100 + 50
-    expect(batches[2].params).toHaveLength(50 * 14);
+    expect(batches[2].params).toHaveLength(50 * 15);
+  });
+  it('default batch size stays under the 100-bound-param D1 cap', () => {
+    const rows = Array.from({ length: 7 }, () => row);
+    const batches = buildUpsertBatches(rows as never, STAMP);
+    for (const b of batches) expect(b.params.length).toBeLessThanOrEqual(100);
+  });
+});
+
+describe('buildDeleteBatches', () => {
+  it('emits one DELETE per distinct scan_date, sorted', () => {
+    const rows = [
+      { ...row, scanDate: '2026-06-30' },
+      { ...row, scanDate: '2026-06-29' },
+      { ...row, scanDate: '2026-06-30', ticker: 'NVDA' },
+    ];
+    const batches = buildDeleteBatches(rows as never);
+    expect(batches).toHaveLength(2);
+    expect(batches[0].sql).toBe('DELETE FROM lean_signals WHERE scan_date = ?');
+    expect(batches[0].params).toEqual(['2026-06-29']);
+    expect(batches[1].params).toEqual(['2026-06-30']);
+  });
+  it('returns no batches for empty input', () => {
+    expect(buildDeleteBatches([])).toHaveLength(0);
   });
 });
