@@ -29,12 +29,15 @@ import type {
     ConsolidationNearMiss,
     VolumeNearMiss,
     PullbackNearMiss,
+    CreepSignal,
 } from './signals.js';
 
 export interface LeanScanResult {
     consolidationBreakouts: Array<{ stock: StockData; signal: ConsolidationSignal }>;
     highVolume: Array<{ stock: StockData; signal: HighVolumeSignal }>;
     pullbacks: Array<{ stock: StockData; signal: PullbackSignal }>;
+    /** CREEP tier (2026-07-08 study): quiet Stage-2 leaders near highs. 63d-horizon position signal. */
+    creep: Array<{ stock: StockData; signal: CreepSignal }>;
     nearConsolidation: Array<{ stock: StockData; signal: ConsolidationNearMiss }>;
     nearVolume: Array<{ stock: StockData; signal: VolumeNearMiss }>;
     nearPullback: Array<{ stock: StockData; signal: PullbackNearMiss }>;
@@ -52,6 +55,8 @@ export interface LeanScanResult {
         wasNear: Array<'nearBreakout' | 'nearVol' | 'nearPullback'>;
         daysOnWatchlist: number;
     }>;
+    /** SPY tape context (2026-07-08 regime study). Absent if the SPY fetch failed. */
+    regime?: { spyAboveSma50: boolean; spyAboveSma200: boolean };
 }
 
 /**
@@ -124,7 +129,7 @@ function stockBlock(stock: StockData, reason: string): string {
  */
 function buildSecondaryBadges(
     ticker: string,
-    primary: 'breakout' | 'volume' | 'pullback',
+    primary: 'breakout' | 'volume' | 'pullback' | 'creep',
     result: LeanScanResult
 ): string {
     const badges: string[] = [];
@@ -155,17 +160,27 @@ export function formatLeanReport(date: string, result: LeanScanResult): string {
     parts.push(
         `🪶 <b>LEAN RADAR</b>\n` +
             `📅 <code>${date}</code>\n` +
-            `<i>סדר: 🎓 graduated → 📉 pullback → 📈 breakout → 🔥 volume</i>\n` +
+            `<i>סדר: 🎓 graduated → 📉 pullback → 🐢 creep → 📈 breakout → 🔥 volume</i>\n` +
             `<i>כל מנייה: 📊 RVOL · 📉 ATH% · 🪜 Stage2 · + badge אם תואם כמה</i>\n` +
             `━━━━━━━━━━━━━━━━━━━━━━`
     );
+
+    // Tape context (2026-07-08 regime study): pullbacks of leaders in weak
+    // tape were the strongest measured setup — surface the regime up top.
+    if (result.regime) {
+        const tape = result.regime.spyAboveSma50
+            ? '🌡️ שוק: SPY מעל SMA50 — מצב רגיל'
+            : '🌡️ <b>שוק חלש</b>: SPY מתחת SMA50 — 📉 פולבקים של מובילים = הסטאפ החזק ביותר (win 79% במחקר)';
+        parts.push(tape);
+    }
 
     const graduated = result.graduated ?? [];
     const totalReal =
         graduated.length +
         result.consolidationBreakouts.length +
         result.highVolume.length +
-        result.pullbacks.length;
+        result.pullbacks.length +
+        result.creep.length;
     const totalNear =
         result.nearConsolidation.length +
         result.nearVolume.length +
@@ -201,11 +216,33 @@ export function formatLeanReport(date: string, result: LeanScanResult): string {
     if (result.pullbacks.length > 0) {
         const items = result.pullbacks.filter((r) => !renderedTickers.has(r.stock.ticker));
         if (items.length > 0) {
-            parts.push(`\n📉 <b>Pullback תקין (15-25% מ-52w high)</b>  ·  ${items.length}\n━━━━━━━━━━━━━━━━━━━━━━`);
+            // Stop calibration (2026-07-08 study): median trough after a pullback
+            // signal is −8.6% — a −5% stop dies in normal noise (stopped 45%).
+            parts.push(
+                `\n📉 <b>Pullback תקין (15-25% מ-52w high)</b>  ·  ${items.length}\n` +
+                    `<i>🛑 סטופ −10..−12% / SMA50 · אופק 63 יום (הבור החציוני −8.6% — סטופ −5% נזרק ברעש)</i>\n━━━━━━━━━━━━━━━━━━━━━━`
+            );
             for (const { stock, signal } of items) {
                 const reason =
                     `📉 Pullback בריא (${fmtPct(signal.pctFromAth)} מ-ATH $${fmtPrice(stock.ath)}, מעל SMA200)` +
                     buildSecondaryBadges(stock.ticker, 'pullback', result);
+                parts.push(stockBlock(stock, reason));
+                renderedTickers.add(stock.ticker);
+            }
+        }
+    }
+
+    // ─── 2b. CREEP — quiet Stage-2 leaders near highs (2026-07-08 study:
+    // covers the 58% of explosive moves that launch with NO volume anomaly;
+    // +13.25% med63 with the $10M liquidity floor). 63-day position signal.
+    if (result.creep.length > 0) {
+        const items = result.creep.filter((r) => !renderedTickers.has(r.stock.ticker));
+        if (items.length > 0) {
+            parts.push(`\n🐢 <b>זחילה שקטה — מוביל על שיא, נפח רדום</b>  ·  ${items.length}\n<i>אופק 63 יום</i>\n━━━━━━━━━━━━━━━━━━━━━━`);
+            for (const { stock, signal } of items) {
+                const reason =
+                    `🐢 mom63 +${signal.mom63.toFixed(0)}% · ${signal.pctFromAth.toFixed(1)}% מהשיא · RVOL רדום` +
+                    buildSecondaryBadges(stock.ticker, 'creep', result);
                 parts.push(stockBlock(stock, reason));
                 renderedTickers.add(stock.ticker);
             }
@@ -235,8 +272,12 @@ export function formatLeanReport(date: string, result: LeanScanResult): string {
             for (const { stock, signal } of items) {
                 const dir = volumeDirection(stock);
                 const extreme = signal.level === 'extreme' ? '⚡ EXTREME ' : '';
+                // A-tier (2026-07-08 study): Stage2 leader near highs — 2x forward returns.
+                const leaderTag = signal.leader ? '🥇 מוביל ' : '';
+                // 2026-07-08 study: rvol>=8 = climax/news spike (+0.58% med21) — warn.
+                const climaxTag = signal.climax ? ' ⚠️ קליימקס' : '';
                 const reason =
-                    `${extreme}${dir.emoji} ${dir.label} (${fmtRvol(stock.rvol)})` +
+                    `${leaderTag}${extreme}${dir.emoji} ${dir.label} (${fmtRvol(stock.rvol)})${climaxTag}` +
                     buildSecondaryBadges(stock.ticker, 'volume', result);
                 parts.push(stockBlock(stock, reason));
                 renderedTickers.add(stock.ticker);

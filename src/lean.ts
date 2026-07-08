@@ -29,12 +29,18 @@ import {
     qualifiesAsHealthyPullback,
     qualifiesAsPullbackNearMiss,
     passesLeaderGate,
+    isHvLeader,
+    momentum63,
+    LEADER_MOM63_MIN,
+    qualifiesAsCreep,
 } from './lean/signals.js';
+import { loadRecentSignalTickers } from './lean/signalHistory.js';
 import { formatLeanReport, type LeanScanResult } from './lean/format.js';
 import { attachGraduated } from './lean/graduates.js';
 import { writeTradingViewWatchlist } from './lean/tradingViewWatchlist.js';
 import { writeDashboardRows } from './lean/dashboardRows.js';
 import { writeLeanSnapshot } from './utils/snapshotWriter.js';
+import { calculateSMA } from './utils/technicalAnalysis.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -133,29 +139,71 @@ async function main(): Promise<void> {
         }
         logger.info(`📊 OHLC series fetched for ${ohlcByTicker.size}/${stocks.length} stocks`);
 
+        // Market regime: SPY vs SMA50/200 (2026-07-08 regime study — pullbacks in
+        // weak tape were the strongest setup measured; boost, don't filter).
+        let regime: { spyAboveSma50: boolean; spyAboveSma200: boolean } | undefined;
+        try {
+            const spy = await fetchOHLCSeries('SPY');
+            if (spy && spy.closes.length >= 200) {
+                const last = spy.closes[spy.closes.length - 1]!;
+                const sma50 = calculateSMA(spy.closes, 50);
+                const sma200 = calculateSMA(spy.closes, 200);
+                if (sma50 != null && sma200 != null) {
+                    regime = { spyAboveSma50: last > sma50, spyAboveSma200: last > sma200 };
+                    logger.info(
+                        `🌡️ Regime: SPY ${regime.spyAboveSma50 ? 'above' : 'BELOW'} SMA50, ` +
+                            `${regime.spyAboveSma200 ? 'above' : 'BELOW'} SMA200`
+                    );
+                }
+            }
+        } catch (e) {
+            logger.warn(`⚠️ SPY regime fetch failed (scan proceeds without it): ${(e as Error).message}`);
+        }
+
         // Run the 3 detectors + 3 near-miss variants
         const result: LeanScanResult = {
             consolidationBreakouts: [],
             highVolume: [],
             pullbacks: [],
+            creep: [],
             nearConsolidation: [],
             nearVolume: [],
             nearPullback: [],
         };
+        if (regime) result.regime = regime;
+
+        // Cross-day dedup (2026-07-08 study): repeat near-breakouts are noise —
+        // +0.89% med21 vs +1.70% for first alerts, at 10x the volume.
+        const resultsDir = path.join(__moduleDir, '..', 'results');
+        const recentNearBO = loadRecentSignalTickers(resultsDir, scanDate, 'nearConsolidation', 21);
+        const recentCreep = loadRecentSignalTickers(resultsDir, scanDate, 'creep', 21);
 
         for (const stock of stocks) {
             const ohlc = ohlcByTicker.get(stock.ticker);
+            // NOTE: an ADR>=2% floor was trialled here and REJECTED by the
+            // criteria-tester validation (2026-07-08): ADR<2 breakouts actually
+            // outperformed (+3.56% vs -0.16% med63) and the floor degraded the
+            // gated nearBreakout tier (+6.10% -> +4.12% med63). ETF de-emphasis
+            // is handled by the isETFSector score penalty instead.
             if (ohlc) {
                 const consolidation = detectConsolidationBreakout(stock, ohlc.closes, ohlc.highs, ohlc.lows);
                 if (consolidation) {
                     result.consolidationBreakouts.push({ stock, signal: consolidation });
                 } else {
-                    const nearC = detectConsolidationNearMiss(stock, ohlc.closes, ohlc.highs, ohlc.lows);
+                    // Study gates: only FIRST alert in 21d AND 63d momentum >= 20%
+                    // (206 alerts/yr instead of 6,837; +2.58% med21, win 64%).
+                    const m = momentum63(ohlc.closes);
+                    const nearC =
+                        m != null && m >= LEADER_MOM63_MIN && !recentNearBO.has(stock.ticker)
+                            ? detectConsolidationNearMiss(stock, ohlc.closes, ohlc.highs, ohlc.lows)
+                            : null;
                     if (nearC) result.nearConsolidation.push({ stock, signal: nearC });
                 }
             }
             const vol = qualifiesAsHighVolume(stock);
             if (vol) {
+                // A-tier (2026-07-08 study): Stage2 leader near highs — 2x forward returns.
+                vol.leader = ohlc ? isHvLeader(stock, ohlc.closes) : false;
                 result.highVolume.push({ stock, signal: vol });
             } else {
                 const nearV = qualifiesAsVolumeNearMiss(stock);
@@ -168,12 +216,23 @@ async function main(): Promise<void> {
                 const nearP = qualifiesAsPullbackNearMiss(stock);
                 if (nearP) result.nearPullback.push({ stock, signal: nearP });
             }
+            // CREEP tier (2026-07-08 study): quiet Stage-2 leader near highs.
+            // Covers the 58% of explosive moves that launch with no volume anomaly.
+            if (ohlc && !recentCreep.has(stock.ticker)) {
+                const cr = qualifiesAsCreep(stock, ohlc.closes);
+                if (cr) result.creep.push({ stock, signal: cr });
+            }
         }
 
         // Sort each section: best signal first.
         result.consolidationBreakouts.sort((a, b) => (b.stock.rvol ?? 0) - (a.stock.rvol ?? 0));
-        result.highVolume.sort((a, b) => (b.stock.rvol ?? 0) - (a.stock.rvol ?? 0));
+        result.highVolume.sort(
+            (a, b) =>
+                Number(b.signal.leader ?? false) - Number(a.signal.leader ?? false) ||
+                (b.stock.rvol ?? 0) - (a.stock.rvol ?? 0)
+        );
         result.pullbacks.sort((a, b) => (a.signal.pctFromAth ?? 0) - (b.signal.pctFromAth ?? 0));
+        result.creep.sort((a, b) => b.signal.mom63 - a.signal.mom63);
         result.nearConsolidation.sort((a, b) => a.signal.distanceToPivotPct - b.signal.distanceToPivotPct);
         result.nearVolume.sort((a, b) => b.signal.rvol - a.signal.rvol);
         result.nearPullback.sort((a, b) => a.signal.pctFromAth - b.signal.pctFromAth);
@@ -257,6 +316,11 @@ async function main(): Promise<void> {
                         })),
                         pullbacks: result.pullbacks.map((r) => ({
                             ticker: r.stock.ticker,
+                            pctFromAth: r.signal.pctFromAth,
+                        })),
+                        creep: result.creep.map((r) => ({
+                            ticker: r.stock.ticker,
+                            mom63: r.signal.mom63,
                             pctFromAth: r.signal.pctFromAth,
                         })),
                         nearConsolidation: result.nearConsolidation.map((r) => ({

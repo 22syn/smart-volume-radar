@@ -33,8 +33,22 @@ describe('scoreRow', () => {
   it('penalizes a high-volume down-day (climax) and deep ATH', () => {
     // RENK-like: highVolume, RVOL 6+, dayPct<0, athPct -52, not stage2
     const s = scoreRow({ ...base, signal: 'highVolume', signals: ['highVolume'], signalCount: 1, rvol: 12, dayPct: -2, athPct: -52, stage2: 0 });
-    // 30 + min(12,6)*5=30 + 0 - 25 (climax) - 20 (deep ATH) = 15
-    expect(s).toBe(15);
+    // 30 + min(12,6)*5=30 + 0 - 25 (down-day climax) - 20 (deep ATH) - 15 (rvol>=8 climax) = 0
+    expect(s).toBe(0);
+  });
+  it('boosts pullback rows by 15 in weak tape (regime study: win 79%)', () => {
+    const input = { ...base, signal: 'pullback' as const, signals: ['pullback' as const], signalCount: 1, rvol: 0, stage2: 1 as const };
+    expect(scoreRow(input, { weakTape: true }) - scoreRow(input)).toBe(15);
+  });
+  it('does not boost non-pullback rows in weak tape', () => {
+    const input = { ...base, signal: 'highVolume' as const, signals: ['highVolume' as const], signalCount: 1, rvol: 4, stage2: 1 as const };
+    expect(scoreRow(input, { weakTape: true })).toBe(scoreRow(input));
+  });
+  it('penalizes RVOL >= 8 by 15 (2026-07-08 study: climax RVOL is noise)', () => {
+    const at6 = scoreRow({ ...base, signal: 'highVolume', signals: ['highVolume'], signalCount: 1, rvol: 6, stage2: 1 });
+    const at9 = scoreRow({ ...base, signal: 'highVolume', signals: ['highVolume'], signalCount: 1, rvol: 9, stage2: 1 });
+    // rvol contribution capped at 6*5=30 for both — the only delta is the -15 penalty.
+    expect(at6 - at9).toBe(15);
   });
   it('adds proximity bonus for a near-breakout at the pivot', () => {
     const s = scoreRow({ ...base, signal: 'nearBreakout', signals: ['nearBreakout'], signalCount: 1, rvol: 0, stage2: 1, distPivot: 0 });
@@ -88,6 +102,29 @@ describe('rowsFromLeanResult', () => {
     expect(by.BAR.signal).toBe('nearPullback');
     expect(by.ARM.scanDate).toBe('2026-06-29');
     expect(typeof by.ARM.score).toBe('number');
+  });
+
+  it('maps creep detections to rows with BASE 42', () => {
+    const result: any = {
+      consolidationBreakouts: [], highVolume: [], pullbacks: [],
+      creep: [{ stock: stub('INTC', { rvol: 0.9, pctFromAth: -3, lastPrice: 120, sma50: 100, sma200: 90 }),
+                signal: { mom63: 47, pctFromAth: -3, avgDollarVolumeUsd: 50_000_000 } }],
+      nearConsolidation: [], nearVolume: [], nearPullback: [],
+    };
+    const rows = rowsFromLeanResult('2026-07-08', result);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].signal).toBe('creep');
+    // BASE 42 + rvol 0.9*5=4.5 + stage2 20 = 66.5 → 67 (rounded)
+    expect(rows[0].score).toBeGreaterThanOrEqual(42);
+  });
+
+  it('tolerates results without a creep section (older snapshots)', () => {
+    const result: any = {
+      consolidationBreakouts: [], highVolume: [],
+      pullbacks: [{ stock: stub('ARM'), signal: { pctFromAth: -22 } }],
+      nearConsolidation: [], nearVolume: [], nearPullback: [],
+    };
+    expect(() => rowsFromLeanResult('2026-07-08', result)).not.toThrow();
   });
 
   it('groups a ticker matching multiple signals into ONE row (signals ordered by BASE desc)', () => {

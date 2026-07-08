@@ -33,7 +33,13 @@ export const CONSOLIDATION_WINDOWS = [
 export const BREAKOUT_MIN_RVOL = 1.5;
 export const HIGH_VOLUME_RVOL = 3.0;
 export const EXTREME_VOLUME_RVOL = 5.0;
-export const PULLBACK_MIN_PCT = -30; // deepened per 2026-07-02 signal-efficacy study
+// 2026-07-08 study: RVOL>=8 events return +0.58% med21 (vs +1.81% for all HV) —
+// climaxes and news spikes. Flagged as a WARNING, never counted as strength.
+export const CLIMAX_RVOL = 8;
+// 2026-07-08 precision study (145K-day event-study): the -30..-25 zone is
+// NEGATIVE (-2.42% med21, win 45%) even WITH survivorship bias in its favor.
+// Gold zone is -20..-15 (+6.42% med21, win 65%). Reverts the 2026-07-02 deepening.
+export const PULLBACK_MIN_PCT = -25;
 export const PULLBACK_MAX_PCT = -15;
 
 // Near-miss bands for Silent Watchlist
@@ -54,6 +60,10 @@ export interface ConsolidationSignal {
 
 export interface HighVolumeSignal {
     level: 'high' | 'extreme';
+    /** RVOL >= CLIMAX_RVOL — exhaustion/news spike; warn, don't upgrade. */
+    climax: boolean;
+    /** A-tier: Stage2 + mom63>=20 + within -15% of ATH. Set by lean.ts (needs closes). */
+    leader?: boolean;
 }
 
 export interface PullbackSignal {
@@ -107,6 +117,20 @@ export function passesLeaderGate(stock: StockData, closes: number[]): boolean {
     if ((stock.rvol ?? 0) < LEADER_RVOL_MIN) return false;
     const m = momentum63(closes);
     return m != null && m >= LEADER_MOM63_MIN;
+}
+
+// ─── HV-LEADER A-tier (2026-07-08 study) ─────────────────────────────
+// HV + mom63>=20 + within -15% of ATH: +3.37%/+10.98% med21/63 (vs +1.81%/+6.18%
+// raw HV), win 61.5%, best ATR expectancy in the system (+0.47 ATR).
+export const HV_LEADER_MOM63_MIN = 20;
+export const HV_LEADER_MAX_FROM_ATH = -15;
+
+/** A-tier high-volume: Stage-2 leader near highs. Needs the closes series. */
+export function isHvLeader(stock: StockData, closes: number[]): boolean {
+    if (!isStage2(stock)) return false;
+    if ((stock.pctFromAth ?? -Infinity) < HV_LEADER_MAX_FROM_ATH) return false;
+    const m = momentum63(closes);
+    return m != null && m >= HV_LEADER_MOM63_MIN;
 }
 
 // ─── Window range helper ──────────────────────────────────────────────
@@ -206,8 +230,9 @@ export function detectConsolidationNearMiss(
 // ─── 2. High Volume ───────────────────────────────────────────────────
 export function qualifiesAsHighVolume(stock: StockData): HighVolumeSignal | null {
     const rvol = stock.rvol ?? 0;
-    if (rvol >= EXTREME_VOLUME_RVOL) return { level: 'extreme' };
-    if (rvol >= HIGH_VOLUME_RVOL) return { level: 'high' };
+    const climax = rvol >= CLIMAX_RVOL;
+    if (rvol >= EXTREME_VOLUME_RVOL) return { level: 'extreme', climax };
+    if (rvol >= HIGH_VOLUME_RVOL) return { level: 'high', climax };
     return null;
 }
 
@@ -234,4 +259,48 @@ export function qualifiesAsPullbackNearMiss(stock: StockData): PullbackNearMiss 
     if (stock.sma200 == null || stock.lastPrice == null) return null;
     if (stock.lastPrice <= stock.sma200) return null;
     return { pctFromAth: pct };
+}
+
+// ─── 4. CREEP tier (2026-07-08 study) ────────────────────────────────
+// 58% of explosive moves (+25% in 21d) launched with NO alert — median RVOL
+// 0.84 at launch, many AT a fresh 52w high (MXL +331%, INTC, MU, SIMO, IREN).
+// This tier catches the quiet grind: Stage-2 leader near highs, volume still
+// asleep, liquid enough to trade. Study card (with $10M floor): n=883,
+// +2.97%/+13.25% med21/63, win 59.1%. POSITION signal — 63-day horizon.
+export const CREEP_MOM63_MIN = 30;
+export const CREEP_MAX_FROM_ATH = -10;
+export const CREEP_MAX_RVOL = 1.5;
+export const CREEP_MIN_DOLLAR_VOLUME_USD = 10_000_000;
+
+export interface CreepSignal {
+    mom63: number;
+    pctFromAth: number;
+    avgDollarVolumeUsd: number;
+}
+
+/** Rough per-suffix price→USD factor for the liquidity floor (subunit currencies included). */
+export function approxUsdFactor(ticker: string): number {
+    const t = ticker.toUpperCase();
+    if (t.endsWith('.TA')) return 0.0027; // agorot → USD (₪/100 × ~0.27)
+    if (t.endsWith('.L')) return 0.0127; // pence → USD
+    if (t.endsWith('.TW')) return 0.031;
+    if (t.endsWith('.KS')) return 0.00072;
+    if (t.endsWith('.T')) return 0.0067;
+    if (t.endsWith('.SA')) return 0.18;
+    if (t.endsWith('.TO') || t.endsWith('.V')) return 0.73;
+    if (t.endsWith('.DE') || t.endsWith('.MI') || t.endsWith('.PA') || t.endsWith('.AS') || t.endsWith('.MC')) return 1.08;
+    if (t.endsWith('.HK')) return 0.128;
+    return 1; // USD default
+}
+
+export function qualifiesAsCreep(stock: StockData, closes: number[]): CreepSignal | null {
+    if (!isStage2(stock)) return null;
+    const pct = stock.pctFromAth;
+    if (pct == null || pct < CREEP_MAX_FROM_ATH) return null;
+    if ((stock.rvol ?? 0) >= CREEP_MAX_RVOL) return null;
+    const m = momentum63(closes);
+    if (m == null || m < CREEP_MOM63_MIN) return null;
+    const dollarVol = (stock.avgVolume ?? 0) * (stock.lastPrice ?? 0) * approxUsdFactor(stock.ticker);
+    if (dollarVol < CREEP_MIN_DOLLAR_VOLUME_USD) return null;
+    return { mom63: m, pctFromAth: pct, avgDollarVolumeUsd: dollarVol };
 }

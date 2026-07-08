@@ -32,6 +32,7 @@ const empty = (): LeanScanResult => ({
     consolidationBreakouts: [],
     highVolume: [],
     pullbacks: [],
+    creep: [],
     nearConsolidation: [],
     nearVolume: [],
     nearPullback: [],
@@ -67,21 +68,92 @@ describe('formatLeanReport', () => {
         const r = empty();
         r.highVolume.push({
             stock: stock({ ticker: 'TSLA', rvol: 6.5 }),
-            signal: { level: 'extreme' },
+            signal: { level: 'extreme', climax: false },
         });
         r.highVolume.push({
             stock: stock({ ticker: 'AMD', rvol: 3.5 }),
-            signal: { level: 'high' },
+            signal: { level: 'high', climax: false },
         });
         const out = formatLeanReport('2026-05-09', r);
         expect(out).toContain('נפח גבוה');
         expect(out).toContain('⚡ EXTREME');
         expect(out).toContain('TSLA');
         expect(out).toContain('AMD');
-        // AMD line should have 🔥 not EXTREME
-        const amdLine = out.split('\n').find((l) => l.includes('AMD'))!;
-        expect(amdLine).toContain('🔥');
-        expect(amdLine).not.toContain('EXTREME');
+        // AMD's BLOCK (ticker line + metrics + reason lines) should have 🔥 not EXTREME.
+        // Blocks are multi-line; slice from the AMD ticker line to the next blank line.
+        const lines = out.split('\n');
+        const amdIdx = lines.findIndex((l) => l.includes('AMD'));
+        let end = amdIdx;
+        while (end < lines.length && lines[end].trim() !== '') end++;
+        const amdBlock = lines.slice(amdIdx, end).join('\n');
+        expect(amdBlock).toContain('🔥');
+        expect(amdBlock).not.toContain('EXTREME');
+    });
+
+    it('renders the CREEP section between pullback and breakout', () => {
+        const r = empty();
+        r.pullbacks.push({
+            stock: stock({ ticker: 'AAPL', pctFromAth: -18, ath: 250, lastPrice: 204 }),
+            signal: { pctFromAth: -18 },
+        });
+        r.creep.push({
+            stock: stock({ ticker: 'INTC', rvol: 0.9, pctFromAth: -3 }),
+            signal: { mom63: 47, pctFromAth: -3, avgDollarVolumeUsd: 50_000_000 },
+        });
+        r.consolidationBreakouts.push({
+            stock: stock({ ticker: 'AMKR', rvol: 2.4 }),
+            signal: { window: '1M', baseRangePct: 8, windowHigh: 35 },
+        });
+        const out = formatLeanReport('2026-07-08', r);
+        expect(out).toContain('זחילה שקטה');
+        expect(out).toContain('mom63 +47%');
+        // Physical order mirrors the legend: pullback → creep → breakout.
+        expect(out.indexOf('Pullback תקין')).toBeLessThan(out.indexOf('זחילה שקטה'));
+        expect(out.indexOf('זחילה שקטה')).toBeLessThan(out.indexOf('פריצת קונסולידציה'));
+    });
+
+    it('pullback section includes the study stop hint', () => {
+        const r = empty();
+        r.pullbacks.push({
+            stock: stock({ ticker: 'AAPL', pctFromAth: -18.3, ath: 250, lastPrice: 204 }),
+            signal: { pctFromAth: -18.3 },
+        });
+        const out = formatLeanReport('2026-07-08', r);
+        expect(out).toContain('🛑 סטופ −10..−12% / SMA50');
+    });
+
+    it('renders a weak-tape regime banner when SPY < SMA50', () => {
+        const r = empty();
+        r.regime = { spyAboveSma50: false, spyAboveSma200: true };
+        r.pullbacks.push({
+            stock: stock({ ticker: 'AAPL', pctFromAth: -18, ath: 250, lastPrice: 204 }),
+            signal: { pctFromAth: -18 },
+        });
+        const out = formatLeanReport('2026-07-08', r);
+        expect(out).toContain('שוק חלש');
+        expect(out).toContain('SPY מתחת SMA50');
+    });
+
+    it('renders a calm regime line when SPY > SMA50', () => {
+        const r = empty();
+        r.regime = { spyAboveSma50: true, spyAboveSma200: true };
+        r.pullbacks.push({
+            stock: stock({ ticker: 'AAPL', pctFromAth: -18, ath: 250, lastPrice: 204 }),
+            signal: { pctFromAth: -18 },
+        });
+        const out = formatLeanReport('2026-07-08', r);
+        expect(out).toContain('SPY מעל SMA50');
+        expect(out).not.toContain('שוק חלש');
+    });
+
+    it('appends a climax warning when RVOL >= 8', () => {
+        const r = empty();
+        r.highVolume.push({
+            stock: stock({ ticker: 'PUMP', rvol: 9.2 }),
+            signal: { level: 'extreme', climax: true },
+        });
+        const out = formatLeanReport('2026-05-09', r);
+        expect(out).toContain('⚠️ קליימקס');
     });
 
     it('renders Pullback section with pctFromAth', () => {

@@ -8,6 +8,9 @@ import {
     qualifiesAsVolumeNearMiss,
     qualifiesAsHealthyPullback,
     qualifiesAsPullbackNearMiss,
+    isHvLeader,
+    qualifiesAsCreep,
+    approxUsdFactor,
 } from '../src/lean/signals';
 import type { StockData } from '../src/types';
 
@@ -159,15 +162,86 @@ describe('detectConsolidationNearMiss', () => {
 
 describe('qualifiesAsHighVolume', () => {
     it('returns "extreme" at RVOL ≥ 5', () => {
-        expect(qualifiesAsHighVolume(makeStock({ rvol: 6.5 }))).toEqual({ level: 'extreme' });
+        expect(qualifiesAsHighVolume(makeStock({ rvol: 6.5 }))).toEqual({ level: 'extreme', climax: false });
     });
 
     it('returns "high" at RVOL between 3 and 5', () => {
-        expect(qualifiesAsHighVolume(makeStock({ rvol: 3.5 }))).toEqual({ level: 'high' });
+        expect(qualifiesAsHighVolume(makeStock({ rvol: 3.5 }))).toEqual({ level: 'high', climax: false });
     });
 
     it('returns null below 3', () => {
         expect(qualifiesAsHighVolume(makeStock({ rvol: 2.9 }))).toBeNull();
+    });
+
+    it('flags climax=true when RVOL >= 8 (study: rvol>=8 med21 is +0.58%, noise)', () => {
+        expect(qualifiesAsHighVolume(makeStock({ rvol: 9 }))).toEqual({ level: 'extreme', climax: true });
+    });
+
+    it('does not flag climax just below 8', () => {
+        expect(qualifiesAsHighVolume(makeStock({ rvol: 7.9 }))).toEqual({ level: 'extreme', climax: false });
+    });
+});
+
+describe('qualifiesAsCreep', () => {
+    // mom63 ≈ +46% (0.6%/day for 70 bars)
+    const risingCloses = Array.from({ length: 70 }, (_, i) => 100 * Math.pow(1.006, i));
+
+    it('fires for a quiet Stage-2 leader near highs with liquidity', () => {
+        const stock = makeStock({
+            rvol: 0.9, pctFromAth: -4, lastPrice: 100, avgVolume: 500_000, // $50M/day
+        });
+        const sig = qualifiesAsCreep(stock, risingCloses);
+        expect(sig).not.toBeNull();
+        expect(sig!.mom63).toBeGreaterThanOrEqual(30);
+        expect(sig!.pctFromAth).toBe(-4);
+    });
+
+    it('rejects when volume is already elevated (rvol >= 1.5 — HV territory)', () => {
+        const stock = makeStock({ rvol: 2.0, pctFromAth: -4, avgVolume: 500_000 });
+        expect(qualifiesAsCreep(stock, risingCloses)).toBeNull();
+    });
+
+    it('rejects illiquid names (avg dollar volume < $10M)', () => {
+        const stock = makeStock({ rvol: 0.9, pctFromAth: -4, lastPrice: 5, avgVolume: 100_000 }); // $0.5M
+        expect(qualifiesAsCreep(stock, risingCloses)).toBeNull();
+    });
+
+    it('rejects when too far from the high (pctFromAth < -10)', () => {
+        const stock = makeStock({ rvol: 0.9, pctFromAth: -14, avgVolume: 500_000 });
+        expect(qualifiesAsCreep(stock, risingCloses)).toBeNull();
+    });
+
+    it('rejects when momentum is weak (mom63 < 30)', () => {
+        const slowCloses = Array.from({ length: 70 }, (_, i) => 100 * Math.pow(1.002, i)); // ≈ +13%
+        const stock = makeStock({ rvol: 0.9, pctFromAth: -4, avgVolume: 500_000 });
+        expect(qualifiesAsCreep(stock, slowCloses)).toBeNull();
+    });
+});
+
+describe('approxUsdFactor', () => {
+    it('converts TASE agorot and LSE pence to ~USD', () => {
+        expect(approxUsdFactor('HGG.TA')).toBeCloseTo(0.0027, 4);
+        expect(approxUsdFactor('BA.L')).toBeCloseTo(0.0127, 4);
+        expect(approxUsdFactor('NVDA')).toBe(1);
+    });
+});
+
+describe('isHvLeader', () => {
+    // 70 closes climbing 0.5%/day → mom63 ≈ +37%
+    const risingCloses = Array.from({ length: 70 }, (_, i) => 100 * Math.pow(1.005, i));
+    const flatCloses = Array.from({ length: 70 }, () => 100);
+
+    it('true when Stage2 + mom63>=20 + within -15% of ATH', () => {
+        expect(isHvLeader(makeStock({ pctFromAth: -8 }), risingCloses)).toBe(true);
+    });
+    it('false when momentum is flat', () => {
+        expect(isHvLeader(makeStock({ pctFromAth: -8 }), flatCloses)).toBe(false);
+    });
+    it('false when too far from ATH', () => {
+        expect(isHvLeader(makeStock({ pctFromAth: -22 }), risingCloses)).toBe(false);
+    });
+    it('false when not Stage 2', () => {
+        expect(isHvLeader(makeStock({ pctFromAth: -8, sma50: 120 }), risingCloses)).toBe(false);
     });
 });
 
@@ -207,6 +281,22 @@ describe('qualifiesAsHealthyPullback', () => {
                 makeStock({ pctFromAth: -30, lastPrice: 100, sma200: 90 })
             )
         ).toBeNull();
+    });
+
+    it('rejects a deep pullback below -25% (study: -30..-25 zone is negative EV)', () => {
+        expect(
+            qualifiesAsHealthyPullback(
+                makeStock({ pctFromAth: -27, lastPrice: 100, sma200: 90 })
+            )
+        ).toBeNull();
+    });
+
+    it('accepts a pullback at exactly -25%', () => {
+        expect(
+            qualifiesAsHealthyPullback(
+                makeStock({ pctFromAth: -25, lastPrice: 100, sma200: 90 })
+            )
+        ).toEqual({ pctFromAth: -25 });
     });
 
     it('rejects when price below SMA200 (falling knife)', () => {
