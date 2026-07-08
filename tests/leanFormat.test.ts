@@ -112,6 +112,16 @@ describe('formatLeanReport', () => {
         expect(out.indexOf('זחילה שקטה')).toBeLessThan(out.indexOf('פריצת קונסולידציה'));
     });
 
+    it('pullback section includes the study stop hint', () => {
+        const r = empty();
+        r.pullbacks.push({
+            stock: stock({ ticker: 'AAPL', pctFromAth: -18.3, ath: 250, lastPrice: 204 }),
+            signal: { pctFromAth: -18.3 },
+        });
+        const out = formatLeanReport('2026-07-08', r);
+        expect(out).toContain('🛑 סטופ −10..−12% / SMA50');
+    });
+
     it('renders a weak-tape regime banner when SPY < SMA50', () => {
         const r = empty();
         r.regime = { spyAboveSma50: false, spyAboveSma200: true };

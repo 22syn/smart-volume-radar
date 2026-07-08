@@ -216,7 +216,12 @@ export function formatLeanReport(date: string, result: LeanScanResult): string {
     if (result.pullbacks.length > 0) {
         const items = result.pullbacks.filter((r) => !renderedTickers.has(r.stock.ticker));
         if (items.length > 0) {
-            parts.push(`\n📉 <b>Pullback תקין (15-25% מ-52w high)</b>  ·  ${items.length}\n━━━━━━━━━━━━━━━━━━━━━━`);
+            // Stop calibration (2026-07-08 study): median trough after a pullback
+            // signal is −8.6% — a −5% stop dies in normal noise (stopped 45%).
+            parts.push(
+                `\n📉 <b>Pullback תקין (15-25% מ-52w high)</b>  ·  ${items.length}\n` +
+                    `<i>🛑 סטופ −10..−12% / SMA50 · אופק 63 יום (הבור החציוני −8.6% — סטופ −5% נזרק ברעש)</i>\n━━━━━━━━━━━━━━━━━━━━━━`
+            );
             for (const { stock, signal } of items) {
                 const reason =
                     `📉 Pullback בריא (${fmtPct(signal.pctFromAth)} מ-ATH $${fmtPrice(stock.ath)}, מעל SMA200)` +
