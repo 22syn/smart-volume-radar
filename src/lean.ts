@@ -42,6 +42,7 @@ import { attachGraduated } from './lean/graduates.js';
 import { writeTradingViewWatchlist } from './lean/tradingViewWatchlist.js';
 import { writeDashboardRows } from './lean/dashboardRows.js';
 import { writeLeanSnapshot } from './utils/snapshotWriter.js';
+import { calculateSMA } from './utils/technicalAnalysis.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -140,6 +141,27 @@ async function main(): Promise<void> {
         }
         logger.info(`📊 OHLC series fetched for ${ohlcByTicker.size}/${stocks.length} stocks`);
 
+        // Market regime: SPY vs SMA50/200 (2026-07-08 regime study — pullbacks in
+        // weak tape were the strongest setup measured; boost, don't filter).
+        let regime: { spyAboveSma50: boolean; spyAboveSma200: boolean } | undefined;
+        try {
+            const spy = await fetchOHLCSeries('SPY');
+            if (spy && spy.closes.length >= 200) {
+                const last = spy.closes[spy.closes.length - 1]!;
+                const sma50 = calculateSMA(spy.closes, 50);
+                const sma200 = calculateSMA(spy.closes, 200);
+                if (sma50 != null && sma200 != null) {
+                    regime = { spyAboveSma50: last > sma50, spyAboveSma200: last > sma200 };
+                    logger.info(
+                        `🌡️ Regime: SPY ${regime.spyAboveSma50 ? 'above' : 'BELOW'} SMA50, ` +
+                            `${regime.spyAboveSma200 ? 'above' : 'BELOW'} SMA200`
+                    );
+                }
+            }
+        } catch (e) {
+            logger.warn(`⚠️ SPY regime fetch failed (scan proceeds without it): ${(e as Error).message}`);
+        }
+
         // Run the 3 detectors + 3 near-miss variants
         const result: LeanScanResult = {
             consolidationBreakouts: [],
@@ -150,6 +172,7 @@ async function main(): Promise<void> {
             nearVolume: [],
             nearPullback: [],
         };
+        if (regime) result.regime = regime;
 
         // Cross-day dedup (2026-07-08 study): repeat near-breakouts are noise —
         // +0.89% med21 vs +1.70% for first alerts, at 10x the volume.

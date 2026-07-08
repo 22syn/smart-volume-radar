@@ -36,6 +36,14 @@ describe('scoreRow', () => {
     // 30 + min(12,6)*5=30 + 0 - 25 (down-day climax) - 20 (deep ATH) - 15 (rvol>=8 climax) = 0
     expect(s).toBe(0);
   });
+  it('boosts pullback rows by 15 in weak tape (regime study: win 79%)', () => {
+    const input = { ...base, signal: 'pullback' as const, signals: ['pullback' as const], signalCount: 1, rvol: 0, stage2: 1 as const };
+    expect(scoreRow(input, { weakTape: true }) - scoreRow(input)).toBe(15);
+  });
+  it('does not boost non-pullback rows in weak tape', () => {
+    const input = { ...base, signal: 'highVolume' as const, signals: ['highVolume' as const], signalCount: 1, rvol: 4, stage2: 1 as const };
+    expect(scoreRow(input, { weakTape: true })).toBe(scoreRow(input));
+  });
   it('penalizes RVOL >= 8 by 15 (2026-07-08 study: climax RVOL is noise)', () => {
     const at6 = scoreRow({ ...base, signal: 'highVolume', signals: ['highVolume'], signalCount: 1, rvol: 6, stage2: 1 });
     const at9 = scoreRow({ ...base, signal: 'highVolume', signals: ['highVolume'], signalCount: 1, rvol: 9, stage2: 1 });

@@ -112,6 +112,30 @@ describe('formatLeanReport', () => {
         expect(out.indexOf('זחילה שקטה')).toBeLessThan(out.indexOf('פריצת קונסולידציה'));
     });
 
+    it('renders a weak-tape regime banner when SPY < SMA50', () => {
+        const r = empty();
+        r.regime = { spyAboveSma50: false, spyAboveSma200: true };
+        r.pullbacks.push({
+            stock: stock({ ticker: 'AAPL', pctFromAth: -18, ath: 250, lastPrice: 204 }),
+            signal: { pctFromAth: -18 },
+        });
+        const out = formatLeanReport('2026-07-08', r);
+        expect(out).toContain('שוק חלש');
+        expect(out).toContain('SPY מתחת SMA50');
+    });
+
+    it('renders a calm regime line when SPY > SMA50', () => {
+        const r = empty();
+        r.regime = { spyAboveSma50: true, spyAboveSma200: true };
+        r.pullbacks.push({
+            stock: stock({ ticker: 'AAPL', pctFromAth: -18, ath: 250, lastPrice: 204 }),
+            signal: { pctFromAth: -18 },
+        });
+        const out = formatLeanReport('2026-07-08', r);
+        expect(out).toContain('SPY מעל SMA50');
+        expect(out).not.toContain('שוק חלש');
+    });
+
     it('appends a climax warning when RVOL >= 8', () => {
         const r = empty();
         r.highVolume.push({

@@ -50,7 +50,13 @@ function orderByBase(signals: SignalKind[]): SignalKind[] {
 
 type ScoreInput = Omit<Row, 'score'>;
 
-export function scoreRow(r: ScoreInput): number {
+/** Optional market context for scoring (2026-07-08 regime study). */
+export interface ScoreContext {
+  /** SPY < SMA50 — pullbacks of leaders in weak tape: win 79%, +58% med63. */
+  weakTape?: boolean;
+}
+
+export function scoreRow(r: ScoreInput, ctx?: ScoreContext): number {
   const base = Math.max(...r.signals.map((sig) => BASE[sig]));
   let s = base;
   s += Math.min(r.rvol || 0, 6) * 5;
@@ -59,6 +65,7 @@ export function scoreRow(r: ScoreInput): number {
   s += (r.signalCount - 1) * 12; // CONFLUENCE BONUS (+12 per extra signal)
   if (r.signals.includes('highVolume') && (r.dayPct || 0) < 0) s -= 25; // climax
   if ((r.rvol || 0) >= 8) s -= 15; // 2026-07-08 study: rvol>=8 = climax, +0.58% med21
+  if (ctx?.weakTape && r.signals.includes('pullback')) s += 15; // regime study: win 79% in weak tape
   if (r.athPct != null && r.athPct < -30) s -= 20;
   if (isETFSector(r.sector)) s -= 12;
   return Math.round(s);
@@ -72,6 +79,7 @@ function isStage2(s: StockData): 0 | 1 {
 /** Build one Row for a ticker given ALL its matched signals + the stock object. */
 function buildRow(
   scanDate: string, stock: StockData, signals: SignalKind[], distPivot: number | null,
+  ctx?: ScoreContext,
 ): Row {
   const ordered = orderByBase(signals);
   const r: Omit<Row, 'score'> = {
@@ -82,7 +90,7 @@ function buildRow(
     dayPct: stock.priceChange ?? 0, stage2: isStage2(stock),
     distPivot, price: stock.lastPrice ?? 0,
   };
-  return { ...r, score: scoreRow(r) };
+  return { ...r, score: scoreRow(r, ctx) };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -119,9 +127,13 @@ export function rowsFromLeanResult(scanDate: string, result: any): Row[] {
    
   for (const e of result.nearPullback) add(e.stock, 'nearPullback', null);
 
+  // Regime boost: pullbacks of leaders in weak tape (SPY<SMA50) were the
+  // strongest setup in the 2026-07-08 study — win 79%, +58% med63.
+  const ctx: ScoreContext = { weakTape: result.regime ? !result.regime.spyAboveSma50 : false };
+
   const rows: Row[] = [];
   for (const acc of byTicker.values()) {
-    rows.push(buildRow(scanDate, acc.stock, [...acc.signals], acc.distPivot));
+    rows.push(buildRow(scanDate, acc.stock, [...acc.signals], acc.distPivot, ctx));
   }
   return rows;
 }

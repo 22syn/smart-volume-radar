@@ -55,6 +55,8 @@ export interface LeanScanResult {
         wasNear: Array<'nearBreakout' | 'nearVol' | 'nearPullback'>;
         daysOnWatchlist: number;
     }>;
+    /** SPY tape context (2026-07-08 regime study). Absent if the SPY fetch failed. */
+    regime?: { spyAboveSma50: boolean; spyAboveSma200: boolean };
 }
 
 /**
@@ -162,6 +164,15 @@ export function formatLeanReport(date: string, result: LeanScanResult): string {
             `<i>כל מנייה: 📊 RVOL · 📉 ATH% · 🪜 Stage2 · + badge אם תואם כמה</i>\n` +
             `━━━━━━━━━━━━━━━━━━━━━━`
     );
+
+    // Tape context (2026-07-08 regime study): pullbacks of leaders in weak
+    // tape were the strongest measured setup — surface the regime up top.
+    if (result.regime) {
+        const tape = result.regime.spyAboveSma50
+            ? '🌡️ שוק: SPY מעל SMA50 — מצב רגיל'
+            : '🌡️ <b>שוק חלש</b>: SPY מתחת SMA50 — 📉 פולבקים של מובילים = הסטאפ החזק ביותר (win 79% במחקר)';
+        parts.push(tape);
+    }
 
     const graduated = result.graduated ?? [];
     const totalReal =
