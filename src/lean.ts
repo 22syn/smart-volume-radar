@@ -30,7 +30,10 @@ import {
     qualifiesAsPullbackNearMiss,
     passesLeaderGate,
     isHvLeader,
+    momentum63,
+    LEADER_MOM63_MIN,
 } from './lean/signals.js';
+import { loadRecentSignalTickers } from './lean/signalHistory.js';
 import { formatLeanReport, type LeanScanResult } from './lean/format.js';
 import { attachGraduated } from './lean/graduates.js';
 import { writeTradingViewWatchlist } from './lean/tradingViewWatchlist.js';
@@ -144,6 +147,11 @@ async function main(): Promise<void> {
             nearPullback: [],
         };
 
+        // Cross-day dedup (2026-07-08 study): repeat near-breakouts are noise —
+        // +0.89% med21 vs +1.70% for first alerts, at 10x the volume.
+        const resultsDir = path.join(__moduleDir, '..', 'results');
+        const recentNearBO = loadRecentSignalTickers(resultsDir, scanDate, 'nearConsolidation', 21);
+
         for (const stock of stocks) {
             const ohlc = ohlcByTicker.get(stock.ticker);
             if (ohlc) {
@@ -151,7 +159,13 @@ async function main(): Promise<void> {
                 if (consolidation) {
                     result.consolidationBreakouts.push({ stock, signal: consolidation });
                 } else {
-                    const nearC = detectConsolidationNearMiss(stock, ohlc.closes, ohlc.highs, ohlc.lows);
+                    // Study gates: only FIRST alert in 21d AND 63d momentum >= 20%
+                    // (206 alerts/yr instead of 6,837; +2.58% med21, win 64%).
+                    const m = momentum63(ohlc.closes);
+                    const nearC =
+                        m != null && m >= LEADER_MOM63_MIN && !recentNearBO.has(stock.ticker)
+                            ? detectConsolidationNearMiss(stock, ohlc.closes, ohlc.highs, ohlc.lows)
+                            : null;
                     if (nearC) result.nearConsolidation.push({ stock, signal: nearC });
                 }
             }
