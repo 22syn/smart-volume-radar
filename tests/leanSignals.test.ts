@@ -9,6 +9,7 @@ import {
     qualifiesAsHealthyPullback,
     qualifiesAsPullbackNearMiss,
     isHvLeader,
+    adr20Pct,
 } from '../src/lean/signals';
 import type { StockData } from '../src/types';
 
@@ -177,6 +178,19 @@ describe('qualifiesAsHighVolume', () => {
 
     it('does not flag climax just below 8', () => {
         expect(qualifiesAsHighVolume(makeStock({ rvol: 7.9 }))).toEqual({ level: 'extreme', climax: false });
+    });
+});
+
+describe('adr20Pct', () => {
+    it('computes the mean daily range % over the last 20 bars', () => {
+        // 25 bars, every bar high=102, low=98, close=100 → range 4%
+        const closes = Array(25).fill(100);
+        const highs = Array(25).fill(102);
+        const lows = Array(25).fill(98);
+        expect(adr20Pct(highs, lows, closes)).toBeCloseTo(4.0, 5);
+    });
+    it('returns null with fewer than 20 bars', () => {
+        expect(adr20Pct([1, 2], [1, 2], [1, 2])).toBeNull();
     });
 });
 

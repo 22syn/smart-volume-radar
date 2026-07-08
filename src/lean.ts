@@ -32,6 +32,8 @@ import {
     isHvLeader,
     momentum63,
     LEADER_MOM63_MIN,
+    adr20Pct,
+    BREAKOUT_MIN_ADR_PCT,
 } from './lean/signals.js';
 import { loadRecentSignalTickers } from './lean/signalHistory.js';
 import { formatLeanReport, type LeanScanResult } from './lean/format.js';
@@ -154,7 +156,10 @@ async function main(): Promise<void> {
 
         for (const stock of stocks) {
             const ohlc = ohlcByTicker.get(stock.ticker);
-            if (ohlc) {
+            // ADR floor: skip the consolidation family for instruments that don't
+            // move (ETF creep — 39% of study breakouts, below-baseline returns).
+            const adr = ohlc ? adr20Pct(ohlc.highs, ohlc.lows, ohlc.closes) : null;
+            if (ohlc && (adr == null || adr >= BREAKOUT_MIN_ADR_PCT)) {
                 const consolidation = detectConsolidationBreakout(stock, ohlc.closes, ohlc.highs, ohlc.lows);
                 if (consolidation) {
                     result.consolidationBreakouts.push({ stock, signal: consolidation });
