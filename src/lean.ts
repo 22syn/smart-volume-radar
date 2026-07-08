@@ -29,6 +29,7 @@ import {
     qualifiesAsHealthyPullback,
     qualifiesAsPullbackNearMiss,
     passesLeaderGate,
+    isHvLeader,
 } from './lean/signals.js';
 import { formatLeanReport, type LeanScanResult } from './lean/format.js';
 import { attachGraduated } from './lean/graduates.js';
@@ -156,6 +157,8 @@ async function main(): Promise<void> {
             }
             const vol = qualifiesAsHighVolume(stock);
             if (vol) {
+                // A-tier (2026-07-08 study): Stage2 leader near highs — 2x forward returns.
+                vol.leader = ohlc ? isHvLeader(stock, ohlc.closes) : false;
                 result.highVolume.push({ stock, signal: vol });
             } else {
                 const nearV = qualifiesAsVolumeNearMiss(stock);
@@ -172,7 +175,11 @@ async function main(): Promise<void> {
 
         // Sort each section: best signal first.
         result.consolidationBreakouts.sort((a, b) => (b.stock.rvol ?? 0) - (a.stock.rvol ?? 0));
-        result.highVolume.sort((a, b) => (b.stock.rvol ?? 0) - (a.stock.rvol ?? 0));
+        result.highVolume.sort(
+            (a, b) =>
+                Number(b.signal.leader ?? false) - Number(a.signal.leader ?? false) ||
+                (b.stock.rvol ?? 0) - (a.stock.rvol ?? 0)
+        );
         result.pullbacks.sort((a, b) => (a.signal.pctFromAth ?? 0) - (b.signal.pctFromAth ?? 0));
         result.nearConsolidation.sort((a, b) => a.signal.distanceToPivotPct - b.signal.distanceToPivotPct);
         result.nearVolume.sort((a, b) => b.signal.rvol - a.signal.rvol);

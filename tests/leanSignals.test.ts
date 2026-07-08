@@ -8,6 +8,7 @@ import {
     qualifiesAsVolumeNearMiss,
     qualifiesAsHealthyPullback,
     qualifiesAsPullbackNearMiss,
+    isHvLeader,
 } from '../src/lean/signals';
 import type { StockData } from '../src/types';
 
@@ -176,6 +177,25 @@ describe('qualifiesAsHighVolume', () => {
 
     it('does not flag climax just below 8', () => {
         expect(qualifiesAsHighVolume(makeStock({ rvol: 7.9 }))).toEqual({ level: 'extreme', climax: false });
+    });
+});
+
+describe('isHvLeader', () => {
+    // 70 closes climbing 0.5%/day → mom63 ≈ +37%
+    const risingCloses = Array.from({ length: 70 }, (_, i) => 100 * Math.pow(1.005, i));
+    const flatCloses = Array.from({ length: 70 }, () => 100);
+
+    it('true when Stage2 + mom63>=20 + within -15% of ATH', () => {
+        expect(isHvLeader(makeStock({ pctFromAth: -8 }), risingCloses)).toBe(true);
+    });
+    it('false when momentum is flat', () => {
+        expect(isHvLeader(makeStock({ pctFromAth: -8 }), flatCloses)).toBe(false);
+    });
+    it('false when too far from ATH', () => {
+        expect(isHvLeader(makeStock({ pctFromAth: -22 }), risingCloses)).toBe(false);
+    });
+    it('false when not Stage 2', () => {
+        expect(isHvLeader(makeStock({ pctFromAth: -8, sma50: 120 }), risingCloses)).toBe(false);
     });
 });
 

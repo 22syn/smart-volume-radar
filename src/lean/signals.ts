@@ -119,6 +119,20 @@ export function passesLeaderGate(stock: StockData, closes: number[]): boolean {
     return m != null && m >= LEADER_MOM63_MIN;
 }
 
+// ─── HV-LEADER A-tier (2026-07-08 study) ─────────────────────────────
+// HV + mom63>=20 + within -15% of ATH: +3.37%/+10.98% med21/63 (vs +1.81%/+6.18%
+// raw HV), win 61.5%, best ATR expectancy in the system (+0.47 ATR).
+export const HV_LEADER_MOM63_MIN = 20;
+export const HV_LEADER_MAX_FROM_ATH = -15;
+
+/** A-tier high-volume: Stage-2 leader near highs. Needs the closes series. */
+export function isHvLeader(stock: StockData, closes: number[]): boolean {
+    if (!isStage2(stock)) return false;
+    if ((stock.pctFromAth ?? -Infinity) < HV_LEADER_MAX_FROM_ATH) return false;
+    const m = momentum63(closes);
+    return m != null && m >= HV_LEADER_MOM63_MIN;
+}
+
 // ─── Window range helper ──────────────────────────────────────────────
 /**
  * Compute the (high − low) / mid range over the LAST `days` bars EXCLUDING today.
