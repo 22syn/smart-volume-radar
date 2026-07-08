@@ -283,3 +283,47 @@ export function qualifiesAsPullbackNearMiss(stock: StockData): PullbackNearMiss 
     if (stock.lastPrice <= stock.sma200) return null;
     return { pctFromAth: pct };
 }
+
+// ─── 4. CREEP tier (2026-07-08 study) ────────────────────────────────
+// 58% of explosive moves (+25% in 21d) launched with NO alert — median RVOL
+// 0.84 at launch, many AT a fresh 52w high (MXL +331%, INTC, MU, SIMO, IREN).
+// This tier catches the quiet grind: Stage-2 leader near highs, volume still
+// asleep, liquid enough to trade. Study card (with $10M floor): n=883,
+// +2.97%/+13.25% med21/63, win 59.1%. POSITION signal — 63-day horizon.
+export const CREEP_MOM63_MIN = 30;
+export const CREEP_MAX_FROM_ATH = -10;
+export const CREEP_MAX_RVOL = 1.5;
+export const CREEP_MIN_DOLLAR_VOLUME_USD = 10_000_000;
+
+export interface CreepSignal {
+    mom63: number;
+    pctFromAth: number;
+    avgDollarVolumeUsd: number;
+}
+
+/** Rough per-suffix price→USD factor for the liquidity floor (subunit currencies included). */
+export function approxUsdFactor(ticker: string): number {
+    const t = ticker.toUpperCase();
+    if (t.endsWith('.TA')) return 0.0027; // agorot → USD (₪/100 × ~0.27)
+    if (t.endsWith('.L')) return 0.0127; // pence → USD
+    if (t.endsWith('.TW')) return 0.031;
+    if (t.endsWith('.KS')) return 0.00072;
+    if (t.endsWith('.T')) return 0.0067;
+    if (t.endsWith('.SA')) return 0.18;
+    if (t.endsWith('.TO') || t.endsWith('.V')) return 0.73;
+    if (t.endsWith('.DE') || t.endsWith('.MI') || t.endsWith('.PA') || t.endsWith('.AS') || t.endsWith('.MC')) return 1.08;
+    if (t.endsWith('.HK')) return 0.128;
+    return 1; // USD default
+}
+
+export function qualifiesAsCreep(stock: StockData, closes: number[]): CreepSignal | null {
+    if (!isStage2(stock)) return null;
+    const pct = stock.pctFromAth;
+    if (pct == null || pct < CREEP_MAX_FROM_ATH) return null;
+    if ((stock.rvol ?? 0) >= CREEP_MAX_RVOL) return null;
+    const m = momentum63(closes);
+    if (m == null || m < CREEP_MOM63_MIN) return null;
+    const dollarVol = (stock.avgVolume ?? 0) * (stock.lastPrice ?? 0) * approxUsdFactor(stock.ticker);
+    if (dollarVol < CREEP_MIN_DOLLAR_VOLUME_USD) return null;
+    return { mom63: m, pctFromAth: pct, avgDollarVolumeUsd: dollarVol };
+}

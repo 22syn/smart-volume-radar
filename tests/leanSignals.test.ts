@@ -10,6 +10,8 @@ import {
     qualifiesAsPullbackNearMiss,
     isHvLeader,
     adr20Pct,
+    qualifiesAsCreep,
+    approxUsdFactor,
 } from '../src/lean/signals';
 import type { StockData } from '../src/types';
 
@@ -178,6 +180,50 @@ describe('qualifiesAsHighVolume', () => {
 
     it('does not flag climax just below 8', () => {
         expect(qualifiesAsHighVolume(makeStock({ rvol: 7.9 }))).toEqual({ level: 'extreme', climax: false });
+    });
+});
+
+describe('qualifiesAsCreep', () => {
+    // mom63 ≈ +46% (0.6%/day for 70 bars)
+    const risingCloses = Array.from({ length: 70 }, (_, i) => 100 * Math.pow(1.006, i));
+
+    it('fires for a quiet Stage-2 leader near highs with liquidity', () => {
+        const stock = makeStock({
+            rvol: 0.9, pctFromAth: -4, lastPrice: 100, avgVolume: 500_000, // $50M/day
+        });
+        const sig = qualifiesAsCreep(stock, risingCloses);
+        expect(sig).not.toBeNull();
+        expect(sig!.mom63).toBeGreaterThanOrEqual(30);
+        expect(sig!.pctFromAth).toBe(-4);
+    });
+
+    it('rejects when volume is already elevated (rvol >= 1.5 — HV territory)', () => {
+        const stock = makeStock({ rvol: 2.0, pctFromAth: -4, avgVolume: 500_000 });
+        expect(qualifiesAsCreep(stock, risingCloses)).toBeNull();
+    });
+
+    it('rejects illiquid names (avg dollar volume < $10M)', () => {
+        const stock = makeStock({ rvol: 0.9, pctFromAth: -4, lastPrice: 5, avgVolume: 100_000 }); // $0.5M
+        expect(qualifiesAsCreep(stock, risingCloses)).toBeNull();
+    });
+
+    it('rejects when too far from the high (pctFromAth < -10)', () => {
+        const stock = makeStock({ rvol: 0.9, pctFromAth: -14, avgVolume: 500_000 });
+        expect(qualifiesAsCreep(stock, risingCloses)).toBeNull();
+    });
+
+    it('rejects when momentum is weak (mom63 < 30)', () => {
+        const slowCloses = Array.from({ length: 70 }, (_, i) => 100 * Math.pow(1.002, i)); // ≈ +13%
+        const stock = makeStock({ rvol: 0.9, pctFromAth: -4, avgVolume: 500_000 });
+        expect(qualifiesAsCreep(stock, slowCloses)).toBeNull();
+    });
+});
+
+describe('approxUsdFactor', () => {
+    it('converts TASE agorot and LSE pence to ~USD', () => {
+        expect(approxUsdFactor('HGG.TA')).toBeCloseTo(0.0027, 4);
+        expect(approxUsdFactor('BA.L')).toBeCloseTo(0.0127, 4);
+        expect(approxUsdFactor('NVDA')).toBe(1);
     });
 });
 
