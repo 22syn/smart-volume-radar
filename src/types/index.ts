@@ -24,7 +24,7 @@ export interface MomentumCriteria {
     stage2: boolean;
     /** distance from SMA21 <= 8% */
     lowRiskEntry: boolean;
-    /** lastPrice >= ath * 0.98 */
+    /** lastPrice >= ath * 0.99 */
     pivotBreakout: boolean;
     /** daysSinceAth >= 15 (rested ≥ 3 weeks before breakout) */
     tightness: boolean;
@@ -34,6 +34,8 @@ export interface MomentumCriteria {
     antsAccumulation: boolean;
     /** Today's priceChange ≥ 3% — explosive continuation breakout day. Quality marker. */
     bigMoveToday: boolean;
+    /** return63d >= 20% — mandatory momentum gate for Full AND Close (2026-07-09, 1y replay). */
+    momentumGate: boolean;
 }
 
 export interface MomentumResult {

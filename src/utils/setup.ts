@@ -1,12 +1,13 @@
 /**
  * Smart Volume Radar — Momentum Edition: setup brain.
  *
- * Single source of truth for the 5-criteria Stage 2 Momentum Breakout:
+ * Single source of truth for the Stage 2 Momentum Breakout criteria:
  *   1. RVOL              — projectedRvol >= regime-aware threshold
  *   2. Stage 2 Advance   — price > SMA50 > SMA200, slope not declining
  *   3. Low Risk Entry    — distance from SMA21 ≤ 8%
- *   4. Pivot Breakout    — lastPrice >= ath * 0.98
+ *   4. Pivot Breakout    — lastPrice >= ath * 0.99
  *   5. Tightness (VCP)   — daysSinceAth >= 15
+ *   6. Momentum Gate     — return63d >= 20% (mandatory for Full AND Close)
  *
  * Plus an AVWAP guard (gap-day breakout must hold its anchored VWAP) and an
  * "Ants" accumulation flag (≥12 green days in last 15 — independent signal).
@@ -36,6 +37,17 @@ const HIGH_CONVICTION_RVOL = 3.0;
  * false-positive risk of bear-market bounces.
  */
 const RECOVERY_RVOL_THRESHOLD = 2.5;
+
+/**
+ * Minimum 63-day return (%) for the Momentum Gate — mandatory for Full and Close.
+ * 1y replay (599 tickers, 2025-07→2026-07, episode-deduped 21d, 63d forward window):
+ * Full WITHOUT the gate: 76.4% win / +10.9% median — statistically identical to the
+ * watchlist baseline (76.3% / +11.6%), i.e. zero added edge. Full WITH mom63≥20:
+ * 79.3% win / +17.0% median / 84.5% hit-rate(≥10%), consistent across both half-years
+ * and directionally confirmed on the out-of-watchlist universe (54.3%→57.1% win,
+ * +1.4%→+6.3% median). Sweep 0→40 is monotonic (no overfit spike).
+ */
+const MOMENTUM_GATE_MIN_RETURN_63D = 20;
 
 /** Distance from SMA21 in % (absolute). Returns Infinity when SMA21 missing/zero (treated as fail). */
 function distFromSma21Pct(price: number | undefined, sma21: number | undefined): number {
@@ -81,12 +93,20 @@ export function evaluateMomentumSetup(
     // 3. Low Risk Entry: distance from SMA21 ≤ 8%
     const lowRiskEntry = distFromSma21Pct(s.lastPrice, s.sma21) <= 8;
 
-    // 4. Pivot Breakout: lastPrice >= ath * 0.98
+    // 4. Pivot Breakout: lastPrice >= ath * 0.99.
+    // Tightened from 0.98 (2026-07-09, 1y replay): the 1–2%-below-ATH band wins only
+    // 62.4% with +3.2% median vs 68.3% / +9.2% at/within 1% of the high — the extra
+    // 1% of tolerance admitted mostly stall-outs, not breakouts.
     const pivotBreakout =
-        s.ath != null && s.ath > 0 && s.lastPrice != null && s.lastPrice >= s.ath * 0.98;
+        s.ath != null && s.ath > 0 && s.lastPrice != null && s.lastPrice >= s.ath * 0.99;
 
     // 5. Tightness: daysSinceAth >= 15
     const tightness = (s.daysSinceAth ?? 0) >= 15;
+
+    // 6. Momentum Gate: 63-day return >= 20%. Missing return63d (history < 64 bars,
+    // e.g. recent IPOs) fails the gate — a stock we can't measure momentum on is not
+    // a momentum setup. See MOMENTUM_GATE_MIN_RETURN_63D for the 1y-replay evidence.
+    const momentumGate = (s.return63d ?? 0) >= MOMENTUM_GATE_MIN_RETURN_63D;
 
     // AVWAP guard: only meaningful once the AVWAP has had several bars to develop.
     // On the gap day itself (and the next ~2 bars), AVWAP collapses to ~the bar's typical price —
@@ -117,6 +137,7 @@ export function evaluateMomentumSetup(
         aboveGapAvwap,
         antsAccumulation,
         bigMoveToday,
+        momentumGate,
     };
 
     // ─── Level decision (redesigned) ──────────────────────────────────────
@@ -143,11 +164,16 @@ export function evaluateMomentumSetup(
     //     • antsAccumulation    — quiet uptrend signal (≥12 green/15)
     //     • effectiveRvol ≥ 3   — extreme institutional confirmation
     //
+    //   `momentumGate` ADDED to MANDATORY 2026-07-09 (1y replay, 599×252d): without
+    //   it Full carried zero edge over the watchlist baseline (76.4% vs 76.3% win);
+    //   with it 79.3% win / +17.0% median / 84.5% hit-rate. The demoted cohort
+    //   (mom63<20 or >1% below ATH) won only 69.9% with +5.5% median — correctly cut.
     const MANDATORY: Array<keyof MomentumCriteria> = [
         'rvolPass',
         'stage2',
         'pivotBreakout',
         'aboveGapAvwap',
+        'momentumGate',
     ];
     // QUALITY bucket — at least ONE must pass to qualify Full.
     // `lowRiskEntry` REMOVED 2026-05-22 (TD-9) — empirically the strongest
@@ -184,7 +210,12 @@ export function evaluateMomentumSetup(
         // both clean (i.e., the entry isn't from a textbook VCP base). Useful for the
         // trader to know "this is a continuation chase, not a clean breakout entry".
         if (!lowRiskEntry || !tightness) highConvictionBypass = true;
-    } else if (effectiveRvol >= 1.5 && (pivotBreakout || lowRiskEntry)) {
+    } else if (effectiveRvol >= 1.5 && stage2 && momentumGate && (pivotBreakout || lowRiskEntry)) {
+        // Close gate tightened 2026-07-09 (1y replay): the old rvol≥1.5 & (pivot|lowRisk)
+        // fired 1,674 episodes/yr at +12.0% median; requiring Stage 2 + momentumGate cuts
+        // to 647 (−61%) at +18.6% median / 83.5% hit-rate, stable across both half-years.
+        // Non-Stage-2 bounces that used to land here are either promoted to 'recovery'
+        // below or correctly dropped to 'none'.
         level = 'close';
     } else {
         level = 'none';
@@ -241,5 +272,7 @@ export function describeFailure(key: keyof MomentumCriteria): string {
             return 'אין Ants accumulation';
         case 'bigMoveToday':
             return 'תזוזה קטנה היום (<3%)';
+        case 'momentumGate':
+            return 'מומנטום 63 ימים נמוך (<20%)';
     }
 }

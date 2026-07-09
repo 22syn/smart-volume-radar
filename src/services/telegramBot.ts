@@ -175,6 +175,7 @@ const CRITERIA_LABEL_HE: Record<string, string> = {
     tightness: 'תקופת בסיס',
     antsAccumulation: 'אקומולציה (Ants)',
     bigMoveToday: 'תנועת מחיר היום',
+    momentumGate: 'מומנטום 63 ימים',
 };
 
 /** Translate a list of criteria keys to a comma-separated Hebrew label string. */
@@ -182,14 +183,15 @@ function criteriaListHe(keys: string[]): string {
     return keys.map((k) => CRITERIA_LABEL_HE[k] ?? k).join(', ');
 }
 
-/** Compact ✓/✗ row for the 4 mandatory + 4 quality momentum criteria. */
+/** Compact ✓/✗ row for the 5 mandatory + 4 quality momentum criteria. */
 function formatMomentumCriteriaRows(stock: RVOLResult): string {
     const c = stock.momentum?.criteria;
     if (!c) return '';
     const mark = (b: boolean | undefined): string => (b ? '✓' : '✗');
     const mandatory =
         `RVOL ${mark(c.rvolPass)} | Stage2 ${mark(c.stage2)} | ` +
-        `Pivot ${mark(c.pivotBreakout)} | AVWAP ${mark(c.aboveGapAvwap)}`;
+        `Pivot ${mark(c.pivotBreakout)} | AVWAP ${mark(c.aboveGapAvwap)} | ` +
+        `Mom63 ${mark(c.momentumGate)}`;
     const quality =
         `LowRisk ${mark(c.lowRiskEntry)} | Tight ${mark(c.tightness)} | ` +
         `Ants ${mark(c.antsAccumulation)} | BigMove ${mark(c.bigMoveToday)}`;

@@ -24,6 +24,7 @@ function intelLike(overrides: Partial<StockData> = {}): StockData {
         avwapFromGap: undefined,
         projectedRvol: 3.0,
         marketRegime: 'bull',
+        return63d: 25, // momentumGate ✓ (>= 20%)
         ...overrides,
     };
 }
@@ -227,7 +228,9 @@ describe('evaluateMomentumSetup — Recovery Rally tier', () => {
         expect(r.criteria.stage2).toBe(false); // Stage 2 broken — wouldn't be Full
     });
 
-    it('Recovery requires RVOL ≥ 2.5 (RVOL 2.0 → Close, not Recovery)', () => {
+    it('Recovery requires RVOL ≥ 2.5 (RVOL 2.0 → NONE, not Recovery)', () => {
+        // Since 2026-07-09 Close requires Stage 2, so a non-Stage-2 bounce that
+        // misses the Recovery RVOL bar drops to NONE (used to land in Close).
         const r = evaluateMomentumSetup(
             intelLike({
                 rvol: 2.0,
@@ -244,10 +247,10 @@ describe('evaluateMomentumSetup — Recovery Rally tier', () => {
                 priceChange: 8,
             })
         );
-        expect(r.level).toBe('close'); // promoted to Close (RVOL≥1.5+pivot), not Recovery
+        expect(r.level).toBe('none');
     });
 
-    it('Recovery requires SMA50 sloping up (flat/down → Close)', () => {
+    it('Recovery requires SMA50 sloping up (flat/down → NONE)', () => {
         const r = evaluateMomentumSetup(
             intelLike({
                 rvol: 3.5,
@@ -264,7 +267,7 @@ describe('evaluateMomentumSetup — Recovery Rally tier', () => {
                 priceChange: 8,
             })
         );
-        expect(r.level).toBe('close');
+        expect(r.level).toBe('none'); // Close needs Stage 2 (2026-07-09), Recovery needs slope up
     });
 
     it('Recovery does NOT downgrade Full (Stage 2 stock with high RVOL stays Full)', () => {
@@ -420,5 +423,69 @@ describe('evaluateMomentumSetup — high-conviction bypass (Option B)', () => {
         );
         expect(r.level).not.toBe('full');
         expect(r.highConvictionBypass).toBeUndefined();
+    });
+});
+
+describe('evaluateMomentumSetup — momentum gate (2026-07-09, 1y replay)', () => {
+    it('return63d below 20% blocks Full even when all other criteria pass', () => {
+        const r = evaluateMomentumSetup(intelLike({ return63d: 12 }));
+        expect(r.criteria.momentumGate).toBe(false);
+        expect(r.level).not.toBe('full');
+        expect(r.failures).toContain('momentumGate');
+    });
+
+    it('return63d below 20% blocks Close too (drops to NONE)', () => {
+        // Full-shaped stock, weak 3-month momentum → neither Full nor Close.
+        const r = evaluateMomentumSetup(
+            intelLike({ return63d: 5, rvol: 2.0, projectedRvol: 2.0 })
+        );
+        expect(r.level).toBe('none');
+    });
+
+    it('Missing return63d (short history, e.g. recent IPO) fails the gate', () => {
+        const r = evaluateMomentumSetup(intelLike({ return63d: undefined }));
+        expect(r.criteria.momentumGate).toBe(false);
+        expect(r.level).not.toBe('full');
+    });
+
+    it('return63d exactly 20% passes the gate', () => {
+        const r = evaluateMomentumSetup(intelLike({ return63d: 20 }));
+        expect(r.criteria.momentumGate).toBe(true);
+        expect(r.level).toBe('full');
+    });
+
+    it('Momentum gate does NOT block the Recovery tier', () => {
+        // Recovery evaluates bear-market reversals where 63d return is often still weak.
+        const r = evaluateMomentumSetup(
+            intelLike({
+                return63d: 10,
+                rvol: 3.35,
+                projectedRvol: 3.35,
+                lastPrice: 36.76,
+                sma21: 25,
+                sma50: 24,
+                sma50Slope: 'up',
+                sma200: 30,
+                sma200Slope: 'down',
+                ath: 36.76,
+                daysSinceAth: 1,
+                priceChange: 24,
+            })
+        );
+        expect(r.level).toBe('recovery');
+    });
+});
+
+describe('evaluateMomentumSetup — pivot tightened to 1% (2026-07-09, 1y replay)', () => {
+    it('Price 1.5% below ATH no longer counts as pivot breakout (was ✓ at 2%)', () => {
+        const r = evaluateMomentumSetup(intelLike({ lastPrice: 98.5, ath: 100, sma21: 95 }));
+        expect(r.criteria.pivotBreakout).toBe(false);
+        expect(r.level).not.toBe('full');
+    });
+
+    it('Price 0.5% below ATH still passes the pivot', () => {
+        const r = evaluateMomentumSetup(intelLike({ lastPrice: 99.5, ath: 100, sma21: 95 }));
+        expect(r.criteria.pivotBreakout).toBe(true);
+        expect(r.level).toBe('full');
     });
 });
