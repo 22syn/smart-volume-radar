@@ -228,9 +228,9 @@ describe('evaluateMomentumSetup — Recovery Rally tier', () => {
         expect(r.criteria.stage2).toBe(false); // Stage 2 broken — wouldn't be Full
     });
 
-    it('Recovery requires RVOL ≥ 2.5 (RVOL 2.0 → NONE, not Recovery)', () => {
-        // Since 2026-07-09 Close requires Stage 2, so a non-Stage-2 bounce that
-        // misses the Recovery RVOL bar drops to NONE (used to land in Close).
+    it('Recovery requires RVOL ≥ 2.5 (RVOL 2.0 → Close, not Recovery)', () => {
+        // Non-Stage-2, but momentumGate ✓ + pivot ✓ + rvol ≥ 1.5 → still qualifies
+        // as Close (the ARM/ALAB/MU pattern the Close tier deliberately keeps).
         const r = evaluateMomentumSetup(
             intelLike({
                 rvol: 2.0,
@@ -247,10 +247,10 @@ describe('evaluateMomentumSetup — Recovery Rally tier', () => {
                 priceChange: 8,
             })
         );
-        expect(r.level).toBe('none');
+        expect(r.level).toBe('close');
     });
 
-    it('Recovery requires SMA50 sloping up (flat/down → NONE)', () => {
+    it('Recovery requires SMA50 sloping up (flat/down → Close)', () => {
         const r = evaluateMomentumSetup(
             intelLike({
                 rvol: 3.5,
@@ -267,7 +267,7 @@ describe('evaluateMomentumSetup — Recovery Rally tier', () => {
                 priceChange: 8,
             })
         );
-        expect(r.level).toBe('none'); // Close needs Stage 2 (2026-07-09), Recovery needs slope up
+        expect(r.level).toBe('close'); // momentumGate ✓ + pivot ✓ keeps it in Close
     });
 
     it('Recovery does NOT downgrade Full (Stage 2 stock with high RVOL stays Full)', () => {
@@ -476,16 +476,40 @@ describe('evaluateMomentumSetup — momentum gate (2026-07-09, 1y replay)', () =
     });
 });
 
-describe('evaluateMomentumSetup — pivot tightened to 1% (2026-07-09, 1y replay)', () => {
-    it('Price 1.5% below ATH no longer counts as pivot breakout (was ✓ at 2%)', () => {
+describe('evaluateMomentumSetup — pivot stays at 2% (0.99 tightening reverted 2026-07-09)', () => {
+    it('Price 1.5% below ATH still counts as pivot breakout (UCTT/SNDK band kept)', () => {
         const r = evaluateMomentumSetup(intelLike({ lastPrice: 98.5, ath: 100, sma21: 95 }));
+        expect(r.criteria.pivotBreakout).toBe(true);
+        expect(r.level).toBe('full');
+    });
+
+    it('Price 2.5% below ATH fails the pivot', () => {
+        const r = evaluateMomentumSetup(intelLike({ lastPrice: 97.5, ath: 100, sma21: 95 }));
         expect(r.criteria.pivotBreakout).toBe(false);
         expect(r.level).not.toBe('full');
     });
+});
 
-    it('Price 0.5% below ATH still passes the pivot', () => {
-        const r = evaluateMomentumSetup(intelLike({ lastPrice: 99.5, ath: 100, sma21: 95 }));
-        expect(r.criteria.pivotBreakout).toBe(true);
-        expect(r.level).toBe('full');
+describe('evaluateMomentumSetup — Close keeps high-momentum non-Stage-2 breaks (ARM/ALAB/MU)', () => {
+    it('momentumGate ✓ + pivot ✓ + rvol 2.0 but Stage 2 broken → CLOSE (not none)', () => {
+        // ARM 2026-04-22 pattern: +52% in 21d after firing at rvol 2.0 with SMA200
+        // structure still lagging. Stage 2 is NOT required for Close.
+        const r = evaluateMomentumSetup(
+            intelLike({
+                rvol: 2.0,
+                projectedRvol: 2.0,
+                return63d: 45,
+                lastPrice: 36,
+                sma21: 33,
+                sma50: 30,
+                sma200: 34, // sma50 < sma200 → stage2 fails
+                sma200Slope: 'down',
+                ath: 36,
+                daysSinceAth: 3,
+                priceChange: 2,
+            })
+        );
+        expect(r.criteria.stage2).toBe(false);
+        expect(r.level).toBe('close');
     });
 });

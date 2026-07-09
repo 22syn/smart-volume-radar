@@ -5,7 +5,7 @@
  *   1. RVOL              — projectedRvol >= regime-aware threshold
  *   2. Stage 2 Advance   — price > SMA50 > SMA200, slope not declining
  *   3. Low Risk Entry    — distance from SMA21 ≤ 8%
- *   4. Pivot Breakout    — lastPrice >= ath * 0.99
+ *   4. Pivot Breakout    — lastPrice >= ath * 0.98
  *   5. Tightness (VCP)   — daysSinceAth >= 15
  *   6. Momentum Gate     — return63d >= 20% (mandatory for Full AND Close)
  *
@@ -43,9 +43,11 @@ const RECOVERY_RVOL_THRESHOLD = 2.5;
  * 1y replay (599 tickers, 2025-07→2026-07, episode-deduped 21d, 63d forward window):
  * Full WITHOUT the gate: 76.4% win / +10.9% median — statistically identical to the
  * watchlist baseline (76.3% / +11.6%), i.e. zero added edge. Full WITH mom63≥20:
- * 79.3% win / +17.0% median / 84.5% hit-rate(≥10%), consistent across both half-years
+ * 78.8% win / +15.7% median / 83.2% hit-rate(≥10%), consistent across both half-years
  * and directionally confirmed on the out-of-watchlist universe (54.3%→57.1% win,
- * +1.4%→+6.3% median). Sweep 0→40 is monotonic (no overfit spike).
+ * +1.4%→+6.3% median). Sweep 0→40 is monotonic (no overfit spike). Independently
+ * CONFIRMED by radar-criteria-tester on Apr–Jul 2026 real scans: suppressed Fulls
+ * won 33% / −3.3% median vs kept 73% / +9.7%, with zero peak-≥30% false negatives.
  */
 const MOMENTUM_GATE_MIN_RETURN_63D = 20;
 
@@ -93,12 +95,13 @@ export function evaluateMomentumSetup(
     // 3. Low Risk Entry: distance from SMA21 ≤ 8%
     const lowRiskEntry = distFromSma21Pct(s.lastPrice, s.sma21) <= 8;
 
-    // 4. Pivot Breakout: lastPrice >= ath * 0.99.
-    // Tightened from 0.98 (2026-07-09, 1y replay): the 1–2%-below-ATH band wins only
-    // 62.4% with +3.2% median vs 68.3% / +9.2% at/within 1% of the high — the extra
-    // 1% of tolerance admitted mostly stall-outs, not breakouts.
+    // 4. Pivot Breakout: lastPrice >= ath * 0.98.
+    // A 0.99 tightening was tried 2026-07-09 and REVERTED same day: the 1y replay gave
+    // it only +0.5pp win / +1.3 median, while the 90d real-scan validation showed the
+    // newly-cut 1–2%-below band OUTPERFORMING (UCTT +58%, SNDK +51%, 000660.KS +51%
+    // all suppressed). Marginal measured gain + concrete false negatives → keep 0.98.
     const pivotBreakout =
-        s.ath != null && s.ath > 0 && s.lastPrice != null && s.lastPrice >= s.ath * 0.99;
+        s.ath != null && s.ath > 0 && s.lastPrice != null && s.lastPrice >= s.ath * 0.98;
 
     // 5. Tightness: daysSinceAth >= 15
     const tightness = (s.daysSinceAth ?? 0) >= 15;
@@ -210,12 +213,14 @@ export function evaluateMomentumSetup(
         // both clean (i.e., the entry isn't from a textbook VCP base). Useful for the
         // trader to know "this is a continuation chase, not a clean breakout entry".
         if (!lowRiskEntry || !tightness) highConvictionBypass = true;
-    } else if (effectiveRvol >= 1.5 && stage2 && momentumGate && (pivotBreakout || lowRiskEntry)) {
-        // Close gate tightened 2026-07-09 (1y replay): the old rvol≥1.5 & (pivot|lowRisk)
-        // fired 1,674 episodes/yr at +12.0% median; requiring Stage 2 + momentumGate cuts
-        // to 647 (−61%) at +18.6% median / 83.5% hit-rate, stable across both half-years.
-        // Non-Stage-2 bounces that used to land here are either promoted to 'recovery'
-        // below or correctly dropped to 'none'.
+    } else if (effectiveRvol >= 1.5 && momentumGate && (pivotBreakout || lowRiskEntry)) {
+        // Close gate tightened 2026-07-09 (1y replay + 90d real-scan validation): the old
+        // rvol≥1.5 & (pivot|lowRisk) fired 1,674 episodes/yr at +12.0% median; adding
+        // momentumGate cuts to 700 (−58%) at +18.9% median / 84.6% hit-rate, stable across
+        // both half-years. Deliberately does NOT require stage2: the high-momentum
+        // non-Stage-2 cohort (ATH break while SMA200 structure still lags — ARM/ALAB/MU
+        // pattern) was the best slice of the whole tier (80.3% win, +35.6% median), and
+        // the Recovery tier's RVOL≥2.5 bar does not rescue it (those fired at rvol ~1.9-2.0).
         level = 'close';
     } else {
         level = 'none';

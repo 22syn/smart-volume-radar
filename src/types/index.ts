@@ -24,7 +24,7 @@ export interface MomentumCriteria {
     stage2: boolean;
     /** distance from SMA21 <= 8% */
     lowRiskEntry: boolean;
-    /** lastPrice >= ath * 0.99 */
+    /** lastPrice >= ath * 0.98 */
     pivotBreakout: boolean;
     /** daysSinceAth >= 15 (rested ≥ 3 weeks before breakout) */
     tightness: boolean;
