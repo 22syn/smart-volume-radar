@@ -38,12 +38,16 @@ export function buildSummaryQuery(_p: SignalParams): Query {
   return {
     sql: `SELECT scan_date,
       COUNT(*) AS total,
+      SUM(signals LIKE '%setupFull%') AS setup_full,
+      SUM(signals LIKE '%setupClose%' OR signals LIKE '%setupRecovery%') AS setup_other,
       SUM(signal='breakout') AS breakout,
       SUM(signal='highVolume') AS high_volume,
       SUM(signal='pullback') AS pullback,
+      SUM(signal='creep') AS creep,
       SUM(signal LIKE 'near%') AS near_all,
       SUM(score>=70) AS score70,
       SUM(score>=65) AS score65,
+      SUM(rs>=90) AS rs90,
       MAX(ingested_at) AS last_run
       FROM lean_signals GROUP BY scan_date ORDER BY scan_date DESC`,
     params: [],

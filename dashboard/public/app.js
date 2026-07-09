@@ -396,12 +396,15 @@ function renderCards() {
 
   const defs = [
     ['סה"כ',     s.total,        ''],
+    ['🎯 Setup Full', s.setup_full, 'stat-card--highlight'],
+    ['👀 Setup/Rec', s.setup_other, ''],
     ['📈 Breakout', s.breakout,  ''],
     ['🔥 High Vol', s.high_volume, ''],
     ['📉 Pullback', s.pullback,  ''],
+    ['🐢 Creep',  s.creep,       ''],
     ['⏳ Near',   s.near_all,    ''],
-    ['Score≥70', s.score70,      'stat-card--highlight'],
-    ['Score≥65', s.score65,      'stat-card--accent'],
+    ['RS≥90 🔥', s.rs90,         'stat-card--accent'],
+    ['Score≥70', s.score70,      ''],
   ];
 
   container.innerHTML = defs.map(([lbl, val, extra]) => `
@@ -497,7 +500,10 @@ function visibleRows() {
   const filtered = allRows.filter((r) => {
     if (q    && !(r.ticker || '').toUpperCase().includes(q)) return false;
     if (reg  && r.region !== reg)   return false;
-    if (sig  && r.signal !== sig)   return false;
+    // Match against the FULL signals list, not just the primary — merged rows
+    // (e.g. "pullback,setupClose") must be findable by any of their signals.
+    if (sig && r.signal !== sig &&
+        !(r.signals || '').split(',').map((s) => s.trim()).includes(sig)) return false;
     if (s2   && r.stage2 !== 1)     return false;
     if (grad && !r.graduated_from)  return false;
 
@@ -687,6 +693,69 @@ function renderShowMore() {
 
 /* ─── Deep-dive panel ─────────────────────────────────────────────────────── */
 
+/** BASE points per signal kind — client-side mirror of dashboardRows.scoreRow
+ *  (lean kinds) and the setup-backfill scoring (setup kinds). */
+const SCORE_BASE = {
+  pullback: 50, creep: 42, nearPullback: 38, highVolume: 30,
+  nearHighVol: 18, breakout: 12, nearBreakout: 8,
+  setupFull: 60, setupRecovery: 55, setupClose: 40,
+};
+
+/**
+ * Itemized score breakdown for the deep-dive. Mirrors the server formulas;
+ * any drift (regime bonus, historic formula versions) lands in a residual
+ * line so the items always sum to the actual score.
+ * @returns {Array<[string, number]>}
+ */
+function scoreBreakdown(r) {
+  const sigs = (r.signals || r.signal || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const isSetupOnly = sigs.length > 0 && sigs.every((s) => s.startsWith('setup'));
+  const items = [];
+  const rvolTerm = Math.min(r.rvol || 0, 6) * 5;
+
+  if (isSetupOnly) {
+    // Setup-backfill rows: BASE + min(RVOL,6)*5 + Stage2 + RS>=90 bonus.
+    const base = Math.max(...sigs.map((s) => SCORE_BASE[s] ?? 0));
+    items.push([`בסיס ${readableSignal(sigs[0])}`, base]);
+    items.push(['RVOL ×5 (עד 30)', Math.round(rvolTerm)]);
+    if (r.stage2) items.push(['Stage 2', 20]);
+    if ((r.rs ?? 0) >= 90) items.push(['RS ≥ 90 🔥', 10]);
+  } else {
+    const leanSigs = sigs.filter((s) => !s.startsWith('setup'));
+    const base = Math.max(...leanSigs.map((s) => SCORE_BASE[s] ?? 0), 0);
+    const strongest = leanSigs.find((s) => (SCORE_BASE[s] ?? 0) === base) || leanSigs[0] || '';
+    items.push([`בסיס ${readableSignal(strongest)}`, base]);
+    items.push(['RVOL ×5 (עד 30)', Math.round(rvolTerm)]);
+    if (r.stage2) items.push(['Stage 2', 20]);
+    if (r.dist_pivot != null) {
+      const piv = Math.max(0, 10 - r.dist_pivot * 4);
+      if (piv > 0) items.push(['קרבה לפיבוט', Math.round(piv)]);
+    }
+    if (sigs.length > 1) items.push([`קונפלואנס ×${sigs.length}`, (sigs.length - 1) * 12]);
+    if (leanSigs.includes('highVolume') && (r.day_pct || 0) < 0) items.push(['ווליום על ירידה (climax)', -25]);
+    if ((r.rvol || 0) >= 8) items.push(['RVOL ≥ 8 (אזהרת climax)', -15]);
+    if (r.ath_pct != null && r.ath_pct < -30) items.push(['עמוק מתחת לשיא (>30%-)', -20]);
+    if (/ETF/i.test(r.sector || '')) items.push(['ETF', -12]);
+  }
+
+  const sum = items.reduce((a, [, v]) => a + v, 0);
+  const resid = Math.round((r.score ?? sum) - sum);
+  if (resid !== 0) items.push(['אחר (רג\'ים / עיגול)', resid]);
+  return items;
+}
+
+function scoreBreakdownHTML(r) {
+  if (r.score == null) return '';
+  const rows = scoreBreakdown(r).map(([label, pts]) => {
+    const cls = pts >= 0 ? 'num-up' : 'num-down';
+    const sign = pts >= 0 ? '+' : '';
+    return `<div class="dd-kv"><div class="dd-k">${label}</div><div class="dd-v ${cls}">${sign}${pts}</div></div>`;
+  }).join('');
+  return `
+    <div class="dd-sub" style="margin-top:14px">פירוק הציון (${r.score})</div>
+    <div class="dd-grid">${rows}</div>`;
+}
+
 function openDeepDive(r) {
   const tvSymbol = (r.ticker || '').replace(/\./g, '-');
   const tvUrl    = `https://www.tradingview.com/symbols/${tvSymbol}/`;
@@ -708,6 +777,7 @@ function openDeepDive(r) {
 
   const pairs = [
     ['Score',  `${r.score ?? '—'}${deltaHtml ? ' ' + deltaHtml.replace(/class="delta-/g, 'class="delta-') : ''}`],
+    ['RS',     r.rs != null ? `${r.rs}${r.rs >= 90 ? ' 🔥' : ''}` : '—'],
     ['RVOL',   fmtRvol(r.rvol)],
     ['ATH%',   fmtPct(r.ath_pct)],
     ['יום%',   fmtPct(r.day_pct)],
@@ -738,6 +808,7 @@ function openDeepDive(r) {
     <div class="dd-sub">${r.sector || ''} · ${r.region || ''}</div>
     <div class="dd-badges">${signalBadgesHTML(r)}</div>
     <div class="dd-grid">${gridHTML}</div>
+    ${scoreBreakdownHTML(r)}
     <a class="dd-tv-link" href="${tvUrl}" target="_blank" rel="noopener noreferrer">
       פתח ב-TradingView ↗
     </a>`;
