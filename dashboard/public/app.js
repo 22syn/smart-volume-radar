@@ -758,7 +758,7 @@ function scoreBreakdownHTML(r) {
 
 function openDeepDive(r) {
   const tvSymbol = (r.ticker || '').replace(/\./g, '-');
-  const tvUrl    = `https://www.tradingview.com/symbols/${tvSymbol}/`;
+  const tvUrl    = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(tvSymbol)}`;
 
   // Graduation banner
   const gradBanner = r.graduated_from
