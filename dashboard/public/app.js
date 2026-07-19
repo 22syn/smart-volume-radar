@@ -590,6 +590,8 @@ function isNearRow(r) {
 
 /** Count of rows hidden ONLY by the near-tier default filter (set by visibleRows). */
 let hiddenNearCount = 0;
+/** Count of near-tier rows currently visible (set by visibleRows) — drives the collapse label. */
+let shownNearCount = 0;
 
 function visibleRows() {
   const q    = ($('#search').value || '').trim().toUpperCase();
@@ -620,6 +622,8 @@ function visibleRows() {
     }
     return true;
   });
+
+  shownNearCount = filtered.filter(isNearRow).length;
 
   return filtered.sort((a, b) => {
     let x = a[sortKey], y = b[sortKey];
@@ -777,9 +781,11 @@ function renderTable() {
 /* ─── Show-more (near tier) ───────────────────────────────────────────────── */
 
 /**
- * Render the "load more" button under the table when near-tier rows are
- * hidden by the default filter. Clicking it reveals the silent watchlist
- * (same effect as the #f-near checkbox).
+ * Render the near-tier toggle button under the table. While near rows are
+ * hidden it offers to load them; once loaded it flips to a collapse action
+ * (kept in sync with the #f-near checkbox). Hidden when a near signal is
+ * explicitly selected in the dropdown (nothing to toggle) or no near rows
+ * exist for the current filters.
  */
 function renderShowMore() {
   const wrap = $('#show-more-wrap');
@@ -788,6 +794,9 @@ function renderShowMore() {
 
   if (hiddenNearCount > 0) {
     btn.textContent = `⏳ טען עוד ${hiddenNearCount} ניירות — רשימת מעקב שקטה (Near)`;
+    wrap.hidden = false;
+  } else if (showNear && shownNearCount > 0) {
+    btn.textContent = `🔼 הסתר ${shownNearCount} ניירות — רשימת מעקב שקטה (Near)`;
     wrap.hidden = false;
   } else {
     wrap.hidden = true;
@@ -1026,10 +1035,10 @@ async function boot() {
     renderTable();
   });
 
-  // "Load more" button — reveals the near tier, kept in sync with the checkbox
+  // Near-tier toggle button — load/collapse, kept in sync with the checkbox
   $('#btn-show-more').addEventListener('click', () => {
-    showNear = true;
-    $('#f-near').checked = true;
+    showNear = !showNear;
+    $('#f-near').checked = showNear;
     renderTable();
   });
 
