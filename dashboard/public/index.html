@@ -187,7 +187,7 @@
 
       <header class="explainer-hero">
         <h1 class="explainer-title">איך Lean Radar עובד?</h1>
-        <p class="explainer-subtitle">מקור הדאטה, הלוגיקה מאחורי כל סיגנל, שכבות ה-Setup, עמודת ה-RS, הציון — הכל כאן. עודכן 2026-07-09.</p>
+        <p class="explainer-subtitle">מקור הדאטה, הלוגיקה מאחורי כל סיגנל, שכבות ה-Setup, עמודת ה-RS, הציון, ומדד ה-Purple Fragility — הכל כאן. עודכן 2026-07-19.</p>
       </header>
 
       <!-- Pipeline -->
@@ -392,6 +392,62 @@
             </div>
           </div>
         </div>
+      </section>
+
+      <!-- Purple Fragility -->
+      <section class="explainer-section" aria-labelledby="ex-fragility">
+        <h2 class="explainer-h2" id="ex-fragility">🟣 Purple Fragility — מד האופוריה</h2>
+        <p class="explainer-prose">
+          מדד ברמת <strong>השוק</strong> (לא ברמת מנייה): ציון שבירוּת יומי על סל קבוע של
+          <strong>10 מניות שבבים/AI</strong> (SMTC, AMKR, CRDO, IFX, MRVL, MU, ONTO, SEDG, SNDK, TSM) —
+          הקבוצה שמובילה את הראלי, ולכן משמשת חיישן מוקדם. הרעיון: נפילות גדולות לא מגיעות משום מקום —
+          קודם מופיע פרופיל של <strong>אופוריה</strong>: כולם בפנים, נדחפים בכוח, ומישהו גדול מוכר לתוך החוזק.
+        </p>
+        <p class="explainer-prose">
+          הציון הוא ממוצע של <strong>6 רכיבים</strong>, כל אחד מנורמל כ-Z מול ההיסטוריה של עצמו
+          (חלון מתרחב, בלי הצצה קדימה):
+        </p>
+        <div class="explainer-score-grid">
+          <div class="explainer-score-item explainer-score-item--pos">
+            <span class="explainer-score-label">wick10 — פתילים עליונים</span>
+            <span class="explainer-score-detail">מכירה לתוך כוח: נגיעה בשיא יומי וסגירה הרחק מתחתיו, ממוצע 10 מניות × 10 ימים</span>
+          </div>
+          <div class="explainer-score-item explainer-score-item--pos">
+            <span class="explainer-score-label">‎%&gt;MA50 — רוחב אופורי</span>
+            <span class="explainer-score-detail">כמה מהסל מעל ממוצע 50 יום. 100% = כולם כבר בפנים, אין קונה שולי</span>
+          </div>
+          <div class="explainer-score-item explainer-score-item--pos">
+            <span class="explainer-score-label">dist20 — ימי חלוקה</span>
+            <span class="explainer-score-detail">ימי ירידה על מחזור מעל הממוצע ב-20 יום — מכירה מוסדית שקטה (או'ניל)</span>
+          </div>
+          <div class="explainer-score-item explainer-score-item--pos">
+            <span class="explainer-score-label">ext50 — מתיחת יתר</span>
+            <span class="explainer-score-detail">מרחק ממוצע מעל MA50 — גומייה שנמתחה רחוק מדי חוזרת בכוח</span>
+          </div>
+          <div class="explainer-score-item explainer-score-item--pos">
+            <span class="explainer-score-label">corr20 — מתאם</span>
+            <span class="explainer-score-detail">ממוצע 45 המתאמים הזוגיים ב-20 יום. כולם זזים יחד = פוזיציה אחת גדולה</span>
+          </div>
+          <div class="explainer-score-item explainer-score-item--pos">
+            <span class="explainer-score-label">disp10 — פיזור רוחבי</span>
+            <span class="explainer-score-detail">סטיית תקן בין תשואות ה-10 באותו יום — תנועות גדולות ומסונכרנות = סביבה שבירה</span>
+          </div>
+        </div>
+        <p class="explainer-prose">
+          <strong>איך קוראים את הגרף:</strong> ציון סביב 0 = התנהגות רגילה. מעל
+          <strong>1.0</strong> (הקו האדום המקווקו) = פרופיל אופוריה קיצוני. במחקר הכיול
+          (שנה אחורה, 8 אירועי נפילה): ציון מעל 1.0 קדם ל-<strong>75% מהנפילות של יותר מ-7%
+          תוך 15 ימי מסחר</strong> — לעומת 35% ביום אקראי — כולל התרעה של ~3 שבועות לפני ראש
+          השוק של יוני 2026. ה-tooltip מציג לכל יום גם את ה-drawdown של הסל ואת
+          <strong>ספירת הקנריות</strong> — כמה מניות כבר עשו את השיא שלהן לפני יותר מ-10 ימים
+          בזמן שהמדד עוד ליד שיא (ביוני: SEDG, IFX ו-MRVL נשברו שבועיים-שלושה לפני כולם).
+        </p>
+        <p class="explainer-prose">
+          <strong>מה זה לא:</strong> תצוגה בלבד — הציון לא חוסם ולא משנה שום סיגנל ברדאר.
+          הסף 1.0 נבחר בדיעבד (In-Sample) על שנת ראלי אחת; המבחן האמיתי הוא מהיום והלאה,
+          וזו בדיוק הסיבה שהוא מחושב ונשמר כאן כל יום. מחזור גבוה לבדו, אגב, נפסל במחקר
+          (IC אפס) — הוא מנבא רק בהקשר, ולכן ימי חלוקה בפנים ו-Volume גולמי בחוץ.
+        </p>
       </section>
 
       <!-- Research calibration -->
