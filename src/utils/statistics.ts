@@ -58,6 +58,20 @@ export function rollingMean(xs: number[], window: number): Array<number | null> 
 }
 
 /**
+ * Rolling sample standard deviation over a fixed window. Result[i] is null
+ * until the window is full (i < window−1) or the window has near-zero
+ * variance. Length-preserving. Pairs with rollingMean for a rolling z-score.
+ */
+export function rollingStd(xs: number[], window: number): Array<number | null> {
+    const out: Array<number | null> = new Array(xs.length).fill(null);
+    if (window < 2 || xs.length < window) return out;
+    for (let i = window - 1; i < xs.length; i++) {
+        out[i] = stdDev(xs.slice(i - window + 1, i + 1));
+    }
+    return out;
+}
+
+/**
  * Expanding-window z-scores with a one-day lag (no lookahead):
  *
  *   z[t] = (x[t] − mean(x[0..t−1])) / std(x[0..t−1])

@@ -43,6 +43,10 @@ export interface SnapshotMeta {
         /** Watch tier (wick+dist+disp z-mean). */
         core3?: number | null;
         core3CrossedUp?: boolean;
+        /** Contextual volume climax (model v2). */
+        climax?: number | null;
+        /** Which Watch-tier condition fired: core3, climax, both, or none. */
+        watchTrigger?: 'core3' | 'climax' | 'both' | null;
         canaryCount: number;
         indexNearHigh: boolean;
         indexValue: number;
