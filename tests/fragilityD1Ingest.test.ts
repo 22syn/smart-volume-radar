@@ -10,6 +10,7 @@ function day(date: string, score: number | null): FragilityDay {
     return {
         date,
         score,
+        core3: 0.7,
         z: { wick10: 0.1, pctAbove50: 0.2, dist20: 0.3, ext50: 0.4, corr20: 0.5, disp10: 0.6 },
         raw: { wick10: 0.25, pctAbove50: 0.8, dist20: 3, ext50: 0.15, corr20: 0.4, disp10: 0.02 },
         indexValue: 2.5,
@@ -42,22 +43,22 @@ describe('buildFragilityBatches', () => {
         expect(insert.params[0]).toBe('2026-07-01');
     });
 
-    it('chunks inserts at ROWS_PER_INSERT rows (9 rows → 2 insert batches)', () => {
-        const days = Array.from({ length: 9 }, (_, i) =>
+    it('chunks inserts at ROWS_PER_INSERT rows (8 rows → 2 insert batches)', () => {
+        const days = Array.from({ length: ROWS_PER_INSERT + 1 }, (_, i) =>
             day(`2026-07-${String(i + 1).padStart(2, '0')}`, 0.5)
         );
         const batches = buildFragilityBatches(days, 'stamp');
         const inserts = batches.filter((b) => b.sql.startsWith('INSERT'));
         expect(inserts.length).toBe(2);
-        expect(inserts[0]!.params.length).toBe(ROWS_PER_INSERT * FRAGILITY_COL_COUNT); // 96
+        expect(inserts[0]!.params.length).toBe(ROWS_PER_INSERT * FRAGILITY_COL_COUNT); // 91
         expect(inserts[1]!.params.length).toBe(1 * FRAGILITY_COL_COUNT);
     });
 
-    it('orders row params to match the column list', () => {
+    it('orders row params to match the column list (incl. core3)', () => {
         const batches = buildFragilityBatches([day('2026-07-01', 0.5)], 'the-stamp');
         const p = batches[2]!.params;
         expect(p).toEqual([
-            '2026-07-01', 0.5,
+            '2026-07-01', 0.5, 0.7,          // score, core3
             0.1, 0.2, 0.3, 0.4, 0.5, 0.6,   // z components
             2.5, -1.23, 2, 'the-stamp',
         ]);
@@ -81,6 +82,8 @@ describe('ingestFragilityToD1', () => {
             latest: day('2026-07-01', 0.5),
             prevScore: null,
             crossedUp: false,
+            prevCore3: null,
+            core3CrossedUp: false,
             canaryCount: 0,
             indexNearHigh: false,
             tickersUsed: ['A'],

@@ -15,7 +15,7 @@ import { enrichWithFundamentals } from './services/finnhubFundamentals.js';
 import { calculateRVOL } from './services/rvolCalculator.js';
 // News enrichment removed 2026-05-22 (Finnhub news feature deprecated).
 // `enrichWithFundamentals` (separate concern — earnings + EPS) still imported above.
-import { sendDailyReport, sendTelegramMessage, formatMonitorTelegramMessage, formatFragilityAlert, GraduationInfo, MonitorMeta } from './services/telegramBot.js';
+import { sendDailyReport, sendTelegramMessage, formatMonitorTelegramMessage, formatFragilityAlert, formatFragilityWatchAlert, GraduationInfo, MonitorMeta } from './services/telegramBot.js';
 import { computePurpleFragility } from './services/purpleFragility.js';
 import { ingestFragilityToD1 } from './utils/fragilityD1Ingest.js';
 import { loadMonitorState, saveMonitorState } from './utils/monitorStore.js';
@@ -134,8 +134,9 @@ async function main(): Promise<void> {
         if (fragility?.latest.score != null) {
             logger.info(
                 `🟣 Fragility score: ${fragility.latest.score.toFixed(2)} ` +
-                `(prev ${fragility.prevScore?.toFixed(2) ?? '—'})` +
-                (fragility.crossedUp ? ' ⚠️ CROSSED 1.0' : '')
+                `(prev ${fragility.prevScore?.toFixed(2) ?? '—'}) | ` +
+                `core3: ${fragility.latest.core3?.toFixed(2) ?? '—'}` +
+                (fragility.crossedUp ? ' ⚠️ CROSSED 1.0' : fragility.core3CrossedUp ? ' 🟡 core3 crossed 1.0' : '')
             );
         }
         const { stocks, failedTickers } = await fetchAllStocksAsOfDate(tickers, scanDate);
@@ -396,13 +397,21 @@ async function main(): Promise<void> {
             fragility,
         });
 
-        // Fragility threshold-crossing alert — separate message, never fails the scan.
+        // Fragility threshold-crossing alerts — separate messages, never fail the scan.
+        // 🔴 Alert (mean6 >= 1.0) wins over 🟡 Watch (core3 >= 1.0) on the same day.
         if (fragility?.crossedUp) {
             try {
                 await sendTelegramMessage(formatFragilityAlert(fragility));
                 logger.info('⚠️ Fragility crossing alert sent to Telegram');
             } catch (fragErr) {
                 logger.warn('Fragility alert send failed (non-fatal): ' + (fragErr as Error).message);
+            }
+        } else if (fragility?.core3CrossedUp) {
+            try {
+                await sendTelegramMessage(formatFragilityWatchAlert(fragility));
+                logger.info('🟡 Fragility Watch (core3) alert sent to Telegram');
+            } catch (fragErr) {
+                logger.warn('Fragility watch alert send failed (non-fatal): ' + (fragErr as Error).message);
             }
         }
 
@@ -469,6 +478,8 @@ async function main(): Promise<void> {
                               score: fragility.latest.score,
                               prevScore: fragility.prevScore,
                               crossedUp: fragility.crossedUp,
+                              core3: fragility.latest.core3,
+                              core3CrossedUp: fragility.core3CrossedUp,
                               canaryCount: fragility.canaryCount,
                               indexNearHigh: fragility.indexNearHigh,
                               indexValue: fragility.latest.indexValue,
