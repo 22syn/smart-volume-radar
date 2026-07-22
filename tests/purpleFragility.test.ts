@@ -7,6 +7,7 @@ import {
     splicePredecessor,
     FRAGILITY_THRESHOLD,
     CORE3_THRESHOLD,
+    CLIMAX_THRESHOLD,
     MIN_TICKERS,
     type OhlcvSeries,
 } from '../src/services/purpleFragility.js';
@@ -289,5 +290,126 @@ describe('core3 (Watch tier)', () => {
         expect(d.core3).not.toBeNull();
         const expected = (d.z.wick10! + d.z.dist20! + d.z.disp10!) / 3;
         expect(d.core3!).toBeCloseTo(expected, 12);
+    });
+});
+
+describe('climax (contextual volume z)', () => {
+    const T = 140;
+    const last = T - 1;
+
+    it('registers a volume spike only while the ticker is near its own 20d high', () => {
+        const mkNearHigh = (name: string, phase: number) =>
+            makeSeries(name, T, (t) => {
+                const b = quietBar(t, phase);
+                return t === last ? { ...b, v: 8000 } : b; // huge volume, price stays at quiet levels (near high)
+            });
+        const builtNear = buildFragilityDays([mkNearHigh('A', 0), mkNearHigh('B', 1), mkNearHigh('C', 2)])!;
+        const nearDay = builtNear.days[builtNear.days.length - 1]!;
+        expect(nearDay.climax).not.toBeNull();
+        expect(nearDay.climax!).toBeGreaterThanOrEqual(CLIMAX_THRESHOLD);
+
+        const mkFarFromHigh = (name: string, phase: number) =>
+            makeSeries(name, T, (t) => {
+                const b = quietBar(t, phase);
+                if (t !== last) return b;
+                const c = b.c * 0.85; // 15% below the trailing 20d high — same huge volume
+                return { o: b.o, h: c + 0.2, l: c - 0.2, c, v: 8000 };
+            });
+        const builtFar = buildFragilityDays([mkFarFromHigh('A', 0), mkFarFromHigh('B', 1), mkFarFromHigh('C', 2)])!;
+        const farDay = builtFar.days[builtFar.days.length - 1]!;
+        expect(farDay.climax).not.toBeNull();
+        // Same volume spike, gated to 0 because price fell away from the high.
+        expect(farDay.climax!).toBeLessThan(nearDay.climax!);
+    });
+
+    it('can trigger the Watch tier alone, tagged watchTrigger="climax", without core3 crossing', () => {
+        const gainPct = 0.02; // identical gain across tickers → low cross-sectional dispersion, no down days
+        const climaxSpikeSeries = (name: string, phase: number): OhlcvSeries => {
+            let prevClose = 0;
+            return makeSeries(name, T, (t) => {
+                const b = quietBar(t, phase);
+                if (t !== last) { prevClose = b.c; return b; }
+                const c = prevClose * (1 + gainPct);
+                return { o: prevClose, h: c * 1.001, l: prevClose * 0.999, c, v: 20000 };
+            });
+        };
+        const result = computeFragilityFromSeries(
+            [climaxSpikeSeries('A', 0), climaxSpikeSeries('B', 1), climaxSpikeSeries('C', 2)],
+            dateAt(last)
+        )!;
+        expect(result.latest.indexNearHigh).toBe(true);
+        expect(result.latest.climax!).toBeGreaterThanOrEqual(CLIMAX_THRESHOLD);
+        expect(result.latest.core3 == null || result.latest.core3! < CORE3_THRESHOLD).toBe(true);
+        expect(result.core3CrossedUp).toBe(true);
+        expect(result.watchTrigger).toBe('climax');
+    });
+});
+
+describe('dual-tier crossing (model v2)', () => {
+    const T = 140;
+
+    function blowOffBar(prevClose: number, gainPct: number): Bar {
+        const c = prevClose * (1 + gainPct);
+        const o = prevClose;
+        return { o, h: c * 1.15, l: o * 0.995, c, v: 20000 };
+    }
+    function blowOffSeries(name: string, phase: number, gainPct: number, blowDays: number[]): OhlcvSeries {
+        let prevClose = 0;
+        return makeSeries(name, T, (t) => {
+            if (blowDays.includes(t)) {
+                const b = blowOffBar(prevClose, gainPct);
+                prevClose = b.c;
+                return b;
+            }
+            const b = quietBar(t, phase);
+            prevClose = b.c;
+            return b;
+        });
+    }
+
+    it('🔴 Alert requires indexNearHigh — a fragility spike while off the high does not cross', () => {
+        const last = T - 1;
+        // Deep decline days 60..last-1 pulls the index well below its early peak;
+        // the divergent blow-off on the final day spikes mean6 without recovering
+        // anywhere near the running high in a single day.
+        const decliner = (name: string, phase: number, gainPct: number) => {
+            let prevClose = 0;
+            return makeSeries(name, T, (t) => {
+                if (t === last) {
+                    const b = blowOffBar(prevClose, gainPct);
+                    prevClose = b.c;
+                    return b;
+                }
+                if (t >= 60) {
+                    const c = prevClose * 0.99;
+                    prevClose = c;
+                    return { o: prevClose / 0.99, h: prevClose / 0.99 + 0.2, l: c - 0.2, c, v: 1000 };
+                }
+                const b = quietBar(t, phase);
+                prevClose = b.c;
+                return b;
+            });
+        };
+        const result = computeFragilityFromSeries(
+            [decliner('A', 0, 0.03), decliner('B', 1, 0.08), decliner('C', 2, 0.12)],
+            dateAt(last)
+        )!;
+        expect(result.latest.indexNearHigh).toBe(false);
+        expect(result.crossedUp).toBe(false);
+    });
+
+    it('watchTrigger is "both" when core3 and climax cross on the same day', () => {
+        const last = T - 1;
+        const result = computeFragilityFromSeries(
+            [
+                blowOffSeries('A', 0, 0.03, [last]),
+                blowOffSeries('B', 1, 0.08, [last]),
+                blowOffSeries('C', 2, 0.12, [last]),
+            ],
+            dateAt(last)
+        )!;
+        expect(result.latest.core3!).toBeGreaterThanOrEqual(CORE3_THRESHOLD);
+        expect(result.latest.climax!).toBeGreaterThanOrEqual(CLIMAX_THRESHOLD);
+        expect(result.watchTrigger).toBe('both');
     });
 });

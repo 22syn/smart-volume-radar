@@ -135,8 +135,9 @@ async function main(): Promise<void> {
             logger.info(
                 `🟣 Fragility score: ${fragility.latest.score.toFixed(2)} ` +
                 `(prev ${fragility.prevScore?.toFixed(2) ?? '—'}) | ` +
-                `core3: ${fragility.latest.core3?.toFixed(2) ?? '—'}` +
-                (fragility.crossedUp ? ' ⚠️ CROSSED 1.0' : fragility.core3CrossedUp ? ' 🟡 core3 crossed 1.0' : '')
+                `core3: ${fragility.latest.core3?.toFixed(2) ?? '—'} | ` +
+                `climax: ${fragility.latest.climax?.toFixed(2) ?? '—'}` +
+                (fragility.crossedUp ? ' ⚠️ CROSSED (mean6+nearHigh)' : fragility.core3CrossedUp ? ` 🟡 Watch crossed (${fragility.watchTrigger})` : '')
             );
         }
         const { stocks, failedTickers } = await fetchAllStocksAsOfDate(tickers, scanDate);
@@ -398,7 +399,8 @@ async function main(): Promise<void> {
         });
 
         // Fragility threshold-crossing alerts — separate messages, never fail the scan.
-        // 🔴 Alert (mean6 >= 1.0) wins over 🟡 Watch (core3 >= 1.0) on the same day.
+        // 🔴 Alert (mean6>=1.0 AND indexNearHigh) wins over 🟡 Watch
+        // (core3>=1.0 OR climax>=1.5 AND indexNearHigh) on the same day.
         if (fragility?.crossedUp) {
             try {
                 await sendTelegramMessage(formatFragilityAlert(fragility));
@@ -409,7 +411,7 @@ async function main(): Promise<void> {
         } else if (fragility?.core3CrossedUp) {
             try {
                 await sendTelegramMessage(formatFragilityWatchAlert(fragility));
-                logger.info('🟡 Fragility Watch (core3) alert sent to Telegram');
+                logger.info(`🟡 Fragility Watch (${fragility.watchTrigger}) alert sent to Telegram`);
             } catch (fragErr) {
                 logger.warn('Fragility watch alert send failed (non-fatal): ' + (fragErr as Error).message);
             }
@@ -480,6 +482,8 @@ async function main(): Promise<void> {
                               crossedUp: fragility.crossedUp,
                               core3: fragility.latest.core3,
                               core3CrossedUp: fragility.core3CrossedUp,
+                              climax: fragility.latest.climax,
+                              watchTrigger: fragility.watchTrigger,
                               canaryCount: fragility.canaryCount,
                               indexNearHigh: fragility.indexNearHigh,
                               indexValue: fragility.latest.indexValue,

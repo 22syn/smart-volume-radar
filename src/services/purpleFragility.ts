@@ -17,6 +17,19 @@
  * computable in real time on its own day (no lookahead). In-sample, score
  * > 1.0 preceded 75% of >7% basket drawdowns within 15 trading days.
  *
+ * MODEL V2 (2026-07-22) adds a 7th component, `climax` — the basket's mean
+ * 60-day volume z-score, counted only for tickers within 5% of their own
+ * trailing 20-day closing high ("volume only predicts in context" — the
+ * same volume burst away from a high is noise, not euphoria). Validated via
+ * split-half stability (2023-24 vs 2025-26) to lift recall without an
+ * out-of-sample precision collapse. Two dual-tier alert rules replace the
+ * single-condition crossings:
+ *   🔴 Alert: mean6 >= 1.0 AND indexNearHigh
+ *   🟡 Watch: core3 >= 1.0 OR (climax >= 1.5 AND indexNearHigh)
+ * Both require indexNearHigh — a fragility spike while the basket is already
+ * well off its highs isn't the "euphoria before a top" pattern this gauge
+ * targets.
+ *
  * DISPLAY + MEASUREMENT ONLY. The result gates nothing: it feeds a header
  * line in the daily Telegram report, a one-off threshold-crossing alert,
  * and the fragility_daily D1 table (out-of-sample validation record).
@@ -27,7 +40,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import pLimit from 'p-limit';
 import { normalizePriceUnitJumps } from './marketData.js';
-import { mean, stdDev, pearson, rollingMean, expandingZ } from '../utils/statistics.js';
+import { mean, stdDev, pearson, rollingMean, rollingStd, expandingZ } from '../utils/statistics.js';
 import logger from '../utils/logger.js';
 
 // process.cwd() is the project root in every run mode (npm start, tsx scripts,
@@ -42,6 +55,15 @@ export const FRAGILITY_THRESHOLD = 1.0;
  *  preceded 77% (display tier only — no alert below 1.0). */
 export const CORE3_THRESHOLD = 1.0;
 export const CORE3_WATCH_DISPLAY = 0.75;
+/** Watch-tier threshold on climax (contextual volume-z). Calibrated 2026-07-22
+ *  via split-half stability testing: climax>=1.5 (AND indexNearHigh) contributed
+ *  the majority of the OR-rule's recall lift over core3 alone, stable across
+ *  both the 2023-24 and 2025-26 halves. */
+export const CLIMAX_THRESHOLD = 1.5;
+/** Rolling window for the per-ticker volume z-score baseline. */
+const CLIMAX_VOL_WINDOW = 60;
+/** A ticker counts toward climax only within this % of its own trailing 20d closing high. */
+const CLIMAX_NEAR_HIGH_PCT = 0.05;
 /** Minimum surviving tickers — below this the basket no longer matches the calibrated study. */
 export const MIN_TICKERS = 8;
 /** Expanding-z burn-in: prior observations required before a z is emitted. */
@@ -90,6 +112,10 @@ export interface FragilityDay {
      *  components that carried the signal both in the original study and on the
      *  2024-26 window. Null unless all three are available. */
     core3: number | null;
+    /** Contextual volume climax: basket-mean 60d volume z, counted only for
+     *  tickers within CLIMAX_NEAR_HIGH_PCT of their own trailing 20d closing
+     *  high. Null until every ticker's volume-z baseline is warmed up. */
+    climax: number | null;
     z: FragilityComponents;
     raw: FragilityComponents;
     /** Equal-weight basket index, growth of $1 from the first aligned day. */
@@ -110,8 +136,11 @@ export interface FragilityResult {
     /** True only on the day the score crosses FRAGILITY_THRESHOLD upward. */
     crossedUp: boolean;
     prevCore3: number | null;
-    /** True only on the day core3 crosses CORE3_THRESHOLD upward (Watch tier). */
+    /** True only on the day the Watch-tier condition — core3>=CORE3_THRESHOLD
+     *  OR (climax>=CLIMAX_THRESHOLD AND indexNearHigh) — newly holds. */
     core3CrossedUp: boolean;
+    /** Which condition fired the Watch tier on the latest day; null if neither. */
+    watchTrigger: 'core3' | 'climax' | 'both' | null;
     canaryCount: number;
     indexNearHigh: boolean;
     tickersUsed: string[];
@@ -139,9 +168,10 @@ export function loadPurpleList(): PurpleTickerEntry[] {
  * but returns the raw aligned arrays instead of derived StockData scalars
  * (the fragility math needs full OHLCV; threading bulk arrays through
  * StockData would bloat a hot type for a 10-ticker side feature).
- * range=3y — the extra year over the original 2y absorbs the ~130-day
- * feature+z burn-in, so the scored series covers a full 2 years (and the
- * expanding-z baseline is meaningfully more stable).
+ * range=5y (bumped from 3y in model v2) — gives the expanding-z baseline a
+ * meaningfully longer calibration history; the aligned intersection still
+ * naturally caps at each member's own real history (e.g. CRDO's ~4.5y IPO
+ * float), so this only adds headroom, it doesn't force a longer scored window.
  */
 export async function fetchPurpleOhlcv(
     yahooSymbol: string,
@@ -151,7 +181,7 @@ export async function fetchPurpleOhlcv(
 ): Promise<OhlcvSeries | null> {
     const MAX_ATTEMPTS = 5;
     try {
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=3y`;
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=5y`;
         const response = await fetch(url, {
             headers: {
                 'User-Agent':
@@ -331,6 +361,29 @@ export function buildFragilityDays(
         ma50.push(rollingMean(s.close, 50));
         vol50.push(rollingMean(s.volume, 50));
     }
+    // Per-ticker contextual volume climax: 60d volume z-score, only counted
+    // while the ticker trades within CLIMAX_NEAR_HIGH_PCT of its own trailing
+    // 20d closing high ("volume only predicts in context").
+    const volMean60 = series.map((s) => rollingMean(s.volume, CLIMAX_VOL_WINDOW));
+    const volStd60 = series.map((s) => rollingStd(s.volume, CLIMAX_VOL_WINDOW));
+    const high20 = series.map((s) => {
+        const out: Array<number | null> = new Array(T).fill(null);
+        for (let t = 19; t < T; t++) out[t] = Math.max(...s.close.slice(t - 19, t + 1));
+        return out;
+    });
+    const climaxContrib: Array<Array<number | null>> = series.map((s, i) => {
+        const out: Array<number | null> = new Array(T).fill(null);
+        for (let t = 0; t < T; t++) {
+            const m = volMean60[i]![t];
+            const sd = volStd60[i]![t];
+            const hi = high20[i]![t];
+            if (m == null || sd == null || sd < 1e-9 || hi == null) continue;
+            const volZ = (s.volume[t]! - m) / sd;
+            const nearHigh = s.close[t]! >= hi * (1 - CLIMAX_NEAR_HIGH_PCT);
+            out[t] = nearHigh ? Math.max(volZ, 0) : 0;
+        }
+        return out;
+    });
     // Distribution day: down >0.2% on volume above the 50d average.
     const distFlag: Array<Array<0 | 1 | null>> = series.map((s, i) => {
         const flags: Array<0 | 1 | null> = new Array(T).fill(null);
@@ -388,6 +441,15 @@ export function buildFragilityDays(
         }
     }
 
+    // Basket-mean climax contribution — null until every ticker's own 60d
+    // volume baseline is warmed up (consistent with the other components,
+    // which also require the full basket to agree before scoring a day).
+    const climaxRaw: Array<number | null> = new Array(T).fill(null);
+    for (let t = 0; t < T; t++) {
+        const vals = climaxContrib.map((c) => c[t]);
+        if (vals.every((x): x is number => x != null)) climaxRaw[t] = mean(vals as number[]);
+    }
+
     // ---- expanding z-scores (one-day lag) + composite score ----
     const zSeries = {
         wick10: expandingZ(wick10, Z_MIN_PRIOR),
@@ -397,6 +459,7 @@ export function buildFragilityDays(
         corr20: expandingZ(corr20, Z_MIN_PRIOR),
         disp10: expandingZ(disp10, Z_MIN_PRIOR),
     };
+    const climaxZ = expandingZ(climaxRaw, Z_MIN_PRIOR);
 
     // ---- equal-weight index, drawdown, canary ----
     const indexValue: number[] = new Array(T);
@@ -442,6 +505,7 @@ export function buildFragilityDays(
             date: dates[t]!,
             score,
             core3,
+            climax: climaxZ[t]!,
             z,
             raw: {
                 wick10: wick10[t]!, pctAbove50: pctAbove50[t]!, dist20: dist20[t]!,
@@ -455,6 +519,21 @@ export function buildFragilityDays(
     }
 
     return { days, tickers: series.map((s) => s.ticker) };
+}
+
+/** 🔴 Alert condition: mean6 >= FRAGILITY_THRESHOLD AND the basket is near its high. */
+function redFires(d: FragilityDay): boolean {
+    return d.indexNearHigh && d.score != null && d.score >= FRAGILITY_THRESHOLD;
+}
+
+/** Which leg(s) of the 🟡 Watch OR-condition are active on a given day, if any. */
+function watchTrigger(d: FragilityDay): 'core3' | 'climax' | 'both' | null {
+    const core3On = d.core3 != null && d.core3 >= CORE3_THRESHOLD;
+    const climaxOn = d.indexNearHigh && d.climax != null && d.climax >= CLIMAX_THRESHOLD;
+    if (core3On && climaxOn) return 'both';
+    if (core3On) return 'core3';
+    if (climaxOn) return 'climax';
+    return null;
 }
 
 /**
@@ -474,23 +553,23 @@ export function computeFragilityFromSeries(
         logger.warn('🟣 Fragility: latest day has no score (still in burn-in)');
         return null;
     }
-    const prevScore = days.length >= 2 ? days[days.length - 2]!.score : null;
-    const prevCore3 = days.length >= 2 ? days[days.length - 2]!.core3 : null;
+    const prev = days.length >= 2 ? days[days.length - 2]! : null;
+    const prevScore = prev?.score ?? null;
+    const prevCore3 = prev?.core3 ?? null;
+    const latestWatchTrigger = watchTrigger(latest);
     return {
         scanDate: asOfDate,
         series: days,
         latest,
         prevScore,
-        crossedUp:
-            prevScore != null &&
-            latest.score >= FRAGILITY_THRESHOLD &&
-            prevScore < FRAGILITY_THRESHOLD,
+        // 🔴 Alert: fires only on the day the compound condition — mean6 above
+        // threshold AND the basket itself near its high — newly holds.
+        crossedUp: redFires(latest) && !(prev != null && redFires(prev)),
         prevCore3,
-        core3CrossedUp:
-            prevCore3 != null &&
-            latest.core3 != null &&
-            latest.core3 >= CORE3_THRESHOLD &&
-            prevCore3 < CORE3_THRESHOLD,
+        // 🟡 Watch: fires only on the day the OR-condition newly holds
+        // (core3 alone, or climax while the basket is near its high).
+        core3CrossedUp: latestWatchTrigger != null && !(prev != null && watchTrigger(prev) != null),
+        watchTrigger: latestWatchTrigger,
         canaryCount: latest.canaryCount ?? 0,
         indexNearHigh: latest.indexNearHigh,
         tickersUsed: tickers,

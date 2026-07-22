@@ -15,7 +15,7 @@ import { isGoldTierAlert } from '../utils/championScore.js';
 // `classifyTickersWithGroq` (the ticker-type utility) is still imported separately in index.ts.
 import type { MonitorUpdateSummary } from './monitorTracker.js';
 import type { MarketHealth } from './marketData.js';
-import { FRAGILITY_THRESHOLD, CORE3_THRESHOLD, CORE3_WATCH_DISPLAY, type FragilityResult } from './purpleFragility.js';
+import { FRAGILITY_THRESHOLD, CORE3_THRESHOLD, CORE3_WATCH_DISPLAY, CLIMAX_THRESHOLD, type FragilityResult } from './purpleFragility.js';
 
 const TELEGRAM_MAX_LENGTH = 4096;
 /** Delay between sends to avoid Telegram rate limit (429) when sending many chunks */
@@ -139,25 +139,27 @@ function formatReportHeader(
     }
 
     // Purple List fragility gauge — display-only, gates nothing (like healthLine).
-    // Two-tier emoji: 🔴 official score (mean6) over 1.0; 🟡 Watch when the
-    // core3 tier (wick+dist+disp) is elevated; 🟢 otherwise.
+    // Two-tier emoji mirrors the model v2 alert rules: 🔴 when mean6 is over
+    // threshold AND the basket is near its high; 🟡 when core3 is elevated, or
+    // climax is elevated while near the high; 🟢 otherwise.
     // All values are numbers formatted here; no user strings → no escapeHtml needed.
     let fragilityLine = '';
     if (fragility?.latest.score != null) {
         const s = fragility.latest.score;
         const c3 = fragility.latest.core3;
+        const climax = fragility.latest.climax;
+        const nearHigh = fragility.indexNearHigh;
         const emoji =
-            s >= FRAGILITY_THRESHOLD ? '🔴'
-            : c3 != null && c3 >= CORE3_WATCH_DISPLAY ? '🟡'
+            s >= FRAGILITY_THRESHOLD && nearHigh ? '🔴'
+            : (c3 != null && c3 >= CORE3_WATCH_DISPLAY) || (climax != null && climax >= CLIMAX_THRESHOLD && nearHigh) ? '🟡'
             : '🟢';
         const dd = fragility.latest.drawdownPct;
-        const canaryBit = fragility.indexNearHigh
-            ? ` | Canary ${fragility.canaryCount}/${fragility.tickersUsed.length}`
-            : '';
+        const canaryBit = nearHigh ? ` | Canary ${fragility.canaryCount}/${fragility.tickersUsed.length}` : '';
         const core3Bit = c3 != null ? ` | core3 ${c3.toFixed(2)}` : '';
+        const climaxBit = climax != null ? ` | climax ${climax.toFixed(2)}` : '';
         fragilityLine =
             `🟣 <b>Purple Fragility:</b> ${emoji} ${s.toFixed(2)} ` +
-            `<i>(סף ${FRAGILITY_THRESHOLD.toFixed(1)})</i>${core3Bit} | DD ${dd.toFixed(1)}%${canaryBit}\n`;
+            `<i>(סף ${FRAGILITY_THRESHOLD.toFixed(1)})</i>${core3Bit}${climaxBit} | DD ${dd.toFixed(1)}%${canaryBit}\n`;
     }
 
     return (
@@ -787,9 +789,10 @@ function formatGraduationSection(graduations: GraduationInfo[] | undefined): str
 }
 
 /**
- * Standalone ⚠️ alert sent only on the day the fragility score crosses the
- * threshold upward (anti-spam: crossedUp is false while it stays above).
- * Display-only — never gates any scan signal.
+ * Standalone ⚠️ alert sent only on the day the compound condition — mean6
+ * over threshold AND the basket itself near its running high — newly holds
+ * (anti-spam: crossedUp is false while it stays true). Display-only — never
+ * gates any scan signal.
  */
 export function formatFragilityAlert(f: FragilityResult): string {
     const s = f.latest.score ?? 0;
@@ -815,27 +818,40 @@ export function formatFragilityAlert(f: FragilityResult): string {
         `⚠️ <b>PURPLE FRAGILITY — חציית סף</b>\n` +
         `━━━━━━━━━━━━━━━━━━━━━━\n` +
         `🟣 ציון שבירוּת: <b>${s.toFixed(2)}</b>` +
-        (prev != null ? ` (אתמול ${prev.toFixed(2)} → חצה את ${FRAGILITY_THRESHOLD.toFixed(1)})` : '') +
+        (prev != null ? ` (אתמול ${prev.toFixed(2)} → חצה את ${FRAGILITY_THRESHOLD.toFixed(1)}, הסל קרוב לשיא)` : '') +
         `\n` +
         `📉 Index: DD ${f.latest.drawdownPct.toFixed(1)}% מהשיא${canaryBit}\n` +
         `רכיבים (z): ${components}\n\n` +
-        `<i>מחקר: ציון מעל ${FRAGILITY_THRESHOLD.toFixed(1)} היסטורית הקדים חולשה בסל ה-Purple ` +
+        `<i>מחקר: ציון מעל ${FRAGILITY_THRESHOLD.toFixed(1)} כשהסל קרוב לשיא היסטורית הקדים חולשה בסל ה-Purple ` +
         `(75% מהנפילות של &gt;7% תוך 15 ימי מסחר, In-Sample). תצוגה בלבד — לא משנה שום התראת סריקה.</i>`
     );
 }
 
+const WATCH_TRIGGER_LABEL_HE: Record<'core3' | 'climax' | 'both', string> = {
+    core3: 'core3',
+    climax: 'climax (נפח בסמוך לשיא)',
+    both: 'core3 + climax',
+};
+
 /**
- * 🟡 Watch alert — sent only on the day core3 (wick+dist+disp z-mean) crosses
- * its threshold upward. Softer tier than the 🔴 mean6 alert: on the 2y audit
- * it preceded 54% of >7% tops at 56% precision. Display-only, gates nothing.
+ * 🟡 Watch alert — sent only on the day the OR-condition newly holds: core3
+ * (wick+dist+disp z-mean) over threshold, or climax (contextual volume-z)
+ * over threshold while the basket is near its high. Softer tier than the 🔴
+ * mean6+nearHigh alert. Validated via split-half stability (2023-24 vs
+ * 2025-26): the combined rule caught 94%/92% of >7% tops at ~39% precision,
+ * vs 54%/comparable recall for core3 alone. Display-only, gates nothing.
  */
 export function formatFragilityWatchAlert(f: FragilityResult): string {
     const c3 = f.latest.core3 ?? 0;
+    const climax = f.latest.climax;
     const prev = f.prevCore3;
     const z = f.latest.z;
     const fmt = (v: number | null): string => (v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}`);
     const canaryBit = f.indexNearHigh
         ? ` | Canary: ${f.canaryCount}/${f.tickersUsed.length}`
+        : '';
+    const triggerBit = f.watchTrigger != null
+        ? ` | מקור ההתראה: ${WATCH_TRIGGER_LABEL_HE[f.watchTrigger]}`
         : '';
     return (
         `🟡 <b>PURPLE FRAGILITY — Watch</b>\n` +
@@ -843,11 +859,12 @@ export function formatFragilityWatchAlert(f: FragilityResult): string {
         `🟣 core3 (פתילים+חלוקה+פיזור): <b>${c3.toFixed(2)}</b>` +
         (prev != null ? ` (אתמול ${prev.toFixed(2)} → חצה את ${CORE3_THRESHOLD.toFixed(1)})` : '') +
         `\n` +
+        `climax (נפח קונטקסטואלי): <b>${climax != null ? climax.toFixed(2) : '—'}</b> (סף ${CLIMAX_THRESHOLD.toFixed(1)})${triggerBit}\n` +
         `ציון מלא (mean6): ${f.latest.score?.toFixed(2) ?? '—'} | ` +
         `DD ${f.latest.drawdownPct.toFixed(1)}%${canaryBit}\n` +
         `רכיבי הליבה (z): wick ${fmt(z.wick10)} | dist ${fmt(z.dist20)} | disp ${fmt(z.disp10)}\n\n` +
-        `<i>שכבת ה-Watch: היסטורית קדמה ל-54% משיאי הראלי (דיוק 56%). ` +
-        `רמת דריכות — לא שינוי בשום התראת סריקה.</i>`
+        `<i>שכבת ה-Watch (core3 OR climax קרוב לשיא): לפי בדיקת יציבות Split-Half תפסה 94%/92% ` +
+        `משיאי הראלי בדיוק ~39%. רמת דריכות — לא שינוי בשום התראת סריקה.</i>`
     );
 }
 

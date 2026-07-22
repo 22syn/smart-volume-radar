@@ -11,6 +11,7 @@ function day(date: string, score: number | null): FragilityDay {
         date,
         score,
         core3: 0.7,
+        climax: 0.9,
         z: { wick10: 0.1, pctAbove50: 0.2, dist20: 0.3, ext50: 0.4, corr20: 0.5, disp10: 0.6 },
         raw: { wick10: 0.25, pctAbove50: 0.8, dist20: 3, ext50: 0.15, corr20: 0.4, disp10: 0.02 },
         indexValue: 2.5,
@@ -54,11 +55,11 @@ describe('buildFragilityBatches', () => {
         expect(inserts[1]!.params.length).toBe(1 * FRAGILITY_COL_COUNT);
     });
 
-    it('orders row params to match the column list (incl. core3)', () => {
+    it('orders row params to match the column list (incl. core3, climax)', () => {
         const batches = buildFragilityBatches([day('2026-07-01', 0.5)], 'the-stamp');
         const p = batches[2]!.params;
         expect(p).toEqual([
-            '2026-07-01', 0.5, 0.7,          // score, core3
+            '2026-07-01', 0.5, 0.7, 0.9,     // score, core3, climax
             0.1, 0.2, 0.3, 0.4, 0.5, 0.6,   // z components
             2.5, -1.23, 2, 'the-stamp',
         ]);
@@ -84,6 +85,7 @@ describe('ingestFragilityToD1', () => {
             crossedUp: false,
             prevCore3: null,
             core3CrossedUp: false,
+            watchTrigger: null,
             canaryCount: 0,
             indexNearHigh: false,
             tickersUsed: ['A'],
