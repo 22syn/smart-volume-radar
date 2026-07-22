@@ -4,7 +4,9 @@ jest.mock('p-limit', () => () => (fn: () => Promise<unknown>) => fn());
 import {
     buildFragilityDays,
     computeFragilityFromSeries,
+    splicePredecessor,
     FRAGILITY_THRESHOLD,
+    CORE3_THRESHOLD,
     MIN_TICKERS,
     type OhlcvSeries,
 } from '../src/services/purpleFragility.js';
@@ -229,6 +231,63 @@ describe('computeFragilityFromSeries — score and crossing', () => {
 describe('constants', () => {
     it('locks the study-calibrated values', () => {
         expect(FRAGILITY_THRESHOLD).toBe(1.0);
+        expect(CORE3_THRESHOLD).toBe(1.0);
         expect(MIN_TICKERS).toBe(8);
+    });
+});
+
+describe('splicePredecessor', () => {
+    it('scale-adjusts predecessor OHLC so the seam is continuous, volumes untouched', () => {
+        const pre = makeSeries('SNDK', 10, () => ({ o: 100, h: 110, l: 90, c: 100, v: 5000 }));
+        const post: OhlcvSeries = {
+            ticker: 'SNDK',
+            dates: [dateAt(10), dateAt(11)],
+            open: [50, 51], high: [55, 56], low: [45, 46], close: [50, 52], volume: [1000, 1100],
+        };
+        const s = splicePredecessor(pre, post);
+        expect(s.ticker).toBe('SNDK');
+        expect(s.dates.length).toBe(12);
+        // pre close 100 → post first close 50 → scale 0.5 applied to pre OHLC
+        expect(s.close[9]).toBeCloseTo(50, 10);
+        expect(s.high[0]).toBeCloseTo(55, 10);
+        // seam onward is the real data
+        expect(s.close[10]).toBe(50);
+        expect(s.close[11]).toBe(52);
+        // volumes are NOT rescaled
+        expect(s.volume[0]).toBe(5000);
+        expect(s.volume[10]).toBe(1000);
+    });
+
+    it('drops predecessor bars that overlap the main symbol', () => {
+        const pre = makeSeries('X', 12, () => ({ o: 10, h: 11, l: 9, c: 10, v: 100 }));
+        const post: OhlcvSeries = {
+            ticker: 'X', dates: [dateAt(10), dateAt(11)],
+            open: [20, 20], high: [21, 21], low: [19, 19], close: [20, 20], volume: [50, 50],
+        };
+        const s = splicePredecessor(pre, post);
+        expect(s.dates.length).toBe(12); // 10 pre (pre-boundary) + 2 post
+        expect(new Set(s.dates).size).toBe(12); // no duplicate dates
+    });
+
+    it('returns post unchanged when predecessor has no pre-boundary bars', () => {
+        const pre = makeSeries('X', 3, () => ({ o: 1, h: 2, l: 1, c: 1, v: 10 }));
+        const post: OhlcvSeries = {
+            ticker: 'X', dates: [dateAt(0), dateAt(1)],
+            open: [5, 5], high: [6, 6], low: [4, 4], close: [5, 5], volume: [7, 7],
+        };
+        const s = splicePredecessor(pre, post);
+        expect(s).toBe(post);
+    });
+});
+
+describe('core3 (Watch tier)', () => {
+    it('is the mean of the wick/dist/disp z components only', () => {
+        const T = 140;
+        const mk = (name: string, phase: number) => makeSeries(name, T, (t) => quietBar(t, phase));
+        const result = computeFragilityFromSeries([mk('A', 0), mk('B', 1), mk('C', 2)], dateAt(T - 1))!;
+        const d = result.latest;
+        expect(d.core3).not.toBeNull();
+        const expected = (d.z.wick10! + d.z.dist20! + d.z.disp10!) / 3;
+        expect(d.core3!).toBeCloseTo(expected, 12);
     });
 });

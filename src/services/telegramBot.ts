@@ -15,7 +15,7 @@ import { isGoldTierAlert } from '../utils/championScore.js';
 // `classifyTickersWithGroq` (the ticker-type utility) is still imported separately in index.ts.
 import type { MonitorUpdateSummary } from './monitorTracker.js';
 import type { MarketHealth } from './marketData.js';
-import { FRAGILITY_THRESHOLD, type FragilityResult } from './purpleFragility.js';
+import { FRAGILITY_THRESHOLD, CORE3_THRESHOLD, CORE3_WATCH_DISPLAY, type FragilityResult } from './purpleFragility.js';
 
 const TELEGRAM_MAX_LENGTH = 4096;
 /** Delay between sends to avoid Telegram rate limit (429) when sending many chunks */
@@ -139,18 +139,25 @@ function formatReportHeader(
     }
 
     // Purple List fragility gauge — display-only, gates nothing (like healthLine).
+    // Two-tier emoji: 🔴 official score (mean6) over 1.0; 🟡 Watch when the
+    // core3 tier (wick+dist+disp) is elevated; 🟢 otherwise.
     // All values are numbers formatted here; no user strings → no escapeHtml needed.
     let fragilityLine = '';
     if (fragility?.latest.score != null) {
         const s = fragility.latest.score;
-        const emoji = s >= FRAGILITY_THRESHOLD ? '🔴' : s >= 0.5 ? '🟡' : '🟢';
+        const c3 = fragility.latest.core3;
+        const emoji =
+            s >= FRAGILITY_THRESHOLD ? '🔴'
+            : c3 != null && c3 >= CORE3_WATCH_DISPLAY ? '🟡'
+            : '🟢';
         const dd = fragility.latest.drawdownPct;
         const canaryBit = fragility.indexNearHigh
             ? ` | Canary ${fragility.canaryCount}/${fragility.tickersUsed.length}`
             : '';
+        const core3Bit = c3 != null ? ` | core3 ${c3.toFixed(2)}` : '';
         fragilityLine =
             `🟣 <b>Purple Fragility:</b> ${emoji} ${s.toFixed(2)} ` +
-            `<i>(סף ${FRAGILITY_THRESHOLD.toFixed(1)})</i> | DD ${dd.toFixed(1)}%${canaryBit}\n`;
+            `<i>(סף ${FRAGILITY_THRESHOLD.toFixed(1)})</i>${core3Bit} | DD ${dd.toFixed(1)}%${canaryBit}\n`;
     }
 
     return (
@@ -814,6 +821,33 @@ export function formatFragilityAlert(f: FragilityResult): string {
         `רכיבים (z): ${components}\n\n` +
         `<i>מחקר: ציון מעל ${FRAGILITY_THRESHOLD.toFixed(1)} היסטורית הקדים חולשה בסל ה-Purple ` +
         `(75% מהנפילות של &gt;7% תוך 15 ימי מסחר, In-Sample). תצוגה בלבד — לא משנה שום התראת סריקה.</i>`
+    );
+}
+
+/**
+ * 🟡 Watch alert — sent only on the day core3 (wick+dist+disp z-mean) crosses
+ * its threshold upward. Softer tier than the 🔴 mean6 alert: on the 2y audit
+ * it preceded 54% of >7% tops at 56% precision. Display-only, gates nothing.
+ */
+export function formatFragilityWatchAlert(f: FragilityResult): string {
+    const c3 = f.latest.core3 ?? 0;
+    const prev = f.prevCore3;
+    const z = f.latest.z;
+    const fmt = (v: number | null): string => (v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}`);
+    const canaryBit = f.indexNearHigh
+        ? ` | Canary: ${f.canaryCount}/${f.tickersUsed.length}`
+        : '';
+    return (
+        `🟡 <b>PURPLE FRAGILITY — Watch</b>\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `🟣 core3 (פתילים+חלוקה+פיזור): <b>${c3.toFixed(2)}</b>` +
+        (prev != null ? ` (אתמול ${prev.toFixed(2)} → חצה את ${CORE3_THRESHOLD.toFixed(1)})` : '') +
+        `\n` +
+        `ציון מלא (mean6): ${f.latest.score?.toFixed(2) ?? '—'} | ` +
+        `DD ${f.latest.drawdownPct.toFixed(1)}%${canaryBit}\n` +
+        `רכיבי הליבה (z): wick ${fmt(z.wick10)} | dist ${fmt(z.dist20)} | disp ${fmt(z.disp10)}\n\n` +
+        `<i>שכבת ה-Watch: היסטורית קדמה ל-54% משיאי הראלי (דיוק 56%). ` +
+        `רמת דריכות — לא שינוי בשום התראת סריקה.</i>`
     );
 }
 

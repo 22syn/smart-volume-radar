@@ -36,6 +36,12 @@ import logger from '../utils/logger.js';
 const PURPLE_LIST_PATH = path.join(process.cwd(), 'config', 'purple-list.json');
 
 export const FRAGILITY_THRESHOLD = 1.0;
+/** Watch-tier threshold on core3 (wick10+dist20+disp10 z-mean). Calibrated
+ *  2026-07-20 on the fixed basket, 2y window, 3y fetch: core3>=1.0 preceded
+ *  54% of >7% tops at 56% precision (vs 23% catch for mean6>=1.0); >=0.75
+ *  preceded 77% (display tier only — no alert below 1.0). */
+export const CORE3_THRESHOLD = 1.0;
+export const CORE3_WATCH_DISPLAY = 0.75;
 /** Minimum surviving tickers — below this the basket no longer matches the calibrated study. */
 export const MIN_TICKERS = 8;
 /** Expanding-z burn-in: prior observations required before a z is emitted. */
@@ -50,6 +56,9 @@ export interface PurpleTickerEntry {
     ticker: string;
     /** Yahoo symbol override (e.g. IFX → IFNNY). Data is reported under `ticker`. */
     yahooSymbol?: string;
+    /** Predecessor ticker whose scale-adjusted OHLC extends history before the
+     *  main symbol's first trading day (e.g. SNDK ← WDC pre-spinoff). */
+    predecessorYahoo?: string;
 }
 
 export interface OhlcvSeries {
@@ -77,6 +86,10 @@ export interface FragilityDay {
     date: string;
     /** Mean of the non-null component z's; null during burn-in or when <5 of 6 are available. */
     score: number | null;
+    /** Watch-tier score: mean of the wick10/dist20/disp10 z's only — the three
+     *  components that carried the signal both in the original study and on the
+     *  2024-26 window. Null unless all three are available. */
+    core3: number | null;
     z: FragilityComponents;
     raw: FragilityComponents;
     /** Equal-weight basket index, growth of $1 from the first aligned day. */
@@ -96,6 +109,9 @@ export interface FragilityResult {
     prevScore: number | null;
     /** True only on the day the score crosses FRAGILITY_THRESHOLD upward. */
     crossedUp: boolean;
+    prevCore3: number | null;
+    /** True only on the day core3 crosses CORE3_THRESHOLD upward (Watch tier). */
+    core3CrossedUp: boolean;
     canaryCount: number;
     indexNearHigh: boolean;
     tickersUsed: string[];
@@ -105,7 +121,7 @@ export interface FragilityResult {
 export function loadPurpleList(): PurpleTickerEntry[] {
     try {
         const parsed = JSON.parse(fs.readFileSync(PURPLE_LIST_PATH, 'utf-8')) as {
-            tickers?: Array<{ ticker?: string; yahooSymbol?: string }>;
+            tickers?: Array<{ ticker?: string; yahooSymbol?: string; predecessorYahoo?: string }>;
         };
         const entries = (parsed.tickers ?? [])
             .filter((t): t is PurpleTickerEntry => typeof t.ticker === 'string' && t.ticker.length > 0);
@@ -123,7 +139,9 @@ export function loadPurpleList(): PurpleTickerEntry[] {
  * but returns the raw aligned arrays instead of derived StockData scalars
  * (the fragility math needs full OHLCV; threading bulk arrays through
  * StockData would bloat a hot type for a 10-ticker side feature).
- * range=2y — ample for the 60-day z burn-in + 250 rows of D1 backfill.
+ * range=3y — the extra year over the original 2y absorbs the ~130-day
+ * feature+z burn-in, so the scored series covers a full 2 years (and the
+ * expanding-z baseline is meaningfully more stable).
  */
 export async function fetchPurpleOhlcv(
     yahooSymbol: string,
@@ -133,7 +151,7 @@ export async function fetchPurpleOhlcv(
 ): Promise<OhlcvSeries | null> {
     const MAX_ATTEMPTS = 5;
     try {
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=2y`;
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?interval=1d&range=3y`;
         const response = await fetch(url, {
             headers: {
                 'User-Agent':
@@ -209,6 +227,47 @@ export async function fetchPurpleOhlcv(
         logger.warn(`❌ 🟣 Fetch failed for ${yahooSymbol} after ${MAX_ATTEMPTS} attempts: ${(error as Error).message}`);
         return null;
     }
+}
+
+/**
+ * Splice a predecessor ticker's history before the main symbol's first
+ * trading day (e.g. SNDK ← WDC: Western Digital held the SanDisk flash
+ * business until the Feb-2025 spinoff re-created the SNDK ticker).
+ * Predecessor O/H/L/C are scale-adjusted so its last close meets the main
+ * symbol's first close continuously (same idea as normalizePriceUnitJumps);
+ * volumes are left untouched — dist20 compares each bar to the ticker's own
+ * trailing average, so relative volume logic survives the seam.
+ * Exported for tests.
+ */
+export function splicePredecessor(pre: OhlcvSeries, post: OhlcvSeries): OhlcvSeries {
+    if (post.dates.length === 0) return { ...pre, ticker: post.ticker };
+    const boundary = post.dates[0]!;
+    let cut = pre.dates.findIndex((d) => d >= boundary);
+    if (cut < 0) cut = pre.dates.length;
+    if (cut === 0) return post;
+    const scale = post.close[0]! / pre.close[cut - 1]!;
+    return {
+        ticker: post.ticker,
+        dates: [...pre.dates.slice(0, cut), ...post.dates],
+        open: [...pre.open.slice(0, cut).map((x) => x * scale), ...post.open],
+        high: [...pre.high.slice(0, cut).map((x) => x * scale), ...post.high],
+        low: [...pre.low.slice(0, cut).map((x) => x * scale), ...post.low],
+        close: [...pre.close.slice(0, cut).map((x) => x * scale), ...post.close],
+        volume: [...pre.volume.slice(0, cut), ...post.volume],
+    };
+}
+
+/** Fetch one basket member, splicing its predecessor's history when declared. */
+async function fetchMemberOhlcv(entry: PurpleTickerEntry, asOfDate: string): Promise<OhlcvSeries | null> {
+    const main = await fetchPurpleOhlcv(entry.yahooSymbol ?? entry.ticker, entry.ticker, asOfDate);
+    if (!entry.predecessorYahoo) return main;
+    const pre = await fetchPurpleOhlcv(entry.predecessorYahoo, entry.ticker, asOfDate);
+    if (!pre) return main; // fail-open: predecessor fetch trouble → main-only history
+    if (!main || main.dates.length === 0) {
+        // asOfDate predates the spinoff (replay) — predecessor alone IS the history.
+        return { ...pre, ticker: entry.ticker };
+    }
+    return splicePredecessor(pre, main);
 }
 
 /** Align series on the intersection of trading dates (no forward-fill — a
@@ -358,6 +417,8 @@ export function buildFragilityDays(
         };
         const zVals = Object.values(z).filter((x): x is number => x != null);
         const score = zVals.length >= 5 ? mean(zVals) : null;
+        const core3Parts = [z.wick10, z.dist20, z.disp10].filter((x): x is number => x != null);
+        const core3 = core3Parts.length === 3 ? mean(core3Parts) : null;
 
         // Trailing-250d index high for "near high"; per-ticker high age for the canary.
         const lb = Math.max(0, t - (HIGH_LOOKBACK_DAYS - 1));
@@ -380,6 +441,7 @@ export function buildFragilityDays(
         days.push({
             date: dates[t]!,
             score,
+            core3,
             z,
             raw: {
                 wick10: wick10[t]!, pctAbove50: pctAbove50[t]!, dist20: dist20[t]!,
@@ -413,6 +475,7 @@ export function computeFragilityFromSeries(
         return null;
     }
     const prevScore = days.length >= 2 ? days[days.length - 2]!.score : null;
+    const prevCore3 = days.length >= 2 ? days[days.length - 2]!.core3 : null;
     return {
         scanDate: asOfDate,
         series: days,
@@ -422,6 +485,12 @@ export function computeFragilityFromSeries(
             prevScore != null &&
             latest.score >= FRAGILITY_THRESHOLD &&
             prevScore < FRAGILITY_THRESHOLD,
+        prevCore3,
+        core3CrossedUp:
+            prevCore3 != null &&
+            latest.core3 != null &&
+            latest.core3 >= CORE3_THRESHOLD &&
+            prevCore3 < CORE3_THRESHOLD,
         canaryCount: latest.canaryCount ?? 0,
         indexNearHigh: latest.indexNearHigh,
         tickersUsed: tickers,
@@ -437,9 +506,7 @@ export async function computePurpleFragility(asOfDate: string): Promise<Fragilit
     if (list.length === 0) return null;
     const limit = pLimit(3);
     const fetched = await Promise.all(
-        list.map((entry) =>
-            limit(() => fetchPurpleOhlcv(entry.yahooSymbol ?? entry.ticker, entry.ticker, asOfDate))
-        )
+        list.map((entry) => limit(() => fetchMemberOhlcv(entry, asOfDate)))
     );
     const survivors = fetched.filter((s): s is OhlcvSeries => s != null);
     const failed = list

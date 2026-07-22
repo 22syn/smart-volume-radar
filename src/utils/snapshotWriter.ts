@@ -40,6 +40,9 @@ export interface SnapshotMeta {
         score: number | null;
         prevScore: number | null;
         crossedUp: boolean;
+        /** Watch tier (wick+dist+disp z-mean). */
+        core3?: number | null;
+        core3CrossedUp?: boolean;
         canaryCount: number;
         indexNearHigh: boolean;
         indexValue: number;

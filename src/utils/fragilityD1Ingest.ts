@@ -21,12 +21,12 @@ import { logger } from './logger.js';
 const BACKFILL_DAYS = 250;
 
 const FRAGILITY_COLS =
-    '(scan_date,score,wick10_z,pct_above50_z,dist20_z,ext50_z,corr20_z,disp10_z,' +
+    '(scan_date,score,core3,wick10_z,pct_above50_z,dist20_z,ext50_z,corr20_z,disp10_z,' +
     'index_value,drawdown_pct,canary_count,ingested_at)';
-/** D1 caps at 100 bound params/query: 12 cols × 8 rows = 96. Adding a column
+/** D1 caps at 100 bound params/query: 13 cols × 7 rows = 91. Adding a column
  *  requires lowering ROWS_PER_INSERT — the unit test asserts the arithmetic. */
-export const FRAGILITY_COL_COUNT = 12;
-export const ROWS_PER_INSERT = 8;
+export const FRAGILITY_COL_COUNT = 13;
+export const ROWS_PER_INSERT = 7;
 
 const round = (x: number | null, digits: number): number | null =>
     x == null ? null : Math.round(x * 10 ** digits) / 10 ** digits;
@@ -37,7 +37,7 @@ export function buildFragilityBatches(days: FragilityDay[], stamp: string): Batc
         {
             sql: `CREATE TABLE IF NOT EXISTS fragility_daily (
                 scan_date TEXT PRIMARY KEY,
-                score REAL, wick10_z REAL, pct_above50_z REAL, dist20_z REAL,
+                score REAL, core3 REAL, wick10_z REAL, pct_above50_z REAL, dist20_z REAL,
                 ext50_z REAL, corr20_z REAL, disp10_z REAL,
                 index_value REAL, drawdown_pct REAL, canary_count INTEGER, ingested_at TEXT)`,
             params: [],
@@ -51,12 +51,13 @@ export function buildFragilityBatches(days: FragilityDay[], stamp: string): Batc
     });
     for (let i = 0; i < rows.length; i += ROWS_PER_INSERT) {
         const slice = rows.slice(i, i + ROWS_PER_INSERT);
-        const placeholders = slice.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?)').join(',');
+        const placeholders = slice.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',');
         const params: unknown[] = [];
         for (const d of slice) {
             params.push(
                 d.date,
                 round(d.score, 4),
+                round(d.core3, 4),
                 round(d.z.wick10, 4), round(d.z.pctAbove50, 4), round(d.z.dist20, 4),
                 round(d.z.ext50, 4), round(d.z.corr20, 4), round(d.z.disp10, 4),
                 round(d.indexValue, 4), round(d.drawdownPct, 2),
@@ -93,6 +94,13 @@ export async function ingestFragilityToD1(
             return false;
         }
         const stamp = `fragility-daily ${new Date().toISOString()}`;
+        // One-time migration for tables created before model v2 (2026-07-20):
+        // ALTER fails harmlessly once the column exists — swallow that case only.
+        try {
+            await runBatch({ sql: 'ALTER TABLE fragility_daily ADD COLUMN core3 REAL', params: [] }, config);
+        } catch {
+            // column already present (or table missing — CREATE below handles it)
+        }
         const batches = buildFragilityBatches(result.series, stamp);
         for (const batch of batches) {
             await runBatch(batch, config);
