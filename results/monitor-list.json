@@ -14824,7 +14824,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 106.30000305175781,
       "firstAlertRvol": 1.7871357153328047,
-      "lastChecked": "2026-05-26",
+      "lastChecked": "2026-07-22",
       "status": "sma21-pullback",
       "sector": "Others",
       "events": [
@@ -15027,6 +15027,12 @@
           "type": "re-alert-close",
           "price": 170,
           "rvol": 1.8473675835003054
+        },
+        {
+          "date": "2026-07-22",
+          "type": "re-alert-close",
+          "price": 199,
+          "rvol": 1.6991087379361853
         }
       ],
       "resolvedDate": "2026-01-22",
@@ -50531,6 +50537,12 @@
           "type": "re-alert-close",
           "price": 194.3000030517578,
           "rvol": 1.5547867960193649
+        },
+        {
+          "date": "2026-07-22",
+          "type": "re-alert-full",
+          "price": 194.3000030517578,
+          "rvol": 2.5171770889360277
         }
       ],
       "resolvedDate": "2026-04-16",
@@ -56260,6 +56272,12 @@
           "type": "re-alert-close",
           "price": 27.399999618530273,
           "rvol": 1.5279794034511318
+        },
+        {
+          "date": "2026-07-22",
+          "type": "re-alert-close",
+          "price": 30.5,
+          "rvol": 1.754242099180455
         }
       ]
     },
@@ -58618,7 +58636,7 @@
       "firstAlertPrice": 22.93000030517578,
       "firstAlertRvol": 2.9216859973934626,
       "lastChecked": "2026-07-22",
-      "status": "monitoring",
+      "status": "manual-entry",
       "sector": "commodities",
       "events": [
         {
@@ -58633,8 +58651,18 @@
           "type": "re-alert-close",
           "price": 22.93000030517578,
           "rvol": 2.7918332863981976
+        },
+        {
+          "date": "2026-07-22",
+          "type": "manual-entry",
+          "price": 26,
+          "rvol": 2.3456009269699742,
+          "note": "Pivot break + RVOL 2.35 + +3.2% day"
         }
-      ]
+      ],
+      "resolvedDate": "2026-07-22",
+      "resolvedPrice": 26,
+      "resolvedReason": "Pivot break + RVOL 2.35 + +3.2% day"
     },
     {
       "ticker": "DE",
@@ -59009,6 +59037,12 @@
           "type": "re-alert-close",
           "price": 78.19999694824219,
           "rvol": 2.6061267072321077
+        },
+        {
+          "date": "2026-07-22",
+          "type": "re-alert-close",
+          "price": 87.31999969482422,
+          "rvol": 1.6229498364086303
         }
       ]
     },
@@ -59899,7 +59933,7 @@
       "firstAlertLevel": "close",
       "firstAlertPrice": 177.3300018310547,
       "firstAlertRvol": 6.593441666627209,
-      "lastChecked": "2026-07-08",
+      "lastChecked": "2026-07-22",
       "status": "manual-entry",
       "sector": "gas stations",
       "events": [
@@ -59928,6 +59962,12 @@
           "price": 187.80999755859375,
           "rvol": 3.0257522980218807,
           "note": "Pivot break + RVOL 3.03 + +5.0% day"
+        },
+        {
+          "date": "2026-07-22",
+          "type": "re-alert-close",
+          "price": 211.41000366210938,
+          "rvol": 1.6212735992124643
         }
       ],
       "resolvedDate": "2026-07-08",
@@ -60225,6 +60265,12 @@
           "type": "re-alert-close",
           "price": 85.68000030517578,
           "rvol": 1.6576744792075098
+        },
+        {
+          "date": "2026-07-22",
+          "type": "re-alert-close",
+          "price": 85.68000030517578,
+          "rvol": 2.6952420145540312
         }
       ],
       "resolvedDate": "2026-07-10",
