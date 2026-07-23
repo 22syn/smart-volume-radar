@@ -497,6 +497,8 @@ function renderFragilityChart(rows) {
   if (fragChart) { fragChart.destroy(); fragChart = null; }
   const labels = rows.map((r) => r.scan_date.slice(5)); // MM-DD
   const scores = rows.map((r) => r.score);
+  const capitulation = rows.map((r) => r.capitulation ?? null);
+  const hasCapitulation = capitulation.some((v) => v != null);
   const threshold = rows.map(() => 1.0);
 
   const ctx = $('#fragility-chart').getContext('2d');
@@ -506,7 +508,7 @@ function renderFragilityChart(rows) {
       labels,
       datasets: [
         {
-          label: 'Fragility',
+          label: 'Fragility (אופוריה)',
           data: scores,
           borderColor: 'rgba(163,113,247,0.95)',
           backgroundColor: 'rgba(163,113,247,0.12)',
@@ -516,8 +518,23 @@ function renderFragilityChart(rows) {
           tension: 0.25,
           fill: false,
         },
+        // Capitulation Score (מד המיצוי) — bottom-detection companion, descriptive
+        // only. No threshold line for it: our own validation (see explainer tab)
+        // found no reliable action level, unlike the Fragility score's 1.0.
         {
-          label: 'סף 1.0',
+          label: 'Capitulation (מיצוי)',
+          data: capitulation,
+          borderColor: 'rgba(88,196,220,0.95)',
+          backgroundColor: 'rgba(88,196,220,0.10)',
+          borderWidth: 1.6,
+          pointRadius: 0,
+          pointHitRadius: 6,
+          tension: 0.25,
+          fill: false,
+          hidden: !hasCapitulation,
+        },
+        {
+          label: 'סף 1.0 (Fragility בלבד)',
           data: threshold,
           borderColor: 'rgba(248,81,73,0.7)',
           borderWidth: 1,
@@ -534,19 +551,32 @@ function renderFragilityChart(rows) {
       maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { display: false },
+        legend: {
+          display: true,
+          labels: {
+            color: '#8b95a5',
+            font: { size: 10 },
+            boxWidth: 12,
+            filter: (item) => item.text !== 'סף 1.0 (Fragility בלבד)',
+          },
+        },
         tooltip: {
           backgroundColor: '#1b2130',
           borderColor: '#242c3a',
           borderWidth: 1,
           titleColor: '#e6edf3',
           bodyColor: '#8b95a5',
-          filter: (item) => item.datasetIndex === 0,
+          filter: (item) => item.datasetIndex === 0 || item.datasetIndex === 1,
           callbacks: {
             title: (items) => (items[0] ? rows[items[0].dataIndex].scan_date : ''),
             label: (item) => {
               const r = rows[item.dataIndex];
               const z = (v) => (v == null ? '—' : v.toFixed(1));
+              if (item.datasetIndex === 1) {
+                return r.capitulation == null
+                  ? 'Capitulation: —'
+                  : `Capitulation: ${r.capitulation.toFixed(2)} (תיאורי בלבד, לא טריגר)`;
+              }
               return [
                 `ציון: ${r.score.toFixed(2)}`,
                 `DD: ${r.drawdown_pct == null ? '—' : r.drawdown_pct.toFixed(1) + '%'}` +

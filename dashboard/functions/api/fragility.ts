@@ -11,6 +11,9 @@ interface Env { DB: D1Database; }
 interface FragilityRow {
   scan_date: string;
   score: number;
+  /** Capitulation Score (מד המיצוי) — bottom-detection companion gauge, descriptive
+   *  only (no threshold/alert tied to it). See explainer tab for our own validation. */
+  capitulation: number | null;
   wick10_z: number | null;
   pct_above50_z: number | null;
   dist20_z: number | null;

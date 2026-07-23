@@ -100,9 +100,9 @@
         <canvas id="dist-chart" height="130" aria-label="היסטוגרמת ציונים" role="img"></canvas>
       </div>
       <div class="chart-wrap chart-wrap--fragility" id="fragility-wrap" hidden>
-        <p class="chart-title">🟣 Purple Fragility <span class="chart-subtitle">ציון שבירוּת הסל (סף 1.0)</span></p>
+        <p class="chart-title">🟣 Purple Fragility <span class="chart-subtitle">אופוריה (סף 1.0) + מיצוי — תיאורי בלבד, ראו לשונית "איך זה עובד"</span></p>
         <div class="chart-box">
-          <canvas id="fragility-chart" aria-label="גרף ציון שבירות" role="img"></canvas>
+          <canvas id="fragility-chart" aria-label="גרף ציון שבירות ומיצוי" role="img"></canvas>
         </div>
       </div>
     </section>
@@ -187,7 +187,7 @@
 
       <header class="explainer-hero">
         <h1 class="explainer-title">איך Lean Radar עובד?</h1>
-        <p class="explainer-subtitle">מקור הדאטה, הלוגיקה מאחורי כל סיגנל, שכבות ה-Setup, עמודת ה-RS, הציון, ומדד ה-Purple Fragility — הכל כאן. עודכן 2026-07-19.</p>
+        <p class="explainer-subtitle">מקור הדאטה, הלוגיקה מאחורי כל סיגנל, שכבות ה-Setup, עמודת ה-RS, הציון, ומדדי ה-Purple Fragility וה-Capitulation — הכל כאן. עודכן 2026-07-23.</p>
       </header>
 
       <!-- Pipeline -->
@@ -447,6 +447,46 @@
           הסף 1.0 נבחר בדיעבד (In-Sample) על שנת ראלי אחת; המבחן האמיתי הוא מהיום והלאה,
           וזו בדיוק הסיבה שהוא מחושב ונשמר כאן כל יום. מחזור גבוה לבדו, אגב, נפסל במחקר
           (IC אפס) — הוא מנבא רק בהקשר, ולכן ימי חלוקה בפנים ו-Volume גולמי בחוץ.
+        </p>
+      </section>
+
+      <!-- Purple Capitulation -->
+      <section class="explainer-section" aria-labelledby="ex-capitulation">
+        <h2 class="explainer-h2" id="ex-capitulation">🩵 Capitulation Score — מד המיצוי</h2>
+        <p class="explainer-prose">
+          השאלה ההפוכה מה-Fragility: לא <em>"האם השוק בשל לנפילה?"</em> אלא
+          <strong>"האם הנפילה כבר מוצתה — האם המוכרים נגמרו?"</strong> מחושב על אותו סל 10 המניות,
+          באותה שיטת Z מתרחבת (בלי הצצה קדימה). ממוצע של <strong>4 רכיבים</strong>:
+        </p>
+        <div class="explainer-score-grid">
+          <div class="explainer-score-item explainer-score-item--pos">
+            <span class="explainer-score-label">depth — עומק הנפילה</span>
+            <span class="explainer-score-detail">כמה רחוק הסל מהשיא הרץ שלו — תנאי הכרחי אך לא מספיק</span>
+          </div>
+          <div class="explainer-score-item explainer-score-item--pos">
+            <span class="explainer-score-label">panic-volume — מחזור פאניקה</span>
+            <span class="explainer-score-detail">שיא מחזור-Z של 60 יום בימי ירידה של מעל 1% — מחפש את "יום הכניעה"</span>
+          </div>
+          <div class="explainer-score-item explainer-score-item--pos">
+            <span class="explainer-score-label">washout — רוחב שרוף</span>
+            <span class="explainer-score-detail">כמה מהסל מתחת לממוצע 20 יום שלו — כמעט אף אחד לא מחזיק, אין למי עוד למכור</span>
+          </div>
+          <div class="explainer-score-item explainer-score-item--pos">
+            <span class="explainer-score-label">negMom — מומנטום שלילי</span>
+            <span class="explainer-score-detail">תשואת הסל ב-20 הימים האחרונים, הפוכה בסימן — עוצמת הגל הנוכחי</span>
+          </div>
+        </div>
+        <p class="explainer-prose">
+          <strong>מה מצאנו בבדיקה שלנו (2026-07-23, על הסל שלנו — לא ההיסטוריה שממנה נגזר המדד המקורי):</strong>
+          בניגוד לציפייה, ימים עם ציון גבוה דווקא הראו תשואה עתידית ממוצעת <em>גבוהה</em> יותר מהבסיס. אבל בדיקת
+          יציבות (פיצול לשתי תקופות עצמאיות) הראתה שהיתרון הזה נחלש משמעותית בתקופה העדכנית יותר (פי ~1.5 מהבסיס,
+          לעומת פי ~4.6 בתקופה הישנה). recall/precision מול 17 תחתיות אמיתיות שזיהינו: לכל היותר <strong>35%/29%</strong> —
+          הרבה מתחת ל-94%/92% שאימתנו לחוק ההתרעה של ה-Fragility. גם רכיב "מחזור הפאניקה" לבדו לא הראה יתרון על הבסיס.
+        </p>
+        <p class="explainer-prose">
+          <strong>מה זה לא:</strong> תצוגה בלבד, לגמרי — <strong>אין שום סף התרעה, צבע, או טריגר קשור למדד הזה</strong>.
+          בניגוד ל-Fragility, לא מצאנו רמת פעולה אמינה, ולכן אין קו סף בגרף בשבילו. הוא כאן כדי לתת הקשר —
+          "כמה עמוק אנחנו במחזור" — לא כדי להגיד "עכשיו".
         </p>
       </section>
 
