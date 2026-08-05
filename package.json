@@ -53,7 +53,7 @@
   "dependencies": {
     "dotenv": "^17.2.3",
     "fast-xml-parser": "^5.3.4",
-    "googleapis": "^144.0.0",
+    "googleapis": "^173.0.0",
     "p-limit": "^7.3.0",
     "rss-parser": "^3.13.0",
     "trading-signals": "^7.4.3",
